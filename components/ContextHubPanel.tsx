@@ -127,8 +127,8 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
       </div>
 
       {selectedFile ? (
-        <div className="absolute inset-3 z-20 flex min-h-0 flex-col rounded-xl border border-slate-700 bg-[#06101d] shadow-[0_24px_70px_rgba(0,0,0,0.58)]">
-          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 bg-[#081624] px-4 py-3">
+        <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-[rgba(7,13,22,0.98)]">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800/80 px-6 py-4">
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <FileText className="h-4 w-4 shrink-0 text-emerald-300" />
@@ -142,13 +142,13 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
               type="button"
               onClick={closePreview}
               aria-label="关闭预览"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-slate-700 bg-slate-900/60 text-slate-300 transition hover:border-slate-500 hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-400/50"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800/80 hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-400/50"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="scrollbar-thin min-h-0 flex-1 overflow-auto bg-[#050d18] px-4 py-4">
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-auto px-6 py-5">
             {loading ? (
               <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
