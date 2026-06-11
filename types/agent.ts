@@ -1,6 +1,14 @@
 export type AgentName = "Lucy" | "Ray" | "Tiger" | "Musk";
 export type AgentMentionTarget = "Auto" | AgentName;
-export type ProjectId = "demo-project" | "free-project";
+export type ProjectId = string;
+
+export type ProjectProfile = {
+  id: ProjectId;
+  name: string;
+  mode: string;
+  description: string;
+  createdAt?: string;
+};
 
 export type AgentStatus =
   | "idle"
@@ -37,6 +45,16 @@ export type AguiIntent = {
   projectId: ProjectId;
   taskId?: string;
   message?: string;
+  attachments?: Array<{
+    id: string;
+    type: "image" | "file" | "url" | "markdown";
+    title: string;
+    accessUrl?: string;
+    sourceUrl?: string;
+    path?: string;
+    mimeType?: string;
+    description?: string;
+  }>;
   planId?: string;
   selectedTaskIds?: string[];
 };

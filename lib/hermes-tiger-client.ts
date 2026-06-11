@@ -1,5 +1,6 @@
 const DEFAULT_TIGER_BASE_URL = "http://127.0.0.1:18643/v1";
 const DEFAULT_CONVERSATION = "ag-ui-tiger";
+const DEFAULT_RESPONSE_TIMEOUT_MS = Number(process.env.AG_UI_HERMES_RESPONSE_TIMEOUT_MS || 180_000);
 
 export type HermesTigerErrorCode = "not_configured" | "unreachable" | "unauthorized" | "bad_response";
 
@@ -43,6 +44,15 @@ function headers(apiKey: string) {
   return {
     authorization: `Bearer ${apiKey}`,
     "content-type": "application/json"
+  };
+}
+
+function timeoutSignal(ms: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeout)
   };
 }
 
@@ -119,18 +129,25 @@ export async function sendTigerResponse(input: {
   if (model) body.model = model;
 
   let response: Response;
+  const timeout = timeoutSignal(DEFAULT_RESPONSE_TIMEOUT_MS);
   try {
     response = await fetch(`${baseUrl}/responses`, {
       method: "POST",
       headers: headers(apiKey),
       body: JSON.stringify(body),
-      cache: "no-store"
+      cache: "no-store",
+      signal: timeout.signal
     });
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new HermesTigerError("unreachable", `Tiger Hermes response timed out after ${DEFAULT_RESPONSE_TIMEOUT_MS}ms.`);
+    }
     throw new HermesTigerError(
       "unreachable",
       error instanceof Error ? error.message : "Tiger Hermes API Server is unreachable."
     );
+  } finally {
+    timeout.clear();
   }
 
   if (response.status === 401 || response.status === 403) {

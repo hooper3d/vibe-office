@@ -1,4 +1,5 @@
 import { EventType, type AGUIEvent, type RunAgentInput } from "@ag-ui/core";
+import { registerArtifactsFromText } from "@/lib/artifacts";
 import { runCodexExec } from "@/lib/codex-exec-adapter";
 import { buildCommandTemplate } from "@/lib/command-templates";
 import { readContextHubSnapshot } from "@/lib/context-hub";
@@ -7,6 +8,7 @@ import { sendMuskResponse } from "@/lib/hermes-musk-client";
 import { sendTigerResponse } from "@/lib/hermes-tiger-client";
 import { runLocalAgentAction } from "@/lib/local-agent-runtime";
 import {
+  inferLucyPlanStage,
   readLucyPlan,
   sortTasksForExecution,
   updateLucyPlan,
@@ -23,6 +25,15 @@ export const dynamic = "force-dynamic";
 
 const encoder = new TextEncoder();
 
+const ARTIFACT_OUTPUT_PROTOCOL = `Artifact output protocol:
+- When your response includes any generated or delivered artifact, include one JSON object in the final response.
+- Artifacts include images, downloadable files, markdown documents, public URLs, deployment URLs, and workspace-local files.
+- JSON shape:
+{"artifacts":[{"type":"image|file|url|markdown","title":"Short title","url":"https://...","mimeType":"image/png","description":"What this artifact is"}]}
+- Use "url" or "sourceUrl" for public http(s) links.
+- Use "path" only for files inside the AG_UI workspace that Vibe Office can safely read.
+- Keep normal text concise; the JSON lets Vibe Office render preview and download cards.`;
+
 function toSse(event: AGUIEvent) {
   return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 }
@@ -34,13 +45,14 @@ function wait(ms: number) {
 function getIntent(input: RunAgentInput): AguiIntent {
   const state = input.state as { intent?: Partial<AguiIntent> };
   const intent = state.intent || {};
-  const projectId = intent.projectId === "free-project" ? "free-project" : "demo-project";
+  const projectId = typeof intent.projectId === "string" && intent.projectId.trim() ? intent.projectId.trim() : "demo-project";
   return {
     action: (intent.action || "dispatch_to_ray") as AgentAction,
     targetAgent: (intent.targetAgent || "Ray") as AgentName,
     projectId,
     taskId: intent.taskId || "task-001",
     message: intent.message,
+    attachments: Array.isArray(intent.attachments) ? intent.attachments : undefined,
     planId: intent.planId,
     selectedTaskIds: intent.selectedTaskIds
   };
@@ -159,11 +171,38 @@ function extractJsonObject(text: string) {
   return candidate.slice(start, end + 1);
 }
 
-function buildHermesPlanPrompt(requirement: string) {
+function formatAttachmentContext(attachments?: AguiIntent["attachments"]) {
+  if (!attachments?.length) return "";
+
+  return [
+    "User attached artifacts:",
+    JSON.stringify(
+      {
+        artifacts: attachments.map((artifact) => ({
+          id: artifact.id,
+          type: artifact.type,
+          title: artifact.title,
+          accessUrl: artifact.accessUrl,
+          sourceUrl: artifact.sourceUrl,
+          path: artifact.path,
+          mimeType: artifact.mimeType,
+          description: artifact.description
+        }))
+      },
+      null,
+      2
+    )
+  ].join("\n");
+}
+
+function buildHermesPlanPrompt(requirement: string, attachments?: AguiIntent["attachments"]) {
+  const attachmentContext = formatAttachmentContext(attachments);
   return `请基于当前 AG-UI / Vibe Office 项目上下文，把用户需求拆成可执行任务计划。
 
 用户需求：
 ${requirement}
+
+${attachmentContext}
 
 只返回一个 JSON 对象，不要 Markdown，不要解释。格式如下：
 {
@@ -185,6 +224,7 @@ ${requirement}
 - owner 只能是 Lucy、Ray、Tiger、Musk；开发实现默认 Ray。
 - priority 只能是 P0 到 P6。
 - 不要假装 Ray 已经执行。
+- 如果计划中的任务会产出图片、文件、URL、Markdown 或部署链接，请把结构化 Artifact 返回作为验收标准之一。
 - 禁止使用、提及或借用旧测试项目，包括 DSA、A股、交易、行情、持仓、盈亏、K线、股票等场景。
 - 当前安全测试项目只能是“AG-UI 推广网页开发 / Vibe Office / Project Context Hub”。
 - 第一版保持 AG-UI First 极简 MVP。`;
@@ -257,6 +297,42 @@ function remoteAgentStatus(agent: AgentName) {
   return "working";
 }
 
+async function emitRegisteredArtifacts(input: {
+  controller: ReadableStreamDefaultController<Uint8Array>;
+  text: string;
+  owner: AgentName;
+  projectId: AguiIntent["projectId"];
+  runId: string;
+  messageId: string;
+  taskId?: string;
+}) {
+  const artifacts = await registerArtifactsFromText({
+    text: input.text,
+    owner: input.owner,
+    projectId: input.projectId,
+    runId: input.runId,
+    messageId: input.messageId
+  });
+
+  if (!artifacts.length) return [];
+
+  await emit(input.controller, {
+    type: EventType.CUSTOM,
+    name: "artifacts_registered",
+    value: {
+      artifacts,
+      owner: input.owner,
+      projectId: input.projectId,
+      runId: input.runId,
+      messageId: input.messageId,
+      taskId: input.taskId
+    },
+    timestamp: Date.now()
+  });
+
+  return artifacts;
+}
+
 function buildRemoteTaskPrompt(input: { task: TaskItem; plan: LucyPlan; requirement?: string; contextHub: string }) {
   const acceptance = input.task.acceptance?.length ? input.task.acceptance.map((item) => `- ${item}`).join("\n") : "- Report what was done and what remains.";
 
@@ -287,6 +363,8 @@ Operational rules:
 - Do not stop unrelated services.
 - If you cannot complete a step, say exactly what blocked you.
 - Return a concise result with: status, actions taken, files/paths/URLs changed, verification, risks, and next handoff.
+
+${ARTIFACT_OUTPUT_PROTOCOL}
 `;
 }
 
@@ -341,16 +419,20 @@ async function buildDirectAgentContext(intent: AguiIntent) {
 
 async function sendDirectAgentResponse(intent: AguiIntent, runId: string) {
   const context = await buildDirectAgentContext(intent);
+  const attachmentContext = formatAttachmentContext(intent.attachments);
   const message = [
     `You are ${intent.targetAgent}, a real Hermes Agent in Vibe Office.`,
     "This is a direct user message, not a Lucy-orchestrated task.",
     "Do not pretend another agent completed work.",
     "For simple requests, answer directly. For complex requests, say whether it should be escalated to Lucy for planning.",
+    ARTIFACT_OUTPUT_PROTOCOL,
     "",
     context,
     "",
     "User message:",
-    intent.message || ""
+    intent.message || "",
+    attachmentContext ? "\nAttached image/file context:" : "",
+    attachmentContext
   ].join("\n");
   const conversation = `ag-ui-direct-${intent.projectId}-${intent.targetAgent.toLowerCase()}`;
 
@@ -414,6 +496,14 @@ async function streamDirectAgentMessage(input: {
       messageId: input.messageId,
       delta: outputText,
       timestamp: Date.now()
+    });
+    await emitRegisteredArtifacts({
+      controller: input.controller,
+      text: outputText,
+      owner: input.intent.targetAgent,
+      projectId: input.intent.projectId,
+      runId: input.runId,
+      messageId: input.messageId
     });
     await emit(input.controller, {
       type: EventType.STATE_DELTA,
@@ -591,6 +681,7 @@ async function streamHermesLucyRequirement(input: {
   messageId: string;
 }) {
   const toolCallId = `tool_hermes_lucy_${input.runId}`;
+  const conversation = `ag-ui-lucy-${input.intent.projectId}`;
 
   await emit(input.controller, {
     type: EventType.STATE_DELTA,
@@ -610,15 +701,15 @@ async function streamHermesLucyRequirement(input: {
     delta: JSON.stringify({
       baseUrl: process.env.HERMES_API_BASE_URL || "http://127.0.0.1:8642/v1",
       endpoint: "/responses",
-      conversation: "ag-ui-lucy"
+      conversation
     }),
     timestamp: Date.now()
   }, 0);
 
   try {
     const lucy = await sendLucyResponse({
-      message: input.intent.message || "",
-      conversation: "ag-ui-lucy"
+      message: [input.intent.message || "", formatAttachmentContext(input.intent.attachments)].filter(Boolean).join("\n\n"),
+      conversation
     });
 
     await emit(input.controller, {
@@ -631,7 +722,7 @@ async function streamHermesLucyRequirement(input: {
       name: "hermes_lucy_response",
       value: {
         connected: true,
-        conversation: "ag-ui-lucy"
+        conversation
       },
       timestamp: Date.now()
     });
@@ -808,6 +899,7 @@ async function streamLucyPlan(input: {
   const existingPlan = await readLucyPlan();
   const requirement = input.intent.message || existingPlan?.requirement || "";
   const toolCallId = `tool_hermes_lucy_plan_${input.runId}`;
+  const conversation = `ag-ui-lucy-${input.intent.projectId}`;
 
   await emit(input.controller, {
     type: EventType.STATE_DELTA,
@@ -826,7 +918,7 @@ async function streamLucyPlan(input: {
     toolCallId,
     delta: JSON.stringify({
       endpoint: "/responses",
-      conversation: "ag-ui-lucy",
+      conversation,
       format: "json_plan"
     }),
     timestamp: Date.now()
@@ -834,8 +926,8 @@ async function streamLucyPlan(input: {
 
   try {
     const lucy = await sendLucyResponse({
-      message: buildHermesPlanPrompt(requirement),
-      conversation: "ag-ui-lucy"
+      message: buildHermesPlanPrompt(requirement, input.intent.attachments),
+      conversation
     });
     const plan = parseHermesLucyPlan({ text: lucy.text, requirement, existingPlan });
     await writeLucyPlan(plan);
@@ -1005,7 +1097,8 @@ async function streamSelectedTasks(input: {
 
   const summaries: string[] = [];
   let hasFailure = false;
-  const taskResults = new Map<string, { status: "reviewing" | "blocked" | "deferred"; summary: string }>();
+  let hasDisabledLocalRunner = false;
+  const taskResults = new Map<string, { status: "completed" | "reviewing" | "blocked" | "deferred" | "selected"; summary: string }>();
 
   const executingPlan: LucyPlan = {
     ...plan,
@@ -1083,6 +1176,7 @@ async function streamSelectedTasks(input: {
     let mode = task.owner === "Ray" ? "local" : "hermes";
     let exitCode: number | null = 0;
     let error: string | undefined;
+    let enabled = true;
 
     if (task.owner === "Ray") {
       const taskIntent = intentForTask(task);
@@ -1093,7 +1187,12 @@ async function streamSelectedTasks(input: {
         command: localRun.command,
         runId: input.runId + "_" + task.id
       });
-      failed = !codexRun.enabled || Boolean(codexRun.error) || codexRun.exitCode !== 0;
+      enabled = codexRun.enabled;
+      if (!codexRun.enabled) {
+        hasDisabledLocalRunner = true;
+      } else {
+        failed = Boolean(codexRun.error) || codexRun.exitCode !== 0;
+      }
       outputText = codexRun.outputText || "";
       outputFile = codexRun.outputFile;
       mode = codexRun.mode || mode;
@@ -1114,15 +1213,36 @@ async function streamSelectedTasks(input: {
       }
     }
 
-    const deliveryIssue = !failed ? validateTaskDelivery(task, outputText) : "";
+    const deliveryIssue = enabled && !failed ? validateTaskDelivery(task, outputText) : "";
     if (deliveryIssue) {
       failed = true;
       error = deliveryIssue;
     }
 
+    const artifacts = outputText
+      ? await emitRegisteredArtifacts({
+          controller: input.controller,
+          text: outputText,
+          owner: task.owner,
+          projectId: input.intent.projectId,
+          runId: input.runId,
+          messageId: input.messageId,
+          taskId: task.id
+        })
+      : [];
+
     hasFailure = hasFailure || failed;
-    const summary = `${task.id} ${task.title}: ${failed ? `${task.owner} needs attention${error ? ` (${error})` : ""}` : `${task.owner} finished; awaiting review`}`;
-    taskResults.set(task.id, { status: failed ? "blocked" : "reviewing", summary });
+    const resultStatus = !enabled ? "selected" : failed ? "blocked" : task.owner === "Lucy" ? "completed" : "reviewing";
+    const summary = !enabled
+      ? `${task.id} ${task.title}: Ray runner is not enabled; task remains selected.`
+      : `${task.id} ${task.title}: ${
+          failed
+            ? `${task.owner} needs attention${error ? ` (${error})` : ""}`
+            : task.owner === "Lucy"
+              ? "Lucy finished and marked the task completed"
+              : `${task.owner} finished; awaiting review`
+        }`;
+    taskResults.set(task.id, { status: resultStatus, summary });
     summaries.push(summary);
 
     await emit(input.controller, {
@@ -1132,12 +1252,13 @@ async function streamSelectedTasks(input: {
         taskId: task.id,
         owner: task.owner,
         exitCode,
-        enabled: true,
+        enabled,
         mode,
         outputFile,
         outputText: outputText.slice(0, 1200),
+        artifacts,
         error,
-        awaitingLucyReview: !failed && task.owner !== "Lucy"
+        awaitingLucyReview: enabled && !failed && task.owner !== "Lucy"
       },
       timestamp: Date.now()
     });
@@ -1145,24 +1266,30 @@ async function streamSelectedTasks(input: {
       type: EventType.STATE_DELTA,
       delta: [
         { op: "replace", path: "/agents/" + task.owner + "/status", value: "ready" },
-        { op: "replace", path: "/tasks/" + task.id + "/status", value: failed ? "blocked" : "reviewing" },
-        { op: "replace", path: "/tasks/" + task.id + "/planStatus", value: failed ? "blocked" : "selected" }
+        { op: "replace", path: "/tasks/" + task.id + "/status", value: !enabled ? "waiting" : failed ? "blocked" : task.owner === "Lucy" ? "ready" : "reviewing" },
+        { op: "replace", path: "/tasks/" + task.id + "/planStatus", value: resultStatus }
       ],
       timestamp: Date.now()
     });
   }
 
-  const nextPlan = await updateLucyPlan((current) => ({
-    ...(current || executingPlan),
-    stage: hasFailure ? "blocked" : "reviewing",
-    tasks: (current || executingPlan).tasks.map((task) => {
+  const nextPlan = await updateLucyPlan((current) => {
+    const tasks: TaskItem[] = (current || executingPlan).tasks.map((task): TaskItem => {
       if (!selectedIds.has(task.id)) return task;
       const result = taskResults.get(task.id);
       if (result?.status === "blocked") return { ...task, planStatus: "blocked", status: "blocked" };
       if (result?.status === "deferred") return { ...task, planStatus: "deferred", status: "waiting" };
-      return { ...task, planStatus: "selected", status: "reviewing" };
-    })
-  }));
+      if (result?.status === "selected") return { ...task, planStatus: "selected", status: "waiting" };
+      if (result?.status === "completed") return { ...task, selected: false, planStatus: "completed", status: "ready" };
+      return { ...task, planStatus: "reviewing", status: "reviewing" };
+    });
+
+    return {
+      ...(current || executingPlan),
+      stage: hasFailure ? "blocked" : hasDisabledLocalRunner ? "planned" : inferLucyPlanStage(tasks),
+      tasks
+    };
+  });
 
   await emit(input.controller, {
     type: EventType.CUSTOM,
@@ -1170,13 +1297,13 @@ async function streamSelectedTasks(input: {
     value: {
       plan: nextPlan,
       summaries,
-      awaitingLucyReview: !hasFailure
+      awaitingLucyReview: !hasFailure && !hasDisabledLocalRunner && Array.from(taskResults.values()).some((result) => result.status === "reviewing")
     },
     timestamp: Date.now()
   });
   await emit(input.controller, {
     type: EventType.STATE_DELTA,
-    delta: [{ op: "replace", path: "/agents/Lucy/status", value: hasFailure ? "ready" : "waiting" }],
+    delta: [{ op: "replace", path: "/agents/Lucy/status", value: nextPlan.stage === "reviewing" ? "waiting" : "ready" }],
     timestamp: Date.now()
   });
   await emit(input.controller, {
@@ -1194,8 +1321,14 @@ async function streamSelectedTasks(input: {
     message: input.intent.message,
     messageId: input.messageId,
     status: hasFailure ? "needs_attention" : "success",
-    resultStatus: hasFailure ? "needs_attention" : "awaiting_lucy_review",
-    notice: hasFailure ? "Agent ?????????????" : "Agent ??????? Lucy ?????",
+    resultStatus: hasFailure ? "needs_attention" : hasDisabledLocalRunner ? "ray_runner_disabled" : nextPlan.stage === "reviewing" ? "awaiting_lucy_review" : "completed",
+    notice: hasFailure
+      ? "Agent task needs attention."
+      : hasDisabledLocalRunner
+        ? "Ray runner is not enabled; selected task remains queued."
+        : nextPlan.stage === "reviewing"
+          ? "Agent task is ready for Lucy review."
+          : "Agent task completed.",
     outputText: summaries.join("\n")
   });
 }
@@ -1210,7 +1343,11 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   const codexToolCallId = `tool_codex_${runId}`;
   const rayToolCallId = `tool_ray_execute_${runId}`;
   const lucyToolCallId = `tool_lucy_review_${runId}`;
-  const task = initialTasks.find((item) => item.id === intent.taskId) || initialTasks[0];
+  const currentPlan = await readLucyPlan().catch(() => null);
+  const task =
+    currentPlan?.tasks.find((item) => item.id === intent.taskId) ||
+    initialTasks.find((item) => item.id === intent.taskId) ||
+    initialTasks[0];
   const copy = actionCopy(intent.action);
   const triage = intent.action === "submit_requirement_to_lucy" ? triageRequirement(intent.message) : undefined;
   const shouldHandoffToRay = intent.action === "submit_requirement_to_lucy";
@@ -1659,15 +1796,55 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   const finalAgentDeltas = Array.from(finalAgentPaths).map((path) => {
     return { op: "replace", path, value: "ready" };
   });
+  let reviewedPlan: LucyPlan | null = null;
+
+  if (intent.action === "ask_lucy_review" && currentPlan?.tasks.some((item) => item.id === task.id)) {
+    reviewedPlan = await updateLucyPlan((current) => {
+      const plan = current || currentPlan;
+      const nextStatus: TaskItem["status"] = hasRunFailure ? "blocked" : "ready";
+      const nextPlanStatus: TaskItem["planStatus"] = hasRunFailure ? "blocked" : "completed";
+      const nextTasks = plan.tasks.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              selected: false,
+              status: nextStatus,
+              planStatus: nextPlanStatus
+            }
+          : item
+      );
+      const hasOpenTasks = nextTasks.some((item) => item.planStatus !== "completed" && item.planStatus !== "deferred");
+
+      return {
+        ...plan,
+        stage: hasRunFailure ? "blocked" : hasOpenTasks ? "planned" : "completed",
+        tasks: nextTasks
+      };
+    });
+  }
 
   await emit(controller, {
     type: EventType.STATE_DELTA,
     delta: [
       ...finalAgentDeltas,
-      { op: "replace", path: `/tasks/${task.id}/status`, value: finalTaskStatus }
+      { op: "replace", path: `/tasks/${task.id}/status`, value: finalTaskStatus },
+      ...(intent.action === "ask_lucy_review"
+        ? [{ op: "replace", path: `/tasks/${task.id}/planStatus`, value: hasRunFailure ? "blocked" : "completed" }]
+        : [])
     ],
     timestamp: Date.now()
   });
+  if (reviewedPlan) {
+    await emit(controller, {
+      type: EventType.CUSTOM,
+      name: "lucy_plan_completed",
+      value: {
+        plan: reviewedPlan,
+        reviewedTaskId: task.id
+      },
+      timestamp: Date.now()
+    });
+  }
 
   await emit(controller, {
     type: EventType.TOOL_CALL_END,

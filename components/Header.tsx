@@ -1,10 +1,12 @@
-import { ShieldAlert, Sparkles } from "lucide-react";
+import { Code2, ShieldAlert, Sparkles } from "lucide-react";
 
 type HeaderProps = {
   connection: "Local Connected" | "Streaming" | "Error";
+  eventStreamOpen?: boolean;
+  onToggleEventStream?: () => void;
 };
 
-export function Header({ connection }: HeaderProps) {
+export function Header({ connection, eventStreamOpen = false, onToggleEventStream }: HeaderProps) {
   const isError = connection === "Error";
   const isStreaming = connection === "Streaming";
 
@@ -26,6 +28,19 @@ export function Header({ connection }: HeaderProps) {
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-4">
+        <button
+          type="button"
+          onClick={onToggleEventStream}
+          aria-pressed={eventStreamOpen}
+          className={`top-control hidden h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition md:flex ${
+            eventStreamOpen ? "text-cyan-200" : "text-slate-300 hover:text-slate-100"
+          }`}
+          title="查看 AG-UI Event Stream"
+        >
+          <Code2 className="h-4 w-4" />
+          <span>AG-UI Event Stream</span>
+        </button>
+
         <div
           className={`top-control hidden h-9 min-w-44 items-center justify-center gap-2.5 rounded-lg px-3 text-sm font-medium md:flex ${
             isError ? "text-red-300" : isStreaming ? "text-blue-300" : "text-emerald-300"

@@ -2,7 +2,7 @@ import type { AgentName, AgentStatus } from "./agent";
 
 export type TaskPriority = "P0" | "P1" | "P2" | "P3" | "P4" | "P5" | "P6";
 
-export type TaskPlanStatus = "planned" | "selected" | "executing" | "completed" | "blocked" | "deferred";
+export type TaskPlanStatus = "planned" | "selected" | "executing" | "reviewing" | "completed" | "blocked" | "deferred";
 
 export type TaskItem = {
   id: string;

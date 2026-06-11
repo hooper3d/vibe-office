@@ -30,6 +30,13 @@ function canWrite(intent: AguiIntent) {
   return process.env.AG_UI_CODEX_WRITE_ACTIONS === "1";
 }
 
+export function getCodexExecStatus() {
+  return {
+    enabled: isEnabled(),
+    rayWorkspaceWriteEnabled: process.env.AG_UI_CODEX_WRITE_ACTIONS === "1"
+  };
+}
+
 function relativeOutputFile(agent: AgentName, runId: string) {
   return `ops/runs/${agent.toUpperCase()}_${runId}.md`;
 }

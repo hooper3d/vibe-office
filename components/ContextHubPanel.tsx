@@ -1,10 +1,13 @@
 "use client";
 
-import { AlertTriangle, Bot, Clock3, Database, FileText, Loader2, X } from "lucide-react";
+import { AlertTriangle, Bot, Clock3, Database, ExternalLink, FileText, ImageIcon, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { contextHubOverview } from "@/lib/mock-data";
+import type { ProjectId } from "@/types/agent";
+import type { Artifact } from "@/types/artifact";
 
 type ContextHubPanelProps = {
+  projectId: ProjectId;
   className?: string;
 };
 
@@ -30,6 +33,11 @@ type ContextFilesMetadataResponse = {
   files: ContextFileMetadata[];
 };
 
+type ArtifactsResponse = {
+  ok: boolean;
+  artifacts: Artifact[];
+};
+
 function formatUpdatedAt(value: string | null) {
   if (!value) return "暂无更新";
 
@@ -48,6 +56,23 @@ function isRecentlyUpdated(value: string | null) {
   if (Number.isNaN(updatedAt)) return false;
 
   return Date.now() - updatedAt < 2 * 60 * 60 * 1000;
+}
+
+function formatArtifactTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
+}
+
+function artifactTypeLabel(type: Artifact["type"]) {
+  if (type === "image") return "Image";
+  if (type === "markdown") return "Markdown";
+  if (type === "file") return "File";
+  return "URL";
 }
 
 function MarkdownPreview({ content }: { content: string }) {
@@ -88,14 +113,16 @@ function MarkdownPreview({ content }: { content: string }) {
   );
 }
 
-export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
+export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [preview, setPreview] = useState<ContextFilePreview | null>(null);
   const [metadataByFile, setMetadataByFile] = useState<Record<string, ContextFileMetadata>>({});
   const [changedFiles, setChangedFiles] = useState<Set<string>>(new Set());
   const [acknowledgedUpdates, setAcknowledgedUpdates] = useState<Record<string, string | null>>({});
+  const [recentArtifacts, setRecentArtifacts] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const usesDefaultContextFiles = projectId === "demo-project";
 
   useEffect(() => {
     let active = true;
@@ -135,6 +162,35 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
       window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadArtifacts() {
+      try {
+        const response = await fetch(`/api/artifacts?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store" });
+        const data = (await response.json()) as ArtifactsResponse;
+        if (!active || !response.ok || !data.ok) return;
+
+        setRecentArtifacts(
+          [...data.artifacts]
+            .filter((artifact) => artifact.projectId === projectId)
+            .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+            .slice(0, 5)
+        );
+      } catch {
+        if (active) setRecentArtifacts([]);
+      }
+    }
+
+    void loadArtifacts();
+    const interval = window.setInterval(loadArtifacts, 10000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [projectId]);
 
   async function openPreview(file: string, acknowledgedUpdatedAt?: string | null) {
     setSelectedFile(file);
@@ -177,7 +233,7 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
       <div className="mb-5 flex min-w-0 shrink-0 items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <Database className="h-5 w-5 text-emerald-300" />
-          <h2 className="truncate text-base font-semibold text-slate-100">Project Context Hub</h2>
+          <h2 className="truncate text-base font-semibold text-slate-100">Archive Library</h2>
         </div>
         <div className="soft-pill h-7 max-w-20 shrink-0 truncate bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
           共享记忆
@@ -185,7 +241,15 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
       </div>
 
       <div className="scrollbar-thin min-h-0 flex-1 space-y-2 overflow-auto pr-1">
-        {contextHubOverview.map((item) => {
+        {!usesDefaultContextFiles ? (
+          <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-950/10 px-6 text-center">
+            <p className="text-sm font-semibold text-slate-300">这个项目还没有共享记忆文件</p>
+            <p className="mt-2 max-w-[260px] text-xs leading-5 text-slate-500">
+              新项目会先保持干净，只显示本项目产生的任务、对话和产物。
+            </p>
+          </div>
+        ) : null}
+        {usesDefaultContextFiles ? contextHubOverview.map((item) => {
           const metadata = metadataByFile[item.file];
           const hasChanged = changedFiles.has(item.file);
           const hasBeenSeen = acknowledgedUpdates[item.file] === (metadata?.updatedAt ?? null);
@@ -230,8 +294,63 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
               </div>
             </button>
           );
-        })}
+        }) : null}
       </div>
+
+      {recentArtifacts.length ? (
+        <div className="mt-4 shrink-0 border-t border-slate-800/80 pt-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="truncate text-xs font-semibold uppercase text-slate-500">Recent Artifacts</p>
+            {usesDefaultContextFiles ? (
+              <button
+                type="button"
+                onClick={() => openPreview("ARTIFACTS.md", metadataByFile["ARTIFACTS.md"]?.updatedAt ?? null)}
+                className="text-xs font-semibold text-emerald-300 transition hover:text-emerald-200"
+              >
+                ARTIFACTS.md
+              </button>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            {recentArtifacts.map((artifact) => {
+              const href = artifact.accessUrl || artifact.sourceUrl || "";
+              return (
+                <div
+                  key={artifact.id}
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_32px] gap-2 rounded-lg border border-slate-800 bg-slate-950/18 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {artifact.type === "image" ? (
+                        <ImageIcon className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+                      ) : (
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                      )}
+                      <span className="truncate text-xs font-semibold text-slate-100">{artifact.title}</span>
+                    </div>
+                    <p className="mt-1 truncate text-[11px] leading-4 text-slate-500">
+                      {artifactTypeLabel(artifact.type)} / {artifact.owner} / {formatArtifactTime(artifact.createdAt)}
+                    </p>
+                  </div>
+                  {href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                      title="打开产物"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  ) : (
+                    <span />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {selectedFile ? (
         <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-[rgba(7,13,22,0.98)]">

@@ -620,3 +620,33 @@ Agent：Ray
 - 图片气泡和文件卡片。
 - Project Context Hub 产物归档。
 - Hermes Agent 结构化 artifact 返回协议。
+
+## 2026-06-11 · Lucy 开发记录：Agent 办公桌物件语义设计
+
+时间：2026-06-11
+Agent：Lucy
+动作：design_agent_desk_objects
+任务：agent-office-canvas-task-004 · 设计每个 Agent 的办公桌物件
+
+结果：
+- 定义 desk cluster 三物件模型：产出箱（按 artifact owner 分组）、桌面/草稿（进行中任务）、垃圾桶（归档/废弃入口）。
+- 为 Lucy/Ray/Tiger/Musk 分别定义当前物件内容映射：
+  - Lucy 产出箱 1 件（Canvas v1 边界 markdown），桌面 2 件（#004/#006）；
+  - Ray 产出箱空，桌面 1 件（#003 详情卡坐标系）；
+  - Tiger 产出箱 1 件（Vibe Office App Icon），桌面空；
+  - Musk 全部空（离线占位）。
+- 明确视觉布局：三物件围绕 Agent 节点三角形分布，物件在 world 层随 pan/zoom，mini 浮层在 viewport overlay。
+- 硬约束：不改变 ARTIFACT_REGISTRY.json 位置和 /api/artifacts 接口。
+- 完整设计写入 ops/AGENT_DESK_DESIGN.md。
+- 交接给 Ray 执行 task-005（产出箱接入 Artifact registry）。
+
+
+## 2026-06-11T12:44:01.750Z · Ray 开发记录
+
+时间：2026-06-11T12:44:01.750Z
+Agent：Ray
+动作：dispatch_to_ray
+任务：把 Agent 产出箱接入 Artifact registry
+补充说明：在画布上为每个 Agent 显示产出入口，点击后按 owner 过滤 artifact。Tiger 产出箱应能看到当前真实图片产物。
+
+结果：已通过控制台派发开发任务，并沉淀到 Project Context Hub。

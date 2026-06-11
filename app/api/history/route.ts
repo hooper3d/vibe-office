@@ -1,4 +1,5 @@
 import { readRecentHistory, resetRunHistory } from "@/lib/run-history";
+import { getCodexExecStatus } from "@/lib/codex-exec-adapter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -6,7 +7,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const history = await readRecentHistory();
 
-  return Response.json(history, {
+  return Response.json({
+    ...history,
+    runnerStatus: getCodexExecStatus()
+  }, {
     headers: {
       "cache-control": "no-store"
     }

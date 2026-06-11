@@ -10,13 +10,15 @@ import { LucyConversationPanel, type LucyConversationMessage } from "@/component
 import { RequirementComposer } from "@/components/RequirementComposer";
 import { TaskList } from "@/components/TaskList";
 import { sendAguiInput } from "@/lib/agui-client";
-import { initialAgents, initialTasks } from "@/lib/mock-data";
+import { initialAgents, initialTasks, projects as initialProjects } from "@/lib/mock-data";
 import type {
   AgentAction,
   AgentName,
   AgentStatus as AgentStatusValue,
-  ProjectId
+  ProjectId,
+  ProjectProfile
 } from "@/types/agent";
+import type { Artifact } from "@/types/artifact";
 import type { ConsoleEvent } from "@/types/event";
 import type { LucyPlan, TaskItem, TaskPlanStatus, TaskPriority } from "@/types/task";
 
@@ -28,6 +30,12 @@ type HistoryResponse = {
     status?: string;
   } | null;
   lucyPlan?: LucyPlan | null;
+  runnerStatus?: RunnerStatus;
+};
+
+type RunnerStatus = {
+  enabled: boolean;
+  rayWorkspaceWriteEnabled: boolean;
 };
 
 type HermesAgentStatusResponse = {
@@ -47,11 +55,26 @@ type ComposerRoute = {
 
 type AgentConversations = Record<AgentName, LucyConversationMessage[]>;
 
+type ProjectRuntimeState = {
+  tasks: TaskItem[];
+  agents: typeof initialAgents;
+  events: ConsoleEvent[];
+  requirement: string;
+  lucyPlan: LucyPlan | null;
+  conversations: AgentConversations;
+  activeConversationAgent: AgentName;
+  lucyConversationActive: boolean;
+  pendingArtifacts: Artifact[];
+};
+
 const LUCY_SYSTEM_PREFIXES = [
   "Lucy 已收到控制台意图：提交需求。正在连接 Hermes Lucy。",
   "Lucy 已收到控制台意图：提交需求并编排。开始读取本地工作区上下文。",
   "Lucy 已收到控制台意图：生成 Lucy 任务计划。开始读取本地工作区上下文。"
 ];
+const PROJECTS_STORAGE_KEY = "vibe-office-projects-v1";
+const PROJECT_RUNTIME_STORAGE_KEY = "vibe-office-project-runtime-v1";
+const ACTIVE_PROJECT_STORAGE_KEY = "vibe-office-active-project-v1";
 
 function cleanLucyDelta(delta: string) {
   return LUCY_SYSTEM_PREFIXES.reduce((current, prefix) => current.replace(prefix, ""), delta);
@@ -116,6 +139,34 @@ function appendConversationDelta(
   return changed ? next : conversations;
 }
 
+function appendConversationArtifacts(
+  conversations: AgentConversations,
+  messageId: string,
+  artifacts: Artifact[]
+): AgentConversations {
+  const cleanArtifacts = artifacts.filter((artifact) => !artifact.sourceUrl || !/[-.,;:!?，。；：、）)\]】]$/.test(artifact.sourceUrl));
+  if (!cleanArtifacts.length) return conversations;
+
+  let changed = false;
+  const next = { ...conversations };
+
+  for (const agentName of Object.keys(next) as AgentName[]) {
+    const messages = next[agentName];
+    const messageIndex = messages.findIndex((message) => message.role === "agent" && message.id === messageId);
+    if (messageIndex < 0) continue;
+
+    changed = true;
+    next[agentName] = messages.map((message, index) => {
+      if (index !== messageIndex) return message;
+      const existingIds = new Set((message.artifacts || []).map((artifact) => artifact.id));
+      const newArtifacts = cleanArtifacts.filter((artifact) => !existingIds.has(artifact.id));
+      return { ...message, artifacts: [...(message.artifacts || []), ...newArtifacts] };
+    });
+  }
+
+  return changed ? next : conversations;
+}
+
 function buildConversationsFromEvents(events: ConsoleEvent[]) {
   let conversations = emptyConversations();
 
@@ -128,6 +179,7 @@ function buildConversationsFromEvents(events: ConsoleEvent[]) {
                 action?: string;
                 message?: string;
                 targetAgent?: string;
+                attachments?: Artifact[];
               };
             };
           }
@@ -141,7 +193,8 @@ function buildConversationsFromEvents(events: ConsoleEvent[]) {
         conversations = appendConversationMessage(conversations, targetAgent, {
           id: `user-${event.runId || event.timestamp || conversations[targetAgent].length}`,
           role: "user",
-          content: intent.message
+          content: intent.message,
+          artifacts: intent.attachments
         });
       }
     }
@@ -158,12 +211,19 @@ function buildConversationsFromEvents(events: ConsoleEvent[]) {
     if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
       conversations = appendConversationDelta(conversations, event.messageId, cleanLucyDelta(event.delta));
     }
+
+    if (event.type === EventType.CUSTOM && event.name === "artifacts_registered") {
+      const value = event.value as { messageId?: string; artifacts?: Artifact[] } | undefined;
+      if (value?.messageId && value.artifacts?.length) {
+        conversations = appendConversationArtifacts(conversations, value.messageId, value.artifacts);
+      }
+    }
   }
 
   return Object.fromEntries(
     (Object.keys(conversations) as AgentName[]).map((agentName) => [
       agentName,
-      conversations[agentName].filter((message) => message.content.trim())
+      conversations[agentName].filter((message) => message.content.trim() || message.artifacts?.length)
     ])
   ) as AgentConversations;
 }
@@ -196,6 +256,20 @@ function latestConversationAgentFromEvents(events: ConsoleEvent[]): AgentName | 
     }
   }
   return undefined;
+}
+
+function createEmptyProjectRuntime(): ProjectRuntimeState {
+  return {
+    tasks: [],
+    agents: initialAgents,
+    events: [],
+    requirement: "",
+    lucyPlan: null,
+    conversations: emptyConversations(),
+    activeConversationAgent: "Lucy",
+    lucyConversationActive: false,
+    pendingArtifacts: []
+  };
 }
 
 function clock() {
@@ -239,7 +313,7 @@ function isTaskPriority(value: unknown): value is TaskPriority {
 }
 
 function isTaskPlanStatus(value: unknown): value is TaskPlanStatus {
-  return value === "planned" || value === "selected" || value === "executing" || value === "completed" || value === "blocked" || value === "deferred";
+  return value === "planned" || value === "selected" || value === "executing" || value === "reviewing" || value === "completed" || value === "blocked" || value === "deferred";
 }
 
 function isPatch(item: unknown, path: string): item is { op: string; path: string; value: unknown } {
@@ -301,12 +375,14 @@ function replayStateDeltas<T>(items: T, events: ConsoleEvent[] | undefined, appl
 }
 
 export default function Home() {
+  const [projects, setProjects] = useState<ProjectProfile[]>(() => [...initialProjects]);
   const [tasks, setTasks] = useState<TaskItem[]>(initialTasks);
   const [agents, setAgents] = useState(initialAgents);
   const [events, setEvents] = useState<ConsoleEvent[]>([]);
   const [requirement, setRequirement] = useState("");
   const [running, setRunning] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [eventStreamOpen, setEventStreamOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [connection, setConnection] = useState<"Local Connected" | "Streaming" | "Error">("Local Connected");
   const [lucyPlan, setLucyPlan] = useState<LucyPlan | null>(null);
@@ -314,11 +390,160 @@ export default function Home() {
   const [conversations, setConversations] = useState<AgentConversations>(() => emptyConversations());
   const [activeProjectId, setActiveProjectId] = useState<ProjectId>("demo-project");
   const [activeConversationAgent, setActiveConversationAgent] = useState<AgentName>("Lucy");
+  const [pendingArtifacts, setPendingArtifacts] = useState<Artifact[]>([]);
+  const [artifactUploadBusy, setArtifactUploadBusy] = useState(false);
+  const [runnerStatus, setRunnerStatus] = useState<RunnerStatus>({ enabled: false, rayWorkspaceWriteEnabled: false });
+  const [projectRuntimeById, setProjectRuntimeById] = useState<Record<ProjectId, ProjectRuntimeState>>({});
+  const [projectStorageLoaded, setProjectStorageLoaded] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   const activeTask = useMemo(() => tasks.find((task) => task.status === "ready") || tasks[0] || initialTasks[0], [tasks]);
+  const selectedExecutableTasks = useMemo(
+    () => tasks.filter((task) => task.selected && task.planStatus !== "completed" && task.planStatus !== "executing" && task.planStatus !== "reviewing"),
+    [tasks]
+  );
+  const executionDisabledReason = useMemo(() => {
+    const hasRayTask = selectedExecutableTasks.some((task) => task.owner === "Ray");
+    if (!hasRayTask) return null;
+    if (!runnerStatus.enabled) return "Ray runner 未启用：请用 AG_UI_ENABLE_CODEX_EXEC=1 重启 3000 服务。";
+    if (!runnerStatus.rayWorkspaceWriteEnabled) return "Ray 写入模式未启用：请用 AG_UI_CODEX_WRITE_ACTIONS=1 重启 3000 服务。";
+    return null;
+  }, [runnerStatus.enabled, runnerStatus.rayWorkspaceWriteEnabled, selectedExecutableTasks]);
   const composerRoute = useMemo(() => extractComposerRoute(requirement, activeConversationAgent), [requirement, activeConversationAgent]);
   const activeConversationMessages = conversations[activeConversationAgent];
   const hasAnyConversation = hasConversationMessages(conversations);
+
+  function currentProjectRuntime(): ProjectRuntimeState {
+    return {
+      tasks,
+      agents,
+      events,
+      requirement,
+      lucyPlan,
+      conversations,
+      activeConversationAgent,
+      lucyConversationActive,
+      pendingArtifacts
+    };
+  }
+
+  function applyProjectRuntime(runtime: ProjectRuntimeState) {
+    setTasks(runtime.tasks);
+    setAgents(runtime.agents);
+    setEvents(runtime.events);
+    setRequirement(runtime.requirement);
+    setLucyPlan(runtime.lucyPlan);
+    setConversations(runtime.conversations);
+    setActiveConversationAgent(runtime.activeConversationAgent);
+    setLucyConversationActive(runtime.lucyConversationActive);
+    setPendingArtifacts(runtime.pendingArtifacts);
+    setConnection("Local Connected");
+  }
+
+  function switchProject(nextProjectId: ProjectId) {
+    if (nextProjectId === activeProjectId) return;
+    if (running) {
+      setNotice({ message: "任务运行中，先不要切换项目。", tone: "attention" });
+      window.setTimeout(() => setNotice(null), 3600);
+      return;
+    }
+
+    const currentRuntime = currentProjectRuntime();
+    const nextRuntime = projectRuntimeById[nextProjectId] || createEmptyProjectRuntime();
+    setProjectRuntimeById((current) => ({
+      ...current,
+      [activeProjectId]: currentRuntime,
+      [nextProjectId]: current[nextProjectId] || nextRuntime
+    }));
+    setActiveProjectId(nextProjectId);
+    applyProjectRuntime(nextRuntime);
+  }
+
+  function createProject(name: string) {
+    if (running) {
+      setNotice({ message: "任务运行中，先不要新建项目。", tone: "attention" });
+      window.setTimeout(() => setNotice(null), 3600);
+      return;
+    }
+
+    const cleanName = name.trim();
+    if (!cleanName) return;
+
+    const project: ProjectProfile = {
+      id: `project-${Date.now().toString(36)}`,
+      name: cleanName,
+      mode: "干净项目",
+      description: "独立任务、对话和产物测试空间",
+      createdAt: new Date().toISOString()
+    };
+    const emptyRuntime = createEmptyProjectRuntime();
+
+    setProjects((current) => [...current, project]);
+    setProjectRuntimeById((current) => ({
+      ...current,
+      [activeProjectId]: currentProjectRuntime(),
+      [project.id]: emptyRuntime
+    }));
+    setActiveProjectId(project.id);
+    applyProjectRuntime(emptyRuntime);
+    setNotice({ message: `已进入新项目：${project.name}`, tone: "success" });
+    window.setTimeout(() => setNotice(null), 3200);
+  }
+
+  useEffect(() => {
+    try {
+      const storedProjects = JSON.parse(window.localStorage.getItem(PROJECTS_STORAGE_KEY) || "null") as ProjectProfile[] | null;
+      const storedRuntime = JSON.parse(window.localStorage.getItem(PROJECT_RUNTIME_STORAGE_KEY) || "null") as Record<ProjectId, ProjectRuntimeState> | null;
+      const storedActiveProjectId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+
+      if (Array.isArray(storedProjects) && storedProjects.length) {
+        setProjects(storedProjects);
+      }
+      if (storedRuntime && typeof storedRuntime === "object") {
+        setProjectRuntimeById(storedRuntime);
+      }
+      if (storedActiveProjectId) {
+        const nextRuntime = storedRuntime?.[storedActiveProjectId] || (storedActiveProjectId === "demo-project" ? null : createEmptyProjectRuntime());
+        setActiveProjectId(storedActiveProjectId);
+        if (nextRuntime) {
+          applyProjectRuntime(nextRuntime);
+        }
+      }
+    } catch {
+      // Local project state is a convenience; ignore corrupted browser storage.
+    } finally {
+      setProjectStorageLoaded(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!projectStorageLoaded) return;
+
+    const runtimeById = {
+      ...projectRuntimeById,
+      [activeProjectId]: currentProjectRuntime()
+    };
+
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+    window.localStorage.setItem(PROJECT_RUNTIME_STORAGE_KEY, JSON.stringify(runtimeById));
+    window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, activeProjectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    projectStorageLoaded,
+    projects,
+    activeProjectId,
+    tasks,
+    agents,
+    events,
+    requirement,
+    lucyPlan,
+    conversations,
+    activeConversationAgent,
+    lucyConversationActive,
+    pendingArtifacts,
+    projectRuntimeById
+  ]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -327,6 +552,8 @@ export default function Home() {
   }, [events, autoScroll]);
 
   useEffect(() => {
+    if (!projectStorageLoaded || historyLoaded || activeProjectId !== "demo-project") return;
+
     let active = true;
 
     async function loadHistory() {
@@ -335,6 +562,10 @@ export default function Home() {
         if (!response.ok) return;
         const history = (await response.json()) as HistoryResponse;
         if (!active) return;
+
+        if (history.runnerStatus) {
+          setRunnerStatus(history.runnerStatus);
+        }
 
         if (history.events?.length) {
           setEvents(history.events);
@@ -356,6 +587,8 @@ export default function Home() {
         void history.lastResult;
       } catch {
         // History is an enhancement; the console can still run without it.
+      } finally {
+        if (active) setHistoryLoaded(true);
       }
     }
 
@@ -364,7 +597,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeProjectId, historyLoaded, projectStorageLoaded]);
 
   useEffect(() => {
     let active = true;
@@ -431,6 +664,14 @@ export default function Home() {
 
     if (event.type === EventType.CUSTOM) {
       const value = event.value as { plan?: LucyPlan } | undefined;
+      if (event.name === "artifacts_registered") {
+        const artifactValue = event.value as { messageId?: string; artifacts?: Artifact[] } | undefined;
+        if (artifactValue?.messageId && artifactValue.artifacts?.length) {
+          setConversations((current) =>
+            appendConversationArtifacts(current, artifactValue.messageId as string, artifactValue.artifacts as Artifact[])
+          );
+        }
+      }
       if (
         event.name === "lucy_clarification" ||
         event.name === "lucy_plan_ready" ||
@@ -477,10 +718,10 @@ export default function Home() {
   async function runAction(
     action: AgentAction,
     manualMessage?: string,
-    options?: { selectedTaskIds?: string[]; planId?: string; targetAgent?: AgentName }
+    options?: { selectedTaskIds?: string[]; planId?: string; targetAgent?: AgentName; attachments?: Artifact[]; taskId?: string }
   ) {
     const targetAgent = options?.targetAgent || targetForAction(action);
-    const taskId = activeTask.id;
+    const taskId = options?.taskId || activeTask.id;
     setRunning(true);
     setNotice(null);
     setConnection("Streaming");
@@ -492,6 +733,7 @@ export default function Home() {
         projectId: activeProjectId,
         taskId,
         message: manualMessage,
+        attachments: options?.attachments,
         selectedTaskIds: options?.selectedTaskIds,
         planId: options?.planId
       },
@@ -527,8 +769,9 @@ export default function Home() {
   async function submitRequirement() {
     const route = extractComposerRoute(requirement, activeConversationAgent);
     const targetAgent = route.target;
-    const message = route.message;
-    if (!message) return;
+    const attachments = pendingArtifacts;
+    const message = route.message || (attachments.length ? "请查看我粘贴的图片。" : "");
+    if (!message && !attachments.length) return;
     const action: AgentAction = targetAgent === "Lucy" ? "submit_requirement_to_lucy" : "manual_message";
     setLucyConversationActive(true);
     setActiveConversationAgent(targetAgent);
@@ -536,11 +779,51 @@ export default function Home() {
       appendConversationMessage(current, targetAgent, {
         id: `user-${Date.now()}`,
         role: "user",
-        content: message
+        content: message,
+        artifacts: attachments
       })
     );
     setRequirement("");
-    await runAction(action, message, { targetAgent });
+    setPendingArtifacts([]);
+    await runAction(action, message, { targetAgent, attachments });
+  }
+
+  async function handlePasteImages(files: File[]) {
+    if (!files.length) return;
+
+    setArtifactUploadBusy(true);
+    try {
+      const uploaded: Artifact[] = [];
+      for (const file of files) {
+        const formData = new FormData();
+        formData.set("file", file);
+        formData.set("projectId", activeProjectId);
+        formData.set("title", file.name && file.name !== "image.png" ? file.name : "Pasted image");
+
+        const response = await fetch("/api/artifacts/upload", {
+          method: "POST",
+          body: formData
+        });
+        const data = (await response.json()) as { ok: boolean; artifacts?: Artifact[]; error?: string };
+        if (!response.ok || !data.ok || !data.artifacts?.length) {
+          throw new Error(data.error || "图片粘贴失败");
+        }
+        uploaded.push(...data.artifacts);
+      }
+
+      setPendingArtifacts((current) => [...current, ...uploaded]);
+      setNotice({ message: `已粘贴 ${uploaded.length} 张图片。`, tone: "success" });
+      window.setTimeout(() => setNotice(null), 2600);
+    } catch (error) {
+      setNotice({ message: error instanceof Error ? error.message : "图片粘贴失败，需要处理。", tone: "attention" });
+      window.setTimeout(() => setNotice(null), 4200);
+    } finally {
+      setArtifactUploadBusy(false);
+    }
+  }
+
+  function removePendingArtifact(artifactId: string) {
+    setPendingArtifacts((current) => current.filter((artifact) => artifact.id !== artifactId));
   }
 
   async function generateLucyPlan() {
@@ -576,12 +859,15 @@ export default function Home() {
   }
 
   async function executeSelectedTasks() {
-    const selectedTaskIds = tasks
-      .filter((task) => task.selected && task.planStatus !== "completed" && task.planStatus !== "executing")
-      .map((task) => task.id);
+    const selectedTaskIds = selectedExecutableTasks.map((task) => task.id);
     if (!selectedTaskIds.length) {
       setNotice({ message: "请先勾选要执行的任务。", tone: "attention" });
       window.setTimeout(() => setNotice(null), 3600);
+      return;
+    }
+    if (executionDisabledReason) {
+      setNotice({ message: executionDisabledReason, tone: "attention" });
+      window.setTimeout(() => setNotice(null), 5200);
       return;
     }
     await runAction("execute_selected_tasks", lucyPlan?.requirement || requirement, {
@@ -590,35 +876,24 @@ export default function Home() {
     });
   }
 
-  async function resetHistory() {
-    const confirmed = window.confirm("重置会清空运行历史、事件流和最后结果，并把页面状态恢复初始值。确认继续？");
-    if (!confirmed) return;
+  async function requestCanvasReview(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
 
-    try {
-      const response = await fetch("/api/history", {
-        method: "DELETE",
-        cache: "no-store"
-      });
-      if (!response.ok) throw new Error(`Reset failed: ${response.status}`);
-
-      setTasks(initialTasks);
-      setAgents(initialAgents);
-      setEvents([]);
-      setLucyPlan(null);
-      setConversations(emptyConversations());
-      setLucyConversationActive(false);
-      setConnection("Local Connected");
-      setNotice({ message: "运行状态已重置。", tone: "success" });
-      window.setTimeout(() => setNotice(null), 3600);
-    } catch {
-      setNotice({ message: "重置失败，需要处理。", tone: "attention" });
-      window.setTimeout(() => setNotice(null), 5200);
-    }
+    await runAction("ask_lucy_review", `请 Lucy 验收 ${task.title}。Ray 已完成实现，等待验收闭环。`, {
+      taskId,
+      planId: lucyPlan?.id,
+      targetAgent: "Lucy"
+    });
   }
 
   return (
     <main className="mx-auto flex h-screen max-w-[1920px] flex-col overflow-hidden">
-      <Header connection={connection} />
+      <Header
+        connection={connection}
+        eventStreamOpen={eventStreamOpen}
+        onToggleEventStream={() => setEventStreamOpen((value) => !value)}
+      />
       {notice ? (
         <div
           className={`fixed right-8 top-28 z-30 rounded-xl px-5 py-3 text-sm font-semibold shadow-[0_18px_48px_rgba(0,0,0,0.3)] backdrop-blur ${
@@ -631,59 +906,30 @@ export default function Home() {
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] gap-7 overflow-hidden px-9 pb-6 pt-0 max-lg:grid-cols-1 max-md:px-5">
-        <div className="relative flex min-h-0 min-w-0 flex-col gap-5 overflow-visible">
-          {lucyConversationActive ? (
-            <>
-              <AgentStatus
-                agents={agents}
-                running={running}
-                connection={connection}
-                onReset={resetHistory}
-                selectedAgent={activeConversationAgent}
-                onSelectAgent={setActiveConversationAgent}
-                collapsed
-              />
-              <LucyConversationPanel
-                plan={activeConversationAgent === "Lucy" ? lucyPlan : null}
-                messages={activeConversationMessages}
-                running={running}
-                activeAgent={activeConversationAgent}
-                onGeneratePlan={generateLucyPlan}
-                onClose={() => setLucyConversationActive(false)}
-                className="min-h-0 flex-1"
-              />
-            </>
-          ) : (
+      {eventStreamOpen ? (
+        <div className="fixed right-8 top-24 z-[220] w-[min(760px,calc(100vw-64px))] overflow-hidden rounded-xl border border-slate-800 bg-[#08111d]/98 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur">
+          <EventStream events={events} autoScroll={autoScroll} onToggleAutoScroll={() => setAutoScroll((value) => !value)} />
+        </div>
+      ) : null}
+
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] gap-7 overflow-hidden px-9 pb-6 pt-0 max-xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)] max-lg:grid-cols-1 max-md:px-5">
+        <div className="relative grid min-h-0 min-w-0 grid-rows-[minmax(0,1.35fr)_minmax(240px,0.65fr)] gap-5 overflow-hidden">
+          <div className="min-h-0 min-w-0 overflow-visible">
             <AgentStatus
               agents={agents}
               running={running}
               connection={connection}
-              onReset={resetHistory}
+              projects={projects}
+              projectId={activeProjectId}
+              onProjectChange={switchProject}
+              onCreateProject={createProject}
+              tasks={tasks}
+              onReviewTask={requestCanvasReview}
               collapsed={false}
-              className="min-h-0 flex-1"
+              className="h-full"
             />
-          )}
-          <RequirementComposer
-            value={requirement}
-            running={running}
-            agents={agents}
-            projectId={activeProjectId}
-            target={composerRoute.target}
-            onProjectChange={setActiveProjectId}
-            onChange={setRequirement}
-            onSubmit={submitRequirement}
-            onOpenConversation={() => setLucyConversationActive(true)}
-            canOpenConversation={!lucyConversationActive && Boolean(hasAnyConversation || lucyPlan)}
-            className="shrink-0"
-          />
-        </div>
-
-        <div className="flex min-h-0 min-w-0 flex-col gap-5">
-          <div className="dark-panel min-h-[220px] shrink-0 overflow-hidden rounded-xl">
-            <EventStream events={events} autoScroll={autoScroll} onToggleAutoScroll={() => setAutoScroll((value) => !value)} />
           </div>
-          <div className="grid min-h-0 min-w-0 flex-1 grid-cols-2 gap-5 overflow-hidden max-xl:grid-cols-1">
+          <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-5 overflow-hidden max-xl:grid-cols-1">
             <TaskList
               tasks={tasks}
               className="h-full"
@@ -694,11 +940,37 @@ export default function Home() {
                 lucyPlan?.stage === "blocked"
               }
               running={running}
+              executionDisabledReason={executionDisabledReason}
               onToggleTask={togglePlannedTask}
               onExecuteSelected={executeSelectedTasks}
             />
-            <ContextHubPanel className="h-full" />
+            <ContextHubPanel projectId={activeProjectId} className="h-full" />
           </div>
+        </div>
+
+        <div className="flex min-h-0 min-w-0 flex-col gap-5">
+          <LucyConversationPanel
+            plan={activeConversationAgent === "Lucy" ? lucyPlan : null}
+            messages={activeConversationMessages}
+            running={running}
+            activeAgent={activeConversationAgent}
+            onGeneratePlan={generateLucyPlan}
+            className="min-h-0 flex-1"
+          />
+          <RequirementComposer
+            value={requirement}
+            running={running}
+            agents={agents}
+            projectId={activeProjectId}
+            target={composerRoute.target}
+            attachments={pendingArtifacts}
+            attachmentBusy={artifactUploadBusy}
+            onChange={setRequirement}
+            onSubmit={submitRequirement}
+            onPasteImages={handlePasteImages}
+            onRemoveAttachment={removePendingArtifact}
+            className="shrink-0"
+          />
         </div>
       </div>
     </main>

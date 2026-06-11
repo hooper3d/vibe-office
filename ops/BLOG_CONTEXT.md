@@ -8,11 +8,11 @@
 - Project Context Hub 负责沉淀共享上下文。
 
 开发过程摘要：
-时间：2026-06-10T17:10:44.848Z
+时间：2026-06-11T12:44:01.750Z
 Agent：Ray
 动作：dispatch_to_ray
-任务：Ray 沉淀部署验收记录到 Project Context Hub
-补充说明：将验收结果写入 DEV_LOG、RELEASE_NOTES 和 PROGRESS_SUMMARY：部署时间、Musk 提供的 URL、验收结论、发现的问题。
+任务：把 Agent 产出箱接入 Artifact registry
+补充说明：在画布上为每个 Agent 显示产出入口，点击后按 owner 过滤 artifact。Tiger 产出箱应能看到当前真实图片产物。
 
 可写入 Blog 的亮点：
 - 用户只需要提出目标和关键决策。

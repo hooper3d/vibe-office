@@ -72,7 +72,7 @@ export function StatusPill({ label, compact }: StatusPillProps) {
       } ${compact ? "min-w-12" : "min-w-20"}`}
     >
       {showDot ? <span className={`status-dot ${dot[text]}`} /> : null}
-      {displayText[text] || text}
+      {text === "reviewing" ? "待验收" : displayText[text] || text}
     </span>
   );
 }

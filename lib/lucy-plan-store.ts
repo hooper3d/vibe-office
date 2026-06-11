@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
-import type { AgentName } from "@/types/agent";
-import type { LucyPlan, TaskItem, TaskPriority } from "@/types/task";
+import type { AgentName, AgentStatus } from "@/types/agent";
+import type { LucyPlan, LucyWorkflowStage, TaskItem, TaskPlanStatus, TaskPriority } from "@/types/task";
 
 const WORKSPACE_ROOT = process.cwd();
 const OPS_DIR = path.join(WORKSPACE_ROOT, "ops");
@@ -16,6 +16,28 @@ const priorityOrder: Record<TaskPriority, number> = {
   P5: 5,
   P6: 6
 };
+
+const validAgentStatuses = new Set<AgentStatus>([
+  "idle",
+  "ready",
+  "waiting",
+  "working",
+  "coding",
+  "handoff",
+  "reviewing",
+  "blocked",
+  "offline"
+]);
+
+const validPlanStatuses = new Set<TaskPlanStatus>([
+  "planned",
+  "selected",
+  "executing",
+  "reviewing",
+  "completed",
+  "blocked",
+  "deferred"
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -155,6 +177,63 @@ function hasCorruptedText(value: unknown): boolean {
   return false;
 }
 
+function normalizeTaskStatus(task: TaskItem): TaskItem {
+  const rawStatus = String(task.status);
+  const rawPlanStatus = String(task.planStatus || "");
+  const planStatus = validPlanStatuses.has(rawPlanStatus as TaskPlanStatus)
+    ? (rawPlanStatus as TaskPlanStatus)
+    : rawStatus === "completed"
+      ? "completed"
+      : "planned";
+  const status = validAgentStatuses.has(rawStatus as AgentStatus)
+    ? task.status
+    : planStatus === "completed"
+      ? "ready"
+      : planStatus === "blocked"
+        ? "blocked"
+        : planStatus === "reviewing"
+          ? "reviewing"
+          : planStatus === "executing"
+            ? task.owner === "Ray"
+              ? "coding"
+              : "working"
+            : "waiting";
+
+  if (task.status === status && task.planStatus === planStatus && (planStatus !== "completed" || task.selected === false)) {
+    return task;
+  }
+
+  return {
+    ...task,
+    selected: planStatus === "completed" ? false : task.selected,
+    status,
+    planStatus
+  };
+}
+
+export function inferLucyPlanStage(tasks: TaskItem[]): LucyWorkflowStage {
+  if (!tasks.length) return "idle";
+  if (tasks.some((task) => task.planStatus === "blocked")) return "blocked";
+  if (tasks.some((task) => task.planStatus === "executing")) return "executing";
+  if (tasks.some((task) => task.planStatus === "reviewing")) return "reviewing";
+  if (tasks.some((task) => task.planStatus === "planned" || task.planStatus === "selected")) return "planned";
+  return "completed";
+}
+
+function normalizePlanState(plan: LucyPlan): LucyPlan {
+  const tasks = plan.tasks.map(normalizeTaskStatus);
+  const inferredStage = inferLucyPlanStage(tasks);
+  const stage = plan.stage === "clarifying" && !tasks.length ? plan.stage : inferredStage;
+
+  if (stage === plan.stage && tasks.every((task, index) => task === plan.tasks[index])) return plan;
+
+  return {
+    ...plan,
+    stage,
+    tasks
+  };
+}
+
 function repairLucyPlan(plan: LucyPlan): LucyPlan {
   const corrupted =
     hasCorruptedText(plan.summary) ||
@@ -162,7 +241,7 @@ function repairLucyPlan(plan: LucyPlan): LucyPlan {
     hasCorruptedText(plan.recommendation) ||
     plan.tasks.some((task) => hasCorruptedText([task.title, task.description, task.acceptance]));
 
-  if (!corrupted || hasCorruptedText(plan.requirement)) return plan;
+  if (!corrupted || hasCorruptedText(plan.requirement)) return normalizePlanState(plan);
 
   const repaired = plan.stage === "clarifying" ? buildLucyClarification(plan.requirement) : buildLucyTaskPlan(plan.requirement, plan);
 
@@ -267,7 +346,7 @@ export async function readLucyPlan(): Promise<LucyPlan | null> {
     const content = await fs.readFile(LUCY_PLAN_FILE, "utf8");
     const plan = JSON.parse(content) as LucyPlan;
     const repaired = repairLucyPlan(plan);
-    if (repaired !== plan) await writeLucyPlan(repaired);
+    if (JSON.stringify(repaired) !== JSON.stringify(plan)) await writeLucyPlan(repaired);
     return repaired;
   } catch (error) {
     const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;

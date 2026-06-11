@@ -7,6 +7,7 @@ type TaskListProps = {
   className?: string;
   selectable?: boolean;
   running?: boolean;
+  executionDisabledReason?: string | null;
   onToggleTask?: (taskId: string) => void;
   onExecuteSelected?: () => void;
 };
@@ -22,32 +23,46 @@ export function TaskList({
   className = "",
   selectable = false,
   running = false,
+  executionDisabledReason = null,
   onToggleTask,
   onExecuteSelected
 }: TaskListProps) {
   const selectedCount = tasks.filter((task) => task.selected).length;
+  const executableSelectedCount = tasks.filter(
+    (task) => task.selected && task.planStatus !== "completed" && task.planStatus !== "executing" && task.planStatus !== "reviewing"
+  ).length;
+  const executeDisabled = running || executableSelectedCount === 0 || Boolean(executionDisabledReason);
 
   return (
     <section className={`frost flex min-h-0 min-w-0 flex-col rounded-xl p-6 ${className}`}>
       <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <CheckSquare className="h-5 w-5 text-slate-300" />
-          <h2 className="text-base font-semibold text-slate-100">任务列表</h2>
+          <h2 className="text-base font-semibold text-slate-100">Task Desk</h2>
         </div>
         <span className="soft-pill bg-slate-500/10 px-2 py-0.5 text-xs text-slate-300">{tasks.length} 项</span>
       </div>
 
       {selectable ? (
         <div className="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2">
-          <span className="text-xs font-medium text-slate-400">已选择 {selectedCount} 项，按 P0 → P6 执行</span>
+          <span className="text-xs font-medium text-slate-400">
+            已选择 {selectedCount} 项，可执行 {executableSelectedCount} 项
+          </span>
           <button
             type="button"
             onClick={onExecuteSelected}
-            disabled={running || selectedCount === 0}
+            disabled={executeDisabled}
             className="inline-flex h-7 items-center justify-center gap-1.5 rounded-full bg-cyan-500/14 px-2.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            title={executionDisabledReason || undefined}
           >
             <Play className="h-3.5 w-3.5" />
+            {executionDisabledReason ? (
+              "Runner 未启用"
+            ) : (
+              <span>
             执行选中任务
+              </span>
+            )}
           </button>
         </div>
       ) : null}
@@ -75,7 +90,7 @@ export function TaskList({
                   <input
                     type="checkbox"
                     checked={Boolean(task.selected)}
-                    disabled={running || task.planStatus === "executing" || task.planStatus === "completed"}
+                    disabled={running || task.planStatus === "executing" || task.planStatus === "reviewing" || task.planStatus === "completed"}
                     onChange={() => onToggleTask?.(task.id)}
                     className="h-4 w-4 shrink-0 rounded border-slate-700 bg-slate-950 accent-cyan-400 disabled:opacity-40"
                     aria-label={`选择任务 ${task.title}`}

@@ -2,7 +2,9 @@
 
 import { ChevronDown, Sparkles } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { ArtifactCard } from "@/components/ArtifactCard";
 import type { AgentName } from "@/types/agent";
+import type { Artifact } from "@/types/artifact";
 import type { LucyPlan } from "@/types/task";
 
 export type LucyConversationMessage = {
@@ -10,6 +12,7 @@ export type LucyConversationMessage = {
   role: "user" | "agent";
   agentName?: AgentName;
   content: string;
+  artifacts?: Artifact[];
 };
 
 type LucyConversationPanelProps = {
@@ -21,6 +24,11 @@ type LucyConversationPanelProps = {
   onClose?: () => void;
   className?: string;
 };
+
+const userBubbleClass =
+  "ml-auto w-fit max-w-[82%] whitespace-pre-wrap break-words rounded-xl bg-sky-950/55 px-5 py-3 text-sm font-medium leading-6 text-sky-50 shadow-[inset_0_0_0_1px_rgba(125,211,252,0.16),inset_0_1px_0_rgba(255,255,255,0.07)]";
+
+const agentMessageClass = "w-fit max-w-[88%] whitespace-pre-wrap break-words px-1 py-2 text-sm leading-6 text-slate-200";
 
 export function LucyConversationPanel({
   plan,
@@ -77,27 +85,23 @@ export function LucyConversationPanel({
       <div ref={scrollRef} className="scrollbar-thin min-h-0 flex-1 space-y-3 overflow-auto pr-1">
         {hasMessages
           ? messages.map((message) => (
-              <div
-                key={message.id}
-                className={
-                  message.role === "user"
-                    ? "ml-auto w-fit max-w-[82%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-cyan-500/12 px-4 py-3 text-sm leading-6 text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)]"
-                    : "w-fit max-w-[88%] whitespace-pre-wrap break-words rounded-2xl rounded-tl-md border border-slate-800 bg-slate-950/22 px-4 py-3 text-sm leading-6 text-slate-200"
-                }
-              >
+              <div key={message.id} className={message.role === "user" ? userBubbleClass : agentMessageClass}>
                 {message.content.trim() ? message.content : <TypingDots />}
+                {message.artifacts?.length ? (
+                  <div className="whitespace-normal">
+                    {message.artifacts.map((artifact) => (
+                      <ArtifactCard key={artifact.id} artifact={artifact} />
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))
           : null}
 
-        {!hasMessages && plan?.requirement ? (
-          <div className="ml-auto w-fit max-w-[82%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-cyan-500/12 px-4 py-3 text-sm leading-6 text-cyan-50 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)]">
-            {plan.requirement}
-          </div>
-        ) : null}
+        {!hasMessages && plan?.requirement ? <div className={userBubbleClass}>{plan.requirement}</div> : null}
 
         {!hasMessages && plan ? (
-          <div className="w-fit max-w-[88%] whitespace-pre-wrap break-words rounded-2xl rounded-tl-md border border-slate-800 bg-slate-950/22 px-4 py-3">
+          <div className={agentMessageClass}>
             <p className="text-sm leading-6 text-slate-200">{plan.summary}</p>
             {plan.questions.length ? (
               <div className="mt-3 space-y-2">

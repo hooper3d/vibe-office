@@ -10,59 +10,15 @@
 - Blog 和发布素材同步给 Tiger。
 
 当前任务：
-- Ray 沉淀部署验收记录到 Project Context Hub
+- 把 Agent 产出箱接入 Artifact registry
 
 下一步：
 - Lucy 读取共享上下文进行统筹验收。
 - Tiger 读取 BLOG_CONTEXT / RELEASE_NOTES 生成 Blog 草稿。
 
 最近一次记录：
-时间：2026-06-10T17:10:44.848Z
+时间：2026-06-11T12:44:01.750Z
 Agent：Ray
 动作：dispatch_to_ray
-任务：Ray 沉淀部署验收记录到 Project Context Hub
-补充说明：将验收结果写入 DEV_LOG、RELEASE_NOTES 和 PROGRESS_SUMMARY：部署时间、Musk 提供的 URL、验收结论、发现的问题。
-
-
-## 2026-06-11 ? ??????
-
-?????Vibe Office ???? Musk ???????? Ray ?????????? Lucy ???
-
-????
-- Musk ???????? Node.js 20?npm?Nginx?pm2?
-- ?????? /home/ubuntu/ag-ui?
-- npm ci ? npm run build ????
-- pm2 ??? ag-ui?Next.js ??? 3000?
-- Nginx ??? 80 ???? 127.0.0.1:3000?
-- ???? http://43.162.107.236/ ?? HTTP 200?
-- http://43.162.107.236/api/hermes-musk ?? connected=true?
-
-?????
-- Ray ?? http://43.162.107.236/ ???????
-- Ray ??????? DEV_LOG / RELEASE_NOTES?
-- Lucy ?? Hub ?????
-
-???
-- Musk Hermes ??????????????? SOP??????????????????????????? URL????? Musk ???????
-
-## 2026-06-11 · MVP-1 收口
-
-当前状态：Vibe Office 第一阶段 MVP 已完成核心验证。
-
-已完成：
-- 真实 Lucy / Tiger / Musk Hermes Agent 已接入 Vibe Office。
-- 统一输入入口支持直接 @Agent 沟通，复杂任务仍可交给 Lucy 编排。
-- Agent 对话已按房间隔离，Lucy / Tiger / Musk / Ray 不再混在同一个聊天线程。
-- Project Context Hub 已被 Tiger / Musk 读取并用于理解当前项目，证明共享记忆有效。
-- Agent 状态机已初步拆分：Agent 列表只表达可用性和忙闲，任务完成/需处理留在任务列表中。
-- 当前项目频道切换已移动到输入框左下角，发送前可见，降低串台风险。
-
-关键结论：
-- MVP-1 的核心假设成立：真实本地/远端 Hermes Agent 可以通过统一 AG-UI 工作台和共享记忆完成协作。
-- 第二阶段重点不再是“能否跑通”，而是“如何让 Agent 像专业团队一样可靠协作”。
-
-下一步：
-- 固化项目频道、Agent 房间和任务状态的产品规则。
-- 增加共享记忆归因规则：读取历史事实不等于本次亲自执行。
-- 增加 Agent 能力边界文档，避免 Lucy 或其他 Agent 错判伙伴能力。
-- 继续设计产物出口，明确图片、Markdown、URL、文件路径等结果显示位置。
+任务：把 Agent 产出箱接入 Artifact registry
+补充说明：在画布上为每个 Agent 显示产出入口，点击后按 owner 过滤 artifact。Tiger 产出箱应能看到当前真实图片产物。
