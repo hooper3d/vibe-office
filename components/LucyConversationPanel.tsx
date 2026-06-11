@@ -1,8 +1,9 @@
 "use client";
 
-import { ChevronDown, Sparkles } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { ArtifactCard } from "@/components/ArtifactCard";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import type { AgentName } from "@/types/agent";
 import type { Artifact } from "@/types/artifact";
 import type { LucyPlan } from "@/types/task";
@@ -20,7 +21,6 @@ type LucyConversationPanelProps = {
   messages?: LucyConversationMessage[];
   running: boolean;
   activeAgent: AgentName;
-  onGeneratePlan: () => void;
   onClose?: () => void;
   className?: string;
 };
@@ -35,7 +35,6 @@ export function LucyConversationPanel({
   messages = [],
   running,
   activeAgent,
-  onGeneratePlan,
   onClose,
   className = ""
 }: LucyConversationPanelProps) {
@@ -47,7 +46,6 @@ export function LucyConversationPanel({
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
   }, [messages, running, plan]);
 
-  const isClarifying = plan?.stage === "clarifying";
   const hasMessages = messages.length > 0;
   const activeInitial = activeAgent.slice(0, 1);
   const activeTone =
@@ -86,7 +84,15 @@ export function LucyConversationPanel({
         {hasMessages
           ? messages.map((message) => (
               <div key={message.id} className={message.role === "user" ? userBubbleClass : agentMessageClass}>
-                {message.content.trim() ? message.content : <TypingDots />}
+                {message.content.trim() ? (
+                  message.role === "agent" ? (
+                    <MarkdownPreview content={message.content} />
+                  ) : (
+                    message.content
+                  )
+                ) : (
+                  <TypingDots />
+                )}
                 {message.artifacts?.length ? (
                   <div className="whitespace-normal">
                     {message.artifacts.map((artifact) => (
@@ -122,32 +128,7 @@ export function LucyConversationPanel({
         ) : null}
       </div>
 
-      {plan ? (
-        <div className="mt-4 flex shrink-0 items-center justify-between gap-3">
-          <p className="min-w-0 text-xs leading-5 text-slate-500">{plan.recommendation}</p>
-          <button
-            type="button"
-            onClick={onGeneratePlan}
-            disabled={running || !isClarifying}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full bg-violet-500/14 px-4 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/22 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Sparkles className="h-4 w-4" />
-            生成计划
-          </button>
-        </div>
-      ) : hasMessages ? (
-        <div className="mt-4 flex shrink-0 justify-end">
-          <button
-            type="button"
-            onClick={onGeneratePlan}
-            disabled={running}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full bg-violet-500/14 px-4 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/22 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Sparkles className="h-4 w-4" />
-            交给 Lucy 拆解
-          </button>
-        </div>
-      ) : null}
+      {plan ? <p className="mt-4 shrink-0 text-xs leading-5 text-slate-500">{plan.recommendation}</p> : null}
     </section>
   );
 }

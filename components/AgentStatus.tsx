@@ -1,14 +1,13 @@
 "use client";
 
 import {
-  Archive,
   Bot,
-  Boxes,
-  ChevronDown,
-  ExternalLink,
-  Plus
+  CheckSquare,
+  Database,
+  History,
+  PackageOpen
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 import type { AgentProfile, ProjectId, ProjectProfile } from "@/types/agent";
 import type { TaskItem } from "@/types/task";
 import type { Artifact } from "@/types/artifact";
@@ -25,6 +24,12 @@ type AgentStatusProps = {
   onSelectAgent?: (agentName: AgentProfile["name"]) => void;
   tasks?: TaskItem[];
   onReviewTask?: (taskId: string) => void;
+  activeOfficePanel?: "tasks" | "archive" | "outputs" | "history" | null;
+  onOpenTaskDesk?: () => void;
+  onOpenArchiveLibrary?: () => void;
+  onOpenArtifactBox?: () => void;
+  onOpenHistoryLog?: () => void;
+  onArtifactsChange?: (artifacts: Artifact[]) => void;
   className?: string;
   collapsed?: boolean;
 };
@@ -73,23 +78,6 @@ type ArtifactsResponse = {
   artifacts: Artifact[];
   error?: string;
 };
-
-function formatArtifactTime(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(new Date(value));
-}
-
-function artifactTypeLabel(type: Artifact["type"]) {
-  if (type === "image") return "Image";
-  if (type === "markdown") return "Markdown";
-  if (type === "file") return "File";
-  return "URL";
-}
 
 const agentMetaLine: Partial<Record<AgentProfile["name"], string>> = {
   Lucy: "\u4e2d\u56fd\u5357\u4eac\uff1a\u672c\u5730 Hermes Agent",
@@ -163,48 +151,45 @@ export function AgentStatus({
   selectedAgent,
   onSelectAgent,
   tasks = [],
+  activeOfficePanel = null,
+  onOpenTaskDesk,
+  onOpenArchiveLibrary,
+  onOpenArtifactBox,
+  onOpenHistoryLog,
+  onArtifactsChange,
   className = "",
   collapsed = false
 }: AgentStatusProps) {
   const [openAgentName, setOpenAgentName] = useState<AgentProfile["name"] | null>(null);
-  const [selectedArtifactOwner, setSelectedArtifactOwner] = useState<AgentProfile["name"]>("Tiger");
-  const [artifactOutletOpen, setArtifactOutletOpen] = useState(false);
   const [artifactRegistry, setArtifactRegistry] = useState<Artifact[]>([]);
-  const [artifactLoading, setArtifactLoading] = useState(false);
-  const [artifactError, setArtifactError] = useState<string | null>(null);
   const [canvasView, setCanvasView] = useState(DEFAULT_CANVAS_VIEW);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   void connection;
+  void projects;
+  void onProjectChange;
+  void onCreateProject;
   const leader = agents.find((agent) => agent.name === "Lucy");
   const executors = agents.filter((agent) => agent.name !== "Lucy");
   const leaderOpen = Boolean(leader && openAgentName === leader.name);
   const executorOpen = executors.some((agent) => openAgentName === agent.name);
   const selectedAgentDetail = openAgentName ? agents.find((agent) => agent.name === openAgentName) : null;
+  const executorNames = new Set<AgentProfile["name"]>(executors.map((agent) => agent.name));
   const activeExecutors = new Set<AgentProfile["name"]>(
-    executors
-      .filter((agent) => displayStatus(agent).active)
-      .map((agent) => agent.name)
+    tasks
+      .filter((task) => executorNames.has(task.owner as AgentProfile["name"]))
+      .filter((task) => task.planStatus === "executing")
+      .map((task) => task.owner as AgentProfile["name"])
   );
   const reviewingTasks = tasks.filter((task) => task.planStatus === "reviewing");
   const plannedTasks = tasks.filter((task) => task.planStatus === "planned" || task.planStatus === "selected");
   const completedTasks = tasks.filter((task) => task.planStatus === "completed");
-  const activeOwnerArtifacts = useMemo(
-    () =>
-      artifactRegistry
-        .filter((artifact) => artifact.projectId === projectId && artifact.owner === selectedArtifactOwner && !artifact.archivedAt)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [artifactRegistry, projectId, selectedArtifactOwner]
-  );
   const activeProject = projects.find((project) => project.id === projectId) || projects[0];
 
   useEffect(() => {
     let active = true;
 
     async function loadArtifacts() {
-      setArtifactLoading(true);
-      setArtifactError(null);
-
       try {
         const response = await fetch(`/api/artifacts?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store" });
         const data = (await response.json()) as ArtifactsResponse;
@@ -213,13 +198,11 @@ export function AgentStatus({
         }
 
         setArtifactRegistry(data.artifacts);
+        onArtifactsChange?.(data.artifacts);
       } catch (error) {
         if (!active) return;
-        setArtifactError(error instanceof Error ? error.message : "Load artifacts failed");
-      } finally {
-        if (active) {
-          setArtifactLoading(false);
-        }
+        setArtifactRegistry([]);
+        onArtifactsChange?.([]);
       }
     }
 
@@ -230,7 +213,7 @@ export function AgentStatus({
       active = false;
       window.clearInterval(timer);
     };
-  }, [projectId]);
+  }, [onArtifactsChange, projectId]);
 
   function zoomCanvas(delta: number, anchor?: { clientX: number; clientY: number }) {
     setCanvasView((current) => {
@@ -289,13 +272,7 @@ export function AgentStatus({
         <div className="flex min-w-0 shrink-0 items-center gap-3">
           <Bot className="h-5 w-5 text-slate-300" />
           <h2 className="text-base font-semibold text-slate-100">Agent Office</h2>
-          <ProjectControls
-            projects={projects}
-            projectId={projectId}
-            activeProjectName={activeProject?.name || "Project"}
-            onProjectChange={onProjectChange}
-            onCreateProject={onCreateProject}
-          />
+          <ProjectNameLabel name={activeProject?.name || "Project"} />
         </div>
 
         <div className="flex min-w-0 flex-1 items-center justify-center gap-3 overflow-hidden">
@@ -337,13 +314,7 @@ export function AgentStatus({
         >
           <Bot className="h-5 w-5 text-slate-300" />
           <h2 className="text-base font-semibold text-slate-100">Agent Office</h2>
-          <ProjectControls
-            projects={projects}
-            projectId={projectId}
-            activeProjectName={activeProject?.name || "Project"}
-            onProjectChange={onProjectChange}
-            onCreateProject={onCreateProject}
-          />
+          <ProjectNameLabel name={activeProject?.name || "Project"} />
         </div>
 
         <div
@@ -370,8 +341,6 @@ export function AgentStatus({
                   setOpenAgentName={setOpenAgentName}
                   variant="leader"
                   collapsed={collapsed}
-                  onSelectArtifactOwner={setSelectedArtifactOwner}
-                  selectedArtifactOwner={selectedArtifactOwner}
                 />
               </div>
             ) : null}
@@ -385,118 +354,33 @@ export function AgentStatus({
                 setOpenAgentName={setOpenAgentName}
                 variant="executor"
                 collapsed={collapsed}
-                onSelectArtifactOwner={setSelectedArtifactOwner}
-                selectedArtifactOwner={selectedArtifactOwner}
               />
             ))}
           </div>
-          <ArtifactOutlet
-            owner={artifactOutletOpen ? selectedArtifactOwner : null}
-            artifacts={activeOwnerArtifacts}
-            loading={artifactLoading}
-            error={artifactError}
-            onClose={() => setArtifactOutletOpen(false)}
-          />
         </div>
 
           <OfficeDock
             artifacts={artifactRegistry}
             projectId={projectId}
-            selectedArtifactOwner={selectedArtifactOwner}
+            activeOfficePanel={activeOfficePanel}
             plannedTasks={plannedTasks}
             reviewingTasks={reviewingTasks}
             completedTasks={completedTasks}
             running={running}
-            onOpenArtifactBox={() => setArtifactOutletOpen(true)}
+            onOpenTaskDesk={onOpenTaskDesk}
+            onOpenArchiveLibrary={onOpenArchiveLibrary}
+            onOpenArtifactBox={onOpenArtifactBox}
+            onOpenHistoryLog={onOpenHistoryLog}
           />
         </div>
       </section>
   );
 }
 
-function ProjectControls({
-  projects,
-  projectId,
-  activeProjectName,
-  onProjectChange,
-  onCreateProject
-}: {
-  projects: ProjectProfile[];
-  projectId: ProjectId;
-  activeProjectName: string;
-  onProjectChange: (projectId: ProjectId) => void;
-  onCreateProject: (name: string) => void;
-}) {
-  const [creating, setCreating] = useState(false);
-  const [draftName, setDraftName] = useState("");
-
-  function submitProjectName() {
-    const name = draftName.trim();
-    if (!name) return;
-    onCreateProject(name);
-    setDraftName("");
-    setCreating(false);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      submitProjectName();
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setCreating(false);
-      setDraftName("");
-    }
-  }
-
+function ProjectNameLabel({ name }: { name: string }) {
   return (
-    <div data-agent-interactive="true" className="flex min-w-0 items-center gap-2">
-      <label className="relative inline-flex h-8 max-w-[240px] items-center gap-2 rounded-lg border border-slate-800/80 bg-slate-950/36 px-2.5 text-xs font-semibold text-cyan-100 transition hover:border-slate-700">
-        <span className="min-w-0 truncate">{activeProjectName}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-        <select
-          value={projectId}
-          onChange={(event) => onProjectChange(event.target.value)}
-          className="absolute inset-0 h-8 w-full cursor-pointer opacity-0"
-          title="Switch project"
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {creating ? (
-        <div className="flex h-8 min-w-0 items-center gap-1 rounded-lg border border-cyan-400/30 bg-slate-950/72 px-1.5">
-          <input
-            value={draftName}
-            onChange={(event) => setDraftName(event.target.value)}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            placeholder="Project name"
-            className="h-6 w-32 min-w-0 bg-transparent px-1 text-xs font-semibold text-slate-100 outline-none placeholder:text-slate-500"
-          />
-          <button
-            type="button"
-            onClick={submitProjectName}
-            disabled={!draftName.trim()}
-            className="h-6 rounded-md px-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            Create
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-800/80 bg-slate-950/36 text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-100"
-          title="New project"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      )}
+    <div data-agent-interactive="true" className="min-w-0 max-w-[260px] truncate rounded-lg bg-slate-950/28 px-2.5 py-1.5 text-xs font-semibold text-cyan-100">
+      {name}
     </div>
   );
 }
@@ -510,72 +394,106 @@ function formatTaskCode(id: string) {
 function OfficeDock({
   artifacts,
   projectId,
-  selectedArtifactOwner,
+  activeOfficePanel,
   plannedTasks,
   reviewingTasks,
   completedTasks,
   running,
-  onOpenArtifactBox
+  onOpenTaskDesk,
+  onOpenArchiveLibrary,
+  onOpenArtifactBox,
+  onOpenHistoryLog
 }: {
   artifacts: Artifact[];
   projectId: ProjectId;
-  selectedArtifactOwner: AgentProfile["name"];
+  activeOfficePanel: "tasks" | "archive" | "outputs" | "history" | null;
   plannedTasks: TaskItem[];
   reviewingTasks: TaskItem[];
   completedTasks: TaskItem[];
   running: boolean;
-  onOpenArtifactBox: () => void;
+  onOpenTaskDesk?: () => void;
+  onOpenArchiveLibrary?: () => void;
+  onOpenArtifactBox?: () => void;
+  onOpenHistoryLog?: () => void;
 }) {
   const liveTask = reviewingTasks[0] || plannedTasks.find((task) => task.selected) || plannedTasks[0];
-  const selectedArtifacts = artifacts.filter((artifact) => artifact.projectId === projectId && artifact.owner === selectedArtifactOwner && !artifact.archivedAt);
-  const latestArtifact = [...selectedArtifacts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const projectArtifacts = artifacts.filter((artifact) => artifact.projectId === projectId && !artifact.archivedAt);
 
   return (
     <div
       data-agent-interactive="true"
-      className="absolute inset-x-4 bottom-4 z-[150] grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.55fr)] items-center gap-3 rounded-xl border border-slate-800/85 bg-slate-950/78 px-3 py-2 shadow-[0_18px_56px_rgba(0,0,0,0.38)] backdrop-blur"
+      className="absolute inset-x-4 bottom-4 z-[150] grid grid-cols-[repeat(4,minmax(130px,0.58fr))_minmax(120px,2fr)] items-center gap-2"
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <DockMetric label="Backlog" value={plannedTasks.length} />
-        <DockMetric label="Review" value={reviewingTasks.length} tone={reviewingTasks.length ? "attention" : "normal"} />
-        <DockMetric label="Done" value={completedTasks.length} tone="done" />
-      </div>
-
-      <div className="flex min-w-0 items-center justify-center gap-2">
-        <div className="min-w-[170px] max-w-[240px] truncate rounded-lg border border-slate-800/90 bg-slate-900/52 px-3 py-2 text-xs text-slate-300">
-          {running ? "\u6b63\u5728\u6267\u884c\u4efb\u52a1..." : liveTask ? `${formatTaskCode(liveTask.id)} ${liveTask.title}` : "Office ready"}
-        </div>
-        <button
-          type="button"
-          onClick={onOpenArtifactBox}
-          className="flex min-w-[230px] max-w-[320px] items-center gap-2 rounded-lg border border-emerald-400/18 bg-emerald-500/10 px-3 py-2 text-left transition hover:border-emerald-300/40 hover:bg-emerald-500/16"
-          title={latestArtifact ? latestArtifact.title : `${selectedArtifactOwner} \u6682\u65e0\u4ea7\u51fa`}
-        >
-          <Archive className="h-4 w-4 shrink-0 text-emerald-300" />
-          <span className="min-w-0">
-            <span className="block truncate text-xs font-semibold text-emerald-100">Outputs selected {selectedArtifactOwner}</span>
-            <span className="block truncate text-[10px] text-emerald-200/65">
-              {selectedArtifacts.length} items{latestArtifact ? ` / ${latestArtifact.title}` : ""}
-            </span>
+      <button
+        type="button"
+        onClick={onOpenTaskDesk}
+        className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition ${
+          activeOfficePanel === "tasks"
+            ? "border-sky-300/45 bg-sky-400/14"
+            : "border-slate-800/80 bg-slate-900/40 hover:border-sky-400/30 hover:bg-slate-900/70"
+        }`}
+      >
+        <CheckSquare className="h-4 w-4 shrink-0 text-slate-300" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold text-slate-100">Task Desk</span>
+          <span className="block truncate text-[10px] text-slate-400">
+            {plannedTasks.length} backlog / {reviewingTasks.length} review / {completedTasks.length} done
           </span>
-        </button>
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={onOpenArchiveLibrary}
+        className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition ${
+          activeOfficePanel === "archive"
+            ? "border-emerald-300/45 bg-emerald-400/14"
+            : "border-slate-800/80 bg-slate-900/40 hover:border-emerald-400/30 hover:bg-slate-900/70"
+        }`}
+      >
+        <Database className="h-4 w-4 shrink-0 text-emerald-300" />
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-slate-100">Archive Library</span>
+          <span className="block truncate text-[10px] text-slate-400">{projectArtifacts.length} artifacts</span>
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={onOpenArtifactBox}
+        className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition ${
+          activeOfficePanel === "outputs"
+            ? "border-emerald-300/45 bg-emerald-400/14"
+            : "border-slate-800/80 bg-slate-900/40 hover:border-emerald-400/30 hover:bg-slate-900/70"
+        }`}
+        title="Outputs Cabinet"
+      >
+        <PackageOpen className="h-4 w-4 shrink-0 text-emerald-300" />
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-slate-100">Outputs Cabinet</span>
+          <span className="block truncate text-[10px] text-slate-400">{projectArtifacts.length} items</span>
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={onOpenHistoryLog}
+        className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition ${
+          activeOfficePanel === "history"
+            ? "border-cyan-300/45 bg-cyan-400/14"
+            : "border-slate-800/80 bg-slate-900/40 hover:border-cyan-400/30 hover:bg-slate-900/70"
+        }`}
+      >
+        <History className="h-4 w-4 shrink-0 text-cyan-300" />
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-slate-100">History Log</span>
+          <span className="block truncate text-[10px] text-slate-400">AG-UI events</span>
+        </span>
+      </button>
+
+      <div className="justify-self-end truncate rounded-full border border-slate-800/80 bg-slate-950/72 px-3 py-1.5 text-right text-xs text-slate-400 shadow-[0_10px_30px_rgba(0,0,0,0.28)] backdrop-blur">
+        {running ? "\u6b63\u5728\u6267\u884c\u4efb\u52a1..." : liveTask ? `${formatTaskCode(liveTask.id)} ${liveTask.title}` : "Office ready"}
       </div>
-    </div>
-  );
-}
-
-function DockMetric({ label, value, tone = "normal" }: { label: string; value: number; tone?: "normal" | "attention" | "done" }) {
-  const toneClassName =
-    tone === "attention"
-      ? "text-amber-200 bg-amber-500/12"
-      : tone === "done"
-        ? "text-emerald-200 bg-emerald-500/12"
-        : "text-slate-300 bg-slate-800/60";
-
-  return (
-    <div className={`min-w-[68px] rounded-lg px-2.5 py-2 ${toneClassName}`}>
-      <p className="text-[10px] font-semibold uppercase tracking-normal opacity-70">{label}</p>
-      <p className="mt-0.5 text-sm font-semibold">{value}</p>
     </div>
   );
 }
@@ -618,22 +536,17 @@ function AgentNode({
   openAgentName,
   setOpenAgentName,
   variant,
-  collapsed,
-  onSelectArtifactOwner,
-  selectedArtifactOwner
+  collapsed
 }: {
   agent: AgentProfile;
   openAgentName: AgentProfile["name"] | null;
   setOpenAgentName: (updater: (current: AgentProfile["name"] | null) => AgentProfile["name"] | null) => void;
   variant: "leader" | "executor";
   collapsed: boolean;
-  onSelectArtifactOwner?: (owner: AgentProfile["name"]) => void;
-  selectedArtifactOwner?: AgentProfile["name"];
 }) {
   const status = displayStatus(agent);
   const isLeader = variant === "leader";
   const isOpen = openAgentName === agent.name;
-  const isSelectedForOutputs = selectedArtifactOwner === agent.name;
 
   return (
     <div
@@ -641,18 +554,17 @@ function AgentNode({
         isLeader
           ? `${collapsed ? "w-[28%] min-w-[180px] py-1" : "w-[34%] min-w-[220px] py-4"}`
           : `${collapsed ? "min-h-[92px] py-1" : "min-h-[176px] py-5"}`
-      } ${isOpen ? "z-[95]" : "z-0"} ${isSelectedForOutputs ? "bg-sky-400/8 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.16)]" : ""}`}
+      } ${isOpen ? "z-[95]" : "z-0"}`}
     >
       <button
         type="button"
         data-agent-interactive="true"
         onClick={() => {
-          onSelectArtifactOwner?.(agent.name);
           setOpenAgentName((current) => (current === agent.name ? null : agent.name));
         }}
         className={`agent-avatar-wrap mx-auto rounded-full focus:outline-none focus:ring-2 focus:ring-sky-400/50 ${
           status.active ? "agent-progress-ring" : ""
-        } ${isSelectedForOutputs ? "ring-2 ring-sky-300/55" : ""}`}
+        }`}
         title={`\u9009\u62e9 ${agent.name} \u5e76\u67e5\u770b\u4ecb\u7ecd`}
       >
         <span className={`grid place-items-center rounded-full font-semibold transition ${
@@ -674,95 +586,7 @@ function AgentNode({
         </span>
       </div>
       <p className={`${collapsed ? "hidden" : "mt-1"} truncate text-sm text-slate-400`}>{agent.role}</p>
-      {isSelectedForOutputs && !collapsed ? (
-        <p className="mt-2 text-xs font-medium text-sky-200">Outputs selected</p>
-      ) : null}
       {isOpen ? <AgentDetailCard agent={agent} /> : null}
-    </div>
-  );
-}
-
-function ArtifactOutlet({
-  owner,
-  artifacts,
-  loading,
-  error,
-  onClose
-}: {
-  owner: AgentProfile["name"] | null;
-  artifacts: Artifact[];
-  loading: boolean;
-  error: string | null;
-  onClose: () => void;
-}) {
-  if (!owner) return null;
-
-  return (
-    <div className="pointer-events-auto absolute inset-0 z-[120] flex items-center justify-center bg-[rgba(2,8,23,0.45)] p-4">
-      <section className="w-[min(680px,95%)] max-h-[62%] overflow-hidden rounded-xl border border-slate-700 bg-[#08101b]/95 p-4 shadow-[0_24px_72px_rgba(0,0,0,0.55)] backdrop-blur">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Archive className="h-4 w-4 shrink-0 text-emerald-300" />
-            <h3 className="truncate text-sm font-semibold text-slate-100">{owner} {"\u4ea7\u51fa\u7bb1"}</h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full px-2 py-1 text-xs font-medium text-slate-300 transition hover:text-white"
-          >
-            {"\u5173\u95ed"}
-          </button>
-        </div>
-
-        {loading ? <div className="py-8 text-sm text-slate-300">{"\u52a0\u8f7d\u4e2d..."}</div> : null}
-        {error ? <div className="rounded-md border border-red-400/20 bg-red-500/12 px-3 py-2 text-sm text-red-200">{error}</div> : null}
-
-        {!loading && !error ? (
-          <div className="max-h-[46vh] overflow-auto space-y-2 pr-1 scrollbar-thin">
-            {artifacts.length ? (
-              artifacts.map((artifact) => {
-                const href = artifact.accessUrl || artifact.sourceUrl || artifact.path || "";
-                return (
-                  <div key={artifact.id} className="rounded-lg border border-slate-800 bg-slate-950/55 px-3 py-2">
-                    <div className="flex min-w-0 items-center gap-3">
-                      {artifact.type === "image" && href ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={href}
-                          alt={artifact.title}
-                          className="h-14 w-14 shrink-0 rounded-md border border-slate-700/80 object-cover"
-                        />
-                      ) : (
-                        <Boxes className="h-4 w-4 shrink-0 text-sky-300" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-100">{artifact.title}</p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {artifactTypeLabel(artifact.type)} / {artifact.owner} / {formatArtifactTime(artifact.createdAt)}
-                        </p>
-                      </div>
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
-                        title="\u6253\u5f00"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </div>
-                    {artifact.description ? (
-                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{artifact.description}</p>
-                    ) : null}
-                  </div>
-                );
-              })
-            ) : (
-              <div className="py-5 text-sm text-slate-400">{"\u8be5 Agent \u5f53\u524d\u6682\u65e0\u4ea7\u51fa\u3002"}</div>
-            )}
-          </div>
-        ) : null}
-      </section>
     </div>
   );
 }

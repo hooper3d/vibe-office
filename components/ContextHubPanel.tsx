@@ -1,13 +1,14 @@
-"use client";
+﻿"use client";
 
-import { AlertTriangle, Bot, Clock3, Database, ExternalLink, FileText, ImageIcon, Loader2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Bot, Clock3, Database, FileText, Loader2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { contextHubOverview } from "@/lib/mock-data";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import type { ProjectId } from "@/types/agent";
-import type { Artifact } from "@/types/artifact";
 
 type ContextHubPanelProps = {
   projectId: ProjectId;
+  embedded?: boolean;
   className?: string;
 };
 
@@ -33,13 +34,8 @@ type ContextFilesMetadataResponse = {
   files: ContextFileMetadata[];
 };
 
-type ArtifactsResponse = {
-  ok: boolean;
-  artifacts: Artifact[];
-};
-
 function formatUpdatedAt(value: string | null) {
-  if (!value) return "暂无更新";
+  if (!value) return "鏆傛棤鏇存柊";
 
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -58,68 +54,12 @@ function isRecentlyUpdated(value: string | null) {
   return Date.now() - updatedAt < 2 * 60 * 60 * 1000;
 }
 
-function formatArtifactTime(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(new Date(value));
-}
-
-function artifactTypeLabel(type: Artifact["type"]) {
-  if (type === "image") return "Image";
-  if (type === "markdown") return "Markdown";
-  if (type === "file") return "File";
-  return "URL";
-}
-
-function MarkdownPreview({ content }: { content: string }) {
-  const lines = useMemo(() => content.split(/\r?\n/), [content]);
-
-  return (
-    <div className="markdown-preview">
-      {lines.map((line, index) => {
-        if (!line.trim()) return <div key={index} className="h-3" />;
-        if (line.startsWith("### ")) return <h4 key={index}>{line.slice(4)}</h4>;
-        if (line.startsWith("## ")) return <h3 key={index}>{line.slice(3)}</h3>;
-        if (line.startsWith("# ")) return <h2 key={index}>{line.slice(2)}</h2>;
-        if (line.startsWith("- ")) {
-          return (
-            <p key={index} className="markdown-list-item">
-              {line.slice(2)}
-            </p>
-          );
-        }
-        if (/^\d+\.\s/.test(line)) {
-          return (
-            <p key={index} className="markdown-list-item">
-              {line}
-            </p>
-          );
-        }
-        if (line.startsWith("```")) {
-          return (
-            <p key={index} className="font-mono text-slate-500">
-              {line}
-            </p>
-          );
-        }
-
-        return <p key={index}>{line}</p>;
-      })}
-    </div>
-  );
-}
-
-export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelProps) {
+export function ContextHubPanel({ projectId, embedded = false, className = "" }: ContextHubPanelProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [preview, setPreview] = useState<ContextFilePreview | null>(null);
   const [metadataByFile, setMetadataByFile] = useState<Record<string, ContextFileMetadata>>({});
   const [changedFiles, setChangedFiles] = useState<Set<string>>(new Set());
   const [acknowledgedUpdates, setAcknowledgedUpdates] = useState<Record<string, string | null>>({});
-  const [recentArtifacts, setRecentArtifacts] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const usesDefaultContextFiles = projectId === "demo-project";
@@ -163,35 +103,6 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
     };
   }, []);
 
-  useEffect(() => {
-    let active = true;
-
-    async function loadArtifacts() {
-      try {
-        const response = await fetch(`/api/artifacts?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store" });
-        const data = (await response.json()) as ArtifactsResponse;
-        if (!active || !response.ok || !data.ok) return;
-
-        setRecentArtifacts(
-          [...data.artifacts]
-            .filter((artifact) => artifact.projectId === projectId)
-            .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-            .slice(0, 5)
-        );
-      } catch {
-        if (active) setRecentArtifacts([]);
-      }
-    }
-
-    void loadArtifacts();
-    const interval = window.setInterval(loadArtifacts, 10000);
-
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [projectId]);
-
   async function openPreview(file: string, acknowledgedUpdatedAt?: string | null) {
     setSelectedFile(file);
     setAcknowledgedUpdates((current) => ({
@@ -229,7 +140,8 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
   }
 
   return (
-    <section className={`frost relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl p-6 ${className}`}>
+    <section className={`${embedded ? "relative flex min-h-0 min-w-0 flex-col overflow-hidden" : "frost relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl p-6"} ${className}`}>
+      {!embedded ? (
       <div className="mb-5 flex min-w-0 shrink-0 items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <Database className="h-5 w-5 text-emerald-300" />
@@ -239,6 +151,7 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
           共享记忆
         </div>
       </div>
+      ) : null}
 
       <div className="scrollbar-thin min-h-0 flex-1 space-y-2 overflow-auto pr-1">
         {!usesDefaultContextFiles ? (
@@ -276,7 +189,7 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
                   <span className="truncate font-mono text-sm font-semibold text-slate-100">{item.file}</span>
                   {hasUpdateStatus ? (
                     <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-sky-400/12 px-1.5 text-xs font-medium text-sky-200 shadow-[inset_0_0_0_1px_rgba(125,211,252,0.16)]">
-                      更新
+                      鏇存柊
                     </span>
                   ) : null}
                 </div>
@@ -297,61 +210,6 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
         }) : null}
       </div>
 
-      {recentArtifacts.length ? (
-        <div className="mt-4 shrink-0 border-t border-slate-800/80 pt-4">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="truncate text-xs font-semibold uppercase text-slate-500">Recent Artifacts</p>
-            {usesDefaultContextFiles ? (
-              <button
-                type="button"
-                onClick={() => openPreview("ARTIFACTS.md", metadataByFile["ARTIFACTS.md"]?.updatedAt ?? null)}
-                className="text-xs font-semibold text-emerald-300 transition hover:text-emerald-200"
-              >
-                ARTIFACTS.md
-              </button>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            {recentArtifacts.map((artifact) => {
-              const href = artifact.accessUrl || artifact.sourceUrl || "";
-              return (
-                <div
-                  key={artifact.id}
-                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_32px] gap-2 rounded-lg border border-slate-800 bg-slate-950/18 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      {artifact.type === "image" ? (
-                        <ImageIcon className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-                      ) : (
-                        <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
-                      )}
-                      <span className="truncate text-xs font-semibold text-slate-100">{artifact.title}</span>
-                    </div>
-                    <p className="mt-1 truncate text-[11px] leading-4 text-slate-500">
-                      {artifactTypeLabel(artifact.type)} / {artifact.owner} / {formatArtifactTime(artifact.createdAt)}
-                    </p>
-                  </div>
-                  {href ? (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
-                      title="打开产物"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  ) : (
-                    <span />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-
       {selectedFile ? (
         <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-[rgba(7,13,22,0.98)]">
           <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800/80 px-6 py-4">
@@ -361,14 +219,14 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
                 <h3 className="truncate font-mono text-sm font-semibold text-slate-50">{selectedFile}</h3>
               </div>
               <p className="mt-1 truncate text-xs text-slate-400">
-                {preview?.purpose || "Project Context Hub"} · 更新 {formatUpdatedAt(preview?.updatedAt ?? null)} · 编辑{" "}
+                {preview?.purpose || "Project Context Hub"} 路 鏇存柊 {formatUpdatedAt(preview?.updatedAt ?? null)} 路 缂栬緫{" "}
                 {metadataByFile[selectedFile]?.lastEditor ?? "Unknown"}
               </p>
             </div>
             <button
               type="button"
               onClick={closePreview}
-              aria-label="关闭预览"
+              aria-label="鍏抽棴棰勮"
               className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800/80 hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-400/50"
             >
               <X className="h-4 w-4" />
@@ -379,7 +237,7 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
             {loading ? (
               <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                正在读取共享记忆...
+                姝ｅ湪璇诲彇鍏变韩璁板繂...
               </div>
             ) : error ? (
               <div className="flex items-center gap-2 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
@@ -389,7 +247,7 @@ export function ContextHubPanel({ projectId, className = "" }: ContextHubPanelPr
             ) : preview?.exists && preview.content.trim() ? (
               <MarkdownPreview content={preview.content} />
             ) : (
-              <div className="text-sm text-slate-400">暂无内容</div>
+              <div className="text-sm text-slate-400">鏆傛棤鍐呭</div>
             )}
           </div>
         </div>

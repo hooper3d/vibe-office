@@ -10,6 +10,7 @@ type TaskListProps = {
   executionDisabledReason?: string | null;
   onToggleTask?: (taskId: string) => void;
   onExecuteSelected?: () => void;
+  embedded?: boolean;
 };
 
 function formatTaskCode(id: string) {
@@ -25,7 +26,8 @@ export function TaskList({
   running = false,
   executionDisabledReason = null,
   onToggleTask,
-  onExecuteSelected
+  onExecuteSelected,
+  embedded = false
 }: TaskListProps) {
   const selectedCount = tasks.filter((task) => task.selected).length;
   const executableSelectedCount = tasks.filter(
@@ -34,7 +36,8 @@ export function TaskList({
   const executeDisabled = running || executableSelectedCount === 0 || Boolean(executionDisabledReason);
 
   return (
-    <section className={`frost flex min-h-0 min-w-0 flex-col rounded-xl p-6 ${className}`}>
+    <section className={`${embedded ? "flex min-h-0 min-w-0 flex-col" : "frost flex min-h-0 min-w-0 flex-col rounded-xl p-6"} ${className}`}>
+      {!embedded ? (
       <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <CheckSquare className="h-5 w-5 text-slate-300" />
@@ -42,6 +45,7 @@ export function TaskList({
         </div>
         <span className="soft-pill bg-slate-500/10 px-2 py-0.5 text-xs text-slate-300">{tasks.length} 项</span>
       </div>
+      ) : null}
 
       {selectable ? (
         <div className="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2">

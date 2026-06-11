@@ -1,6 +1,7 @@
 "use client";
 
 import { EventType, type AGUIEvent } from "@ag-ui/core";
+import { Bot, Check, CheckSquare, Database, ExternalLink, FolderKanban, History, PackageOpen, Plus, Settings, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AgentStatus } from "@/components/AgentStatus";
 import { ContextHubPanel } from "@/components/ContextHubPanel";
@@ -48,6 +49,8 @@ type Notice = {
   tone: "success" | "attention";
 };
 
+type OfficePanel = "tasks" | "archive" | "outputs" | "history" | null;
+
 type ComposerRoute = {
   target: AgentName;
   message: string;
@@ -56,6 +59,7 @@ type ComposerRoute = {
 type AgentConversations = Record<AgentName, LucyConversationMessage[]>;
 
 type ProjectRuntimeState = {
+  projectId: ProjectId;
   tasks: TaskItem[];
   agents: typeof initialAgents;
   events: ConsoleEvent[];
@@ -78,6 +82,31 @@ const ACTIVE_PROJECT_STORAGE_KEY = "vibe-office-active-project-v1";
 
 function cleanLucyDelta(delta: string) {
   return LUCY_SYSTEM_PREFIXES.reduce((current, prefix) => current.replace(prefix, ""), delta);
+}
+
+function formatArtifactTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
+}
+
+function artifactTypeLabel(type: Artifact["type"]) {
+  if (type === "image") return "Image";
+  if (type === "markdown") return "Markdown";
+  if (type === "file") return "File";
+  return "URL";
+}
+
+function sidebarAgentStatus(agent: (typeof initialAgents)[number]) {
+  if (agent.status === "working") return { label: "工作中", dot: "bg-sky-400", text: "text-sky-200" };
+  if (agent.status === "blocked") return { label: "需处理", dot: "bg-rose-400", text: "text-rose-200" };
+  if (agent.status === "waiting") return { label: "等待中", dot: "bg-amber-400", text: "text-amber-200" };
+  if (agent.status === "offline") return { label: "离线", dot: "bg-slate-500", text: "text-slate-400" };
+  return { label: "空闲中", dot: "bg-emerald-400", text: "text-emerald-200" };
 }
 
 function isAgentName(value: unknown): value is AgentName {
@@ -144,7 +173,7 @@ function appendConversationArtifacts(
   messageId: string,
   artifacts: Artifact[]
 ): AgentConversations {
-  const cleanArtifacts = artifacts.filter((artifact) => !artifact.sourceUrl || !/[-.,;:!?，。；：、）)\]】]$/.test(artifact.sourceUrl));
+  const cleanArtifacts = artifacts.filter((artifact) => !artifact.sourceUrl || !/[-.,;:!?)\]]$/.test(artifact.sourceUrl));
   if (!cleanArtifacts.length) return conversations;
 
   let changed = false;
@@ -258,8 +287,279 @@ function latestConversationAgentFromEvents(events: ConsoleEvent[]): AgentName | 
   return undefined;
 }
 
-function createEmptyProjectRuntime(): ProjectRuntimeState {
+function OutputsCabinetPanel({
+  owners,
+  owner,
+  artifacts,
+  allArtifacts,
+  onOwnerChange
+}: {
+  owners: AgentName[];
+  owner: AgentName;
+  artifacts: Artifact[];
+  allArtifacts: Artifact[];
+  onOwnerChange: (owner: AgentName) => void;
+}) {
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="mb-4 flex flex-wrap gap-2">
+        {owners.map((agentName) => {
+          const count = allArtifacts.filter((artifact) => artifact.owner === agentName).length;
+          return (
+            <button
+              key={agentName}
+              type="button"
+              onClick={() => onOwnerChange(agentName)}
+              className={`rounded-lg border px-3 py-1.5 text-left text-xs transition ${
+                owner === agentName
+                  ? "border-emerald-300/45 bg-emerald-400/14 text-emerald-100"
+                  : "border-slate-800/80 bg-slate-900/42 text-slate-300 hover:border-emerald-400/30 hover:text-slate-100"
+              }`}
+            >
+              <span className="font-semibold">{agentName}</span>
+              <span className="ml-2 text-slate-500">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto pr-1 scrollbar-thin">
+        {artifacts.length ? (
+          <div className="grid gap-2">
+            {artifacts.map((artifact) => {
+              const href = artifact.accessUrl || artifact.sourceUrl || artifact.path || "";
+              return (
+                <div key={artifact.id} className="rounded-lg border border-slate-800/90 bg-slate-950/42 px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {artifact.type === "image" && href ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={href}
+                        alt={artifact.title}
+                        className="h-14 w-14 shrink-0 rounded-md border border-slate-700/80 object-cover"
+                      />
+                    ) : (
+                      <PackageOpen className="h-4 w-4 shrink-0 text-emerald-300" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-100">{artifact.title}</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {artifactTypeLabel(artifact.type)} / {artifact.owner} / {formatArtifactTime(artifact.createdAt)}
+                      </p>
+                    </div>
+                    {href ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                        title="Open"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    ) : null}
+                  </div>
+                  {artifact.description ? (
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{artifact.description}</p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid h-full min-h-[180px] place-items-center text-center">
+            <div>
+              <p className="text-sm font-semibold text-slate-200">{owner} has no outputs yet</p>
+              <p className="mt-2 text-xs text-slate-500">Choose another Agent above, or ask this Agent to create something.</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OfficeSidebar({
+  agents,
+  projects,
+  activeProjectId,
+  activeAgent,
+  running,
+  connection,
+  onSelectAgent,
+  onProjectChange,
+  onCreateProject
+}: {
+  agents: typeof initialAgents;
+  projects: ProjectProfile[];
+  activeProjectId: ProjectId;
+  activeAgent: AgentName;
+  running: boolean;
+  connection: "Local Connected" | "Streaming" | "Error";
+  onSelectAgent: (agentName: AgentName) => void;
+  onProjectChange: (projectId: ProjectId) => void;
+  onCreateProject: (name: string) => void;
+}) {
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [projectDraft, setProjectDraft] = useState("");
+  const onlineAgents = agents.filter((agent) => agent.status !== "offline").length;
+  void connection;
+
+  function submitProjectDraft() {
+    const name = projectDraft.trim();
+    if (!name) return;
+    onCreateProject(name);
+    setProjectDraft("");
+    setCreatingProject(false);
+  }
+
+  return (
+    <aside className="frost flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl p-4">
+      <section className="shrink-0">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Bot className="h-4 w-4 text-slate-300" />
+            <p className="text-xs font-semibold uppercase text-slate-500">Agent</p>
+          </div>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              running ? "bg-sky-400/10 text-sky-200" : "bg-emerald-400/10 text-emerald-200"
+            }`}
+          >
+            {onlineAgents}/{agents.length}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          {agents.map((agent) => {
+            const status = sidebarAgentStatus(agent);
+            return (
+              <button
+                key={agent.name}
+                type="button"
+                onClick={() => onSelectAgent(agent.name)}
+                className={`grid w-full min-w-0 grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2 py-2 text-left transition ${
+                  activeAgent === agent.name
+                    ? "border-sky-300/35 bg-sky-400/10"
+                    : "border-transparent bg-slate-950/16 hover:border-slate-800 hover:bg-slate-900/38"
+                }`}
+              >
+                <span
+                  className={`grid h-8 w-8 place-items-center rounded-full text-xs font-semibold ${
+                    agent.tone === "violet"
+                      ? "bg-violet-200 text-violet-700"
+                      : agent.tone === "blue"
+                        ? "bg-blue-100 text-blue-700"
+                        : agent.tone === "amber"
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {agent.name.slice(0, 1)}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-slate-100">{agent.name}</span>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status.dot}`} />
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11px] text-slate-500">{agent.role}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="mt-5 flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <FolderKanban className="h-4 w-4 text-slate-300" />
+            <p className="text-xs font-semibold uppercase text-slate-500">Projects</p>
+          </div>
+        </div>
+
+        <div className="scrollbar-thin min-h-0 flex-1 space-y-0.5 overflow-auto pr-1">
+          {creatingProject ? (
+            <div className="flex h-8 min-w-0 items-center gap-1 rounded-md bg-slate-950/18 px-2">
+              <FolderKanban className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                value={projectDraft}
+                onChange={(event) => setProjectDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") submitProjectDraft();
+                  if (event.key === "Escape") {
+                    setProjectDraft("");
+                    setCreatingProject(false);
+                  }
+                }}
+                autoFocus
+                placeholder="Project name"
+                className="h-7 min-w-0 flex-1 bg-transparent px-1 text-xs font-medium text-slate-100 outline-none placeholder:text-slate-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectDraft("");
+                  setCreatingProject(false);
+                }}
+                className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-slate-900/70 hover:text-slate-100"
+                title="Cancel"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={submitProjectDraft}
+                disabled={!projectDraft.trim()}
+                className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-emerald-300 transition hover:bg-emerald-400/12 disabled:cursor-not-allowed disabled:opacity-35"
+                title="Create"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreatingProject(true)}
+              className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-slate-300 transition hover:bg-slate-900/45 hover:text-slate-100"
+            >
+              <Plus className="h-4 w-4 shrink-0 text-slate-400" />
+              <span className="truncate">新建项目</span>
+            </button>
+          )}
+          {projects.map((project) => (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() => onProjectChange(project.id)}
+              className={`flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border px-2 text-left text-xs font-medium transition ${
+                activeProjectId === project.id
+                  ? "border-sky-300/35 bg-sky-400/10 text-slate-100"
+                  : "border-transparent text-slate-300 hover:border-slate-800 hover:bg-slate-900/45 hover:text-slate-100"
+              }`}
+            >
+              <FolderKanban className={`h-4 w-4 shrink-0 ${activeProjectId === project.id ? "text-sky-300" : "text-slate-400"}`} />
+              <span className="truncate">{project.name}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-4 shrink-0 border-t border-slate-800/80 pt-3">
+        <button
+          type="button"
+          className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-transparent bg-slate-950/16 px-2.5 py-2 text-left text-xs font-semibold text-slate-300 transition hover:border-slate-800 hover:bg-slate-900/38"
+        >
+          <Settings className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <span className="truncate">Settings</span>
+        </button>
+      </section>
+    </aside>
+  );
+}
+
+function createEmptyProjectRuntime(projectId: ProjectId): ProjectRuntimeState {
   return {
+    projectId,
     tasks: [],
     agents: initialAgents,
     events: [],
@@ -382,7 +682,7 @@ export default function Home() {
   const [requirement, setRequirement] = useState("");
   const [running, setRunning] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [eventStreamOpen, setEventStreamOpen] = useState(false);
+  const [activeOfficePanel, setActiveOfficePanel] = useState<OfficePanel>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [connection, setConnection] = useState<"Local Connected" | "Streaming" | "Error">("Local Connected");
   const [lucyPlan, setLucyPlan] = useState<LucyPlan | null>(null);
@@ -391,6 +691,8 @@ export default function Home() {
   const [activeProjectId, setActiveProjectId] = useState<ProjectId>("demo-project");
   const [activeConversationAgent, setActiveConversationAgent] = useState<AgentName>("Lucy");
   const [pendingArtifacts, setPendingArtifacts] = useState<Artifact[]>([]);
+  const [officeArtifacts, setOfficeArtifacts] = useState<Artifact[]>([]);
+  const [selectedArtifactOwner, setSelectedArtifactOwner] = useState<AgentName>("Tiger");
   const [artifactUploadBusy, setArtifactUploadBusy] = useState(false);
   const [runnerStatus, setRunnerStatus] = useState<RunnerStatus>({ enabled: false, rayWorkspaceWriteEnabled: false });
   const [projectRuntimeById, setProjectRuntimeById] = useState<Record<ProjectId, ProjectRuntimeState>>({});
@@ -412,9 +714,22 @@ export default function Home() {
   const composerRoute = useMemo(() => extractComposerRoute(requirement, activeConversationAgent), [requirement, activeConversationAgent]);
   const activeConversationMessages = conversations[activeConversationAgent];
   const hasAnyConversation = hasConversationMessages(conversations);
+  const projectOfficeArtifacts = useMemo(
+    () =>
+      officeArtifacts
+        .filter((artifact) => artifact.projectId === activeProjectId && !artifact.archivedAt)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [activeProjectId, officeArtifacts]
+  );
+  const selectedOwnerArtifacts = useMemo(
+    () =>
+      projectOfficeArtifacts.filter((artifact) => artifact.owner === selectedArtifactOwner),
+    [projectOfficeArtifacts, selectedArtifactOwner]
+  );
 
   function currentProjectRuntime(): ProjectRuntimeState {
     return {
+      projectId: activeProjectId,
       tasks,
       agents,
       events,
@@ -427,16 +742,17 @@ export default function Home() {
     };
   }
 
-  function applyProjectRuntime(runtime: ProjectRuntimeState) {
+  function applyProjectRuntime(runtime: ProjectRuntimeState, projectId: ProjectId) {
+    const scoped = runtime.projectId === projectId;
     setTasks(runtime.tasks);
     setAgents(runtime.agents);
     setEvents(runtime.events);
     setRequirement(runtime.requirement);
     setLucyPlan(runtime.lucyPlan);
-    setConversations(runtime.conversations);
-    setActiveConversationAgent(runtime.activeConversationAgent);
-    setLucyConversationActive(runtime.lucyConversationActive);
-    setPendingArtifacts(runtime.pendingArtifacts);
+    setConversations(scoped ? runtime.conversations : emptyConversations());
+    setActiveConversationAgent(scoped ? runtime.activeConversationAgent : "Lucy");
+    setLucyConversationActive(scoped ? runtime.lucyConversationActive : false);
+    setPendingArtifacts(scoped ? runtime.pendingArtifacts : []);
     setConnection("Local Connected");
   }
 
@@ -449,14 +765,15 @@ export default function Home() {
     }
 
     const currentRuntime = currentProjectRuntime();
-    const nextRuntime = projectRuntimeById[nextProjectId] || createEmptyProjectRuntime();
+    const nextRuntime = projectRuntimeById[nextProjectId] || createEmptyProjectRuntime(nextProjectId);
     setProjectRuntimeById((current) => ({
       ...current,
       [activeProjectId]: currentRuntime,
       [nextProjectId]: current[nextProjectId] || nextRuntime
     }));
     setActiveProjectId(nextProjectId);
-    applyProjectRuntime(nextRuntime);
+    applyProjectRuntime(nextRuntime, nextProjectId);
+    setActiveOfficePanel(null);
   }
 
   function createProject(name: string) {
@@ -472,11 +789,11 @@ export default function Home() {
     const project: ProjectProfile = {
       id: `project-${Date.now().toString(36)}`,
       name: cleanName,
-      mode: "干净项目",
-      description: "独立任务、对话和产物测试空间",
+      mode: "骞插噣椤圭洰",
+      description: "鐙珛浠诲姟銆佸璇濆拰浜х墿娴嬭瘯绌洪棿",
       createdAt: new Date().toISOString()
     };
-    const emptyRuntime = createEmptyProjectRuntime();
+    const emptyRuntime = createEmptyProjectRuntime(project.id);
 
     setProjects((current) => [...current, project]);
     setProjectRuntimeById((current) => ({
@@ -485,8 +802,9 @@ export default function Home() {
       [project.id]: emptyRuntime
     }));
     setActiveProjectId(project.id);
-    applyProjectRuntime(emptyRuntime);
-    setNotice({ message: `已进入新项目：${project.name}`, tone: "success" });
+    applyProjectRuntime(emptyRuntime, project.id);
+    setActiveOfficePanel(null);
+    setNotice({ message: `宸茶繘鍏ユ柊椤圭洰锛?{project.name}`, tone: "success" });
     window.setTimeout(() => setNotice(null), 3200);
   }
 
@@ -503,10 +821,12 @@ export default function Home() {
         setProjectRuntimeById(storedRuntime);
       }
       if (storedActiveProjectId) {
-        const nextRuntime = storedRuntime?.[storedActiveProjectId] || (storedActiveProjectId === "demo-project" ? null : createEmptyProjectRuntime());
+        const nextRuntime =
+          storedRuntime?.[storedActiveProjectId] ||
+          (storedActiveProjectId === "demo-project" ? null : createEmptyProjectRuntime(storedActiveProjectId));
         setActiveProjectId(storedActiveProjectId);
         if (nextRuntime) {
-          applyProjectRuntime(nextRuntime);
+          applyProjectRuntime(nextRuntime, storedActiveProjectId);
         }
       }
     } catch {
@@ -693,7 +1013,7 @@ export default function Home() {
       setNotice({
         message:
           result?.notice ||
-          (result?.status === "needs_attention" ? "任务执行完毕，但有步骤需处理。" : "任务运行完成。"),
+          (result?.status === "needs_attention" ? "任务执行完毕，但有步骤需要处理。" : "任务运行完成。"),
         tone: result?.status === "needs_attention" ? "attention" : "success"
       });
       window.setTimeout(() => setNotice(null), 5200);
@@ -806,7 +1126,7 @@ export default function Home() {
         });
         const data = (await response.json()) as { ok: boolean; artifacts?: Artifact[]; error?: string };
         if (!response.ok || !data.ok || !data.artifacts?.length) {
-          throw new Error(data.error || "图片粘贴失败");
+          throw new Error(data.error || "鍥剧墖绮樿创澶辫触");
         }
         uploaded.push(...data.artifacts);
       }
@@ -824,26 +1144,6 @@ export default function Home() {
 
   function removePendingArtifact(artifactId: string) {
     setPendingArtifacts((current) => current.filter((artifact) => artifact.id !== artifactId));
-  }
-
-  async function generateLucyPlan() {
-    const lastUserMessage =
-      [...activeConversationMessages].reverse().find((message) => message.role === "user")?.content ||
-      [...conversations.Lucy].reverse().find((message) => message.role === "user")?.content ||
-      "";
-    const message = requirement.trim() || lucyPlan?.requirement || lastUserMessage;
-    if (!message) return;
-    setActiveConversationAgent("Lucy");
-    if (activeConversationAgent !== "Lucy") {
-      setConversations((current) =>
-        appendConversationMessage(current, "Lucy", {
-          id: `user-escalate-${Date.now()}`,
-          role: "user",
-          content: message
-        })
-      );
-    }
-    await runAction("generate_lucy_plan", message, { planId: lucyPlan?.id });
   }
 
   function togglePlannedTask(taskId: string) {
@@ -887,13 +1187,21 @@ export default function Home() {
     });
   }
 
+  const officePanelMeta =
+    activeOfficePanel === "tasks"
+      ? { title: "Task Desk", icon: CheckSquare, tone: "text-slate-300" }
+      : activeOfficePanel === "archive"
+        ? { title: "Archive Library", icon: Database, tone: "text-emerald-300" }
+        : activeOfficePanel === "outputs"
+          ? { title: "Outputs Cabinet", icon: PackageOpen, tone: "text-emerald-300" }
+          : activeOfficePanel === "history"
+            ? { title: "History Log", icon: History, tone: "text-cyan-300" }
+            : null;
+  const OfficePanelIcon = officePanelMeta?.icon;
+
   return (
     <main className="mx-auto flex h-screen max-w-[1920px] flex-col overflow-hidden">
-      <Header
-        connection={connection}
-        eventStreamOpen={eventStreamOpen}
-        onToggleEventStream={() => setEventStreamOpen((value) => !value)}
-      />
+      <Header connection={connection} />
       {notice ? (
         <div
           className={`fixed right-8 top-28 z-30 rounded-xl px-5 py-3 text-sm font-semibold shadow-[0_18px_48px_rgba(0,0,0,0.3)] backdrop-blur ${
@@ -906,47 +1214,21 @@ export default function Home() {
         </div>
       ) : null}
 
-      {eventStreamOpen ? (
-        <div className="fixed right-8 top-24 z-[220] w-[min(760px,calc(100vw-64px))] overflow-hidden rounded-xl border border-slate-800 bg-[#08111d]/98 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur">
-          <EventStream events={events} autoScroll={autoScroll} onToggleAutoScroll={() => setAutoScroll((value) => !value)} />
-        </div>
-      ) : null}
-
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] gap-7 overflow-hidden px-9 pb-6 pt-0 max-xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)] max-lg:grid-cols-1 max-md:px-5">
-        <div className="relative grid min-h-0 min-w-0 grid-rows-[minmax(0,1.35fr)_minmax(240px,0.65fr)] gap-5 overflow-hidden">
-          <div className="min-h-0 min-w-0 overflow-visible">
-            <AgentStatus
-              agents={agents}
-              running={running}
-              connection={connection}
-              projects={projects}
-              projectId={activeProjectId}
-              onProjectChange={switchProject}
-              onCreateProject={createProject}
-              tasks={tasks}
-              onReviewTask={requestCanvasReview}
-              collapsed={false}
-              className="h-full"
-            />
-          </div>
-          <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-5 overflow-hidden max-xl:grid-cols-1">
-            <TaskList
-              tasks={tasks}
-              className="h-full"
-              selectable={
-                lucyPlan?.stage === "planned" ||
-                lucyPlan?.stage === "executing" ||
-                lucyPlan?.stage === "reviewing" ||
-                lucyPlan?.stage === "blocked"
-              }
-              running={running}
-              executionDisabledReason={executionDisabledReason}
-              onToggleTask={togglePlannedTask}
-              onExecuteSelected={executeSelectedTasks}
-            />
-            <ContextHubPanel projectId={activeProjectId} className="h-full" />
-          </div>
-        </div>
+      <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(340px,0.72fr)_minmax(0,1.2fr)] gap-5 overflow-hidden px-9 pb-6 pt-0 max-2xl:grid-cols-[240px_minmax(320px,0.78fr)_minmax(0,1.05fr)] max-lg:grid-cols-1 max-md:px-5">
+        <OfficeSidebar
+          agents={agents}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          activeAgent={activeConversationAgent}
+          running={running}
+          connection={connection}
+          onSelectAgent={(agentName) => {
+            setActiveConversationAgent(agentName);
+            setLucyConversationActive(true);
+          }}
+          onProjectChange={switchProject}
+          onCreateProject={createProject}
+        />
 
         <div className="flex min-h-0 min-w-0 flex-col gap-5">
           <LucyConversationPanel
@@ -954,7 +1236,6 @@ export default function Home() {
             messages={activeConversationMessages}
             running={running}
             activeAgent={activeConversationAgent}
-            onGeneratePlan={generateLucyPlan}
             className="min-h-0 flex-1"
           />
           <RequirementComposer
@@ -972,7 +1253,133 @@ export default function Home() {
             className="shrink-0"
           />
         </div>
+
+        <div className="relative min-h-0 min-w-0 overflow-hidden">
+          <AgentStatus
+            agents={agents}
+            running={running}
+            connection={connection}
+            projects={projects}
+            projectId={activeProjectId}
+            onProjectChange={switchProject}
+            onCreateProject={createProject}
+            selectedAgent={activeConversationAgent}
+            onSelectAgent={(agentName) => {
+              setActiveConversationAgent(agentName);
+              setLucyConversationActive(true);
+            }}
+            tasks={tasks}
+            activeOfficePanel={activeOfficePanel}
+            onOpenTaskDesk={() => setActiveOfficePanel((current) => (current === "tasks" ? null : "tasks"))}
+            onOpenArchiveLibrary={() => setActiveOfficePanel((current) => (current === "archive" ? null : "archive"))}
+            onOpenArtifactBox={() => setActiveOfficePanel((current) => (current === "outputs" ? null : "outputs"))}
+            onOpenHistoryLog={() => setActiveOfficePanel((current) => (current === "history" ? null : "history"))}
+            onArtifactsChange={setOfficeArtifacts}
+            onReviewTask={requestCanvasReview}
+            collapsed={false}
+            className="h-full"
+          />
+          {activeOfficePanel && officePanelMeta && OfficePanelIcon ? (
+            <div className="absolute inset-x-4 bottom-[76px] z-[145] flex h-[min(58%,460px)] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-700/85 bg-[#050914]/[0.99] shadow-[0_-18px_64px_rgba(0,0,0,0.48)] backdrop-blur">
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-4">
+                <div className="flex min-w-0 items-center gap-2">
+                  <OfficePanelIcon className={`h-4 w-4 shrink-0 ${officePanelMeta.tone}`} />
+                  <h2 className="truncate text-base font-semibold text-slate-100">{officePanelMeta.title}</h2>
+                  {activeOfficePanel === "history" ? (
+                    <>
+                      <span className="status-dot bg-emerald-400" />
+                      <span className="shrink-0 text-xs text-slate-400">实时连接中</span>
+                      <button
+                        type="button"
+                        onClick={() => setAutoScroll((value) => !value)}
+                        aria-label="切换自动滚动"
+                        aria-pressed={autoScroll}
+                        className="hidden"
+                      >
+                        <span>自动滚动</span>
+                        <span
+                          className={`relative h-5 w-9 rounded-full border border-slate-700 p-0.5 transition ${
+                            autoScroll ? "bg-slate-800/80" : "bg-slate-900/70"
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition ${
+                              autoScroll ? "left-[19px] bg-emerald-300" : "left-1 bg-slate-500"
+                            }`}
+                          />
+                        </span>
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  {activeOfficePanel === "history" ? (
+                    <button
+                      type="button"
+                      onClick={() => setAutoScroll((value) => !value)}
+                      aria-label="切换自动滚动"
+                      aria-pressed={autoScroll}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full text-xs text-slate-400 transition hover:text-slate-100"
+                    >
+                      <span>自动滚动</span>
+                      <span
+                        className={`relative h-5 w-9 rounded-full border border-slate-700 p-0.5 transition ${
+                          autoScroll ? "bg-slate-800/80" : "bg-slate-900/70"
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition ${
+                            autoScroll ? "left-[19px] bg-emerald-300" : "left-1 bg-slate-500"
+                          }`}
+                        />
+                      </span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setActiveOfficePanel(null)}
+                    className="rounded-full px-2 py-1 text-xs font-semibold text-slate-400 transition hover:bg-slate-800/70 hover:text-slate-100"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 px-5 pb-4 pt-4">
+                {activeOfficePanel === "tasks" ? (
+                  <TaskList
+                    tasks={tasks}
+                    className="h-full"
+                    embedded
+                    selectable={
+                      lucyPlan?.stage === "planned" ||
+                      lucyPlan?.stage === "executing" ||
+                      lucyPlan?.stage === "reviewing" ||
+                      lucyPlan?.stage === "blocked"
+                    }
+                    running={running}
+                    executionDisabledReason={executionDisabledReason}
+                    onToggleTask={togglePlannedTask}
+                    onExecuteSelected={executeSelectedTasks}
+                  />
+                ) : activeOfficePanel === "archive" ? (
+                  <ContextHubPanel projectId={activeProjectId} className="h-full" embedded />
+                ) : activeOfficePanel === "outputs" ? (
+                  <OutputsCabinetPanel
+                    owners={agents.map((agent) => agent.name)}
+                    owner={selectedArtifactOwner}
+                    artifacts={selectedOwnerArtifacts}
+                    allArtifacts={projectOfficeArtifacts}
+                    onOwnerChange={setSelectedArtifactOwner}
+                  />
+                ) : (
+                  <EventStream events={events} autoScroll={autoScroll} onToggleAutoScroll={() => setAutoScroll((value) => !value)} embedded />
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </main>
   );
 }
+

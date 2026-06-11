@@ -209,6 +209,25 @@ textarea {
   margin: 0.18rem 0;
 }
 
+.markdown-preview strong {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.markdown-preview code {
+  white-space: break-spaces;
+}
+
+.markdown-preview a {
+  color: #67e8f9;
+}
+
+.markdown-preview hr {
+  margin: 0.85rem 0;
+  border: 0;
+  border-top: 1px solid rgba(51, 65, 85, 0.9);
+}
+
 .markdown-list-item {
   padding-left: 1rem;
   text-indent: -0.75rem;

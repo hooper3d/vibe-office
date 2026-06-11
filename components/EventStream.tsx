@@ -6,6 +6,7 @@ type EventStreamProps = {
   events: ConsoleEvent[];
   autoScroll: boolean;
   onToggleAutoScroll: () => void;
+  embedded?: boolean;
 };
 
 const eventTone: Record<string, string> = {
@@ -138,9 +139,10 @@ function eventText(event: AGUIEvent) {
   return event.type.toLowerCase();
 }
 
-export function EventStream({ events, autoScroll, onToggleAutoScroll }: EventStreamProps) {
+export function EventStream({ events, autoScroll, onToggleAutoScroll, embedded = false }: EventStreamProps) {
   return (
-    <section className="min-h-[260px] min-w-0 p-5">
+    <section className={embedded ? "flex h-full min-h-0 min-w-0 flex-col" : "min-h-[260px] min-w-0 p-5"}>
+      {!embedded ? (
       <div className="mb-4 flex min-w-0 items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-lg border border-slate-700 bg-slate-950/32">
@@ -171,10 +173,38 @@ export function EventStream({ events, autoScroll, onToggleAutoScroll }: EventStr
           </span>
         </button>
       </div>
+      ) : (
+        <div className="hidden">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="status-dot bg-emerald-400" />
+            <span className="truncate text-sm text-slate-300">实时连接中</span>
+          </div>
+          <button
+            type="button"
+            onClick={onToggleAutoScroll}
+            aria-label="切换自动滚动"
+            aria-pressed={autoScroll}
+            className="group inline-flex shrink-0 items-center gap-2 rounded-full text-xs text-slate-300 transition hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-500/40"
+          >
+            <span>自动滚动</span>
+            <span
+              className={`relative h-6 w-11 rounded-full border border-slate-700 p-0.5 transition ${
+                autoScroll ? "bg-slate-800/80" : "bg-slate-900/70"
+              }`}
+            >
+              <span
+                className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition ${
+                  autoScroll ? "left-6 bg-emerald-300" : "left-1 bg-slate-500"
+                }`}
+              />
+            </span>
+          </button>
+        </div>
+      )}
 
       <div
         id="event-stream-log"
-        className="scrollbar-thin h-[180px] min-w-0 overflow-auto rounded-lg border border-slate-800/80 bg-slate-950/18 px-3 py-2 font-mono text-sm leading-7"
+        className={`${embedded ? "min-h-0 flex-1" : "h-[180px]"} scrollbar-thin min-w-0 overflow-auto rounded-lg border border-slate-800/80 bg-slate-950/60 px-3 py-2 font-mono text-sm leading-7`}
       >
         {events.length === 0 ? (
           <p className="text-slate-400">等待需求或手动消息...</p>
