@@ -141,7 +141,7 @@ function eventText(event: AGUIEvent) {
 export function EventStream({ events, autoScroll, onToggleAutoScroll }: EventStreamProps) {
   return (
     <section className="min-h-[260px] min-w-0 p-5">
-      <div className="mb-4 flex min-w-0 items-center justify-between gap-4 border-b border-slate-800 pb-3">
+      <div className="mb-4 flex min-w-0 items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-lg border border-slate-700 bg-slate-950/32">
             <Code2 className="h-5 w-5 text-slate-200" />
@@ -172,7 +172,10 @@ export function EventStream({ events, autoScroll, onToggleAutoScroll }: EventStr
         </button>
       </div>
 
-      <div id="event-stream-log" className="scrollbar-thin h-[180px] min-w-0 overflow-auto font-mono text-sm leading-7">
+      <div
+        id="event-stream-log"
+        className="scrollbar-thin h-[180px] min-w-0 overflow-auto rounded-lg border border-slate-800/80 bg-slate-950/18 px-3 py-2 font-mono text-sm leading-7"
+      >
         {events.length === 0 ? (
           <p className="text-slate-400">等待需求或手动消息...</p>
         ) : (

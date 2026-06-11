@@ -11,7 +11,12 @@ import { RequirementComposer } from "@/components/RequirementComposer";
 import { TaskList } from "@/components/TaskList";
 import { sendAguiInput } from "@/lib/agui-client";
 import { initialAgents, initialTasks } from "@/lib/mock-data";
-import type { AgentAction, AgentName, AgentStatus as AgentStatusValue } from "@/types/agent";
+import type {
+  AgentAction,
+  AgentName,
+  AgentStatus as AgentStatusValue,
+  ProjectId
+} from "@/types/agent";
 import type { ConsoleEvent } from "@/types/event";
 import type { LucyPlan, TaskItem, TaskPlanStatus, TaskPriority } from "@/types/task";
 
@@ -35,6 +40,13 @@ type Notice = {
   tone: "success" | "attention";
 };
 
+type ComposerRoute = {
+  target: AgentName;
+  message: string;
+};
+
+type AgentConversations = Record<AgentName, LucyConversationMessage[]>;
+
 const LUCY_SYSTEM_PREFIXES = [
   "Lucy 已收到控制台意图：提交需求。正在连接 Hermes Lucy。",
   "Lucy 已收到控制台意图：提交需求并编排。开始读取本地工作区上下文。",
@@ -45,8 +57,67 @@ function cleanLucyDelta(delta: string) {
   return LUCY_SYSTEM_PREFIXES.reduce((current, prefix) => current.replace(prefix, ""), delta);
 }
 
-function buildLucyConversationFromEvents(events: ConsoleEvent[]) {
-  const messages: LucyConversationMessage[] = [];
+function isAgentName(value: unknown): value is AgentName {
+  return value === "Lucy" || value === "Ray" || value === "Tiger" || value === "Musk";
+}
+
+function extractComposerRoute(value: string, fallbackAgent: AgentName = "Lucy"): ComposerRoute {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^@(Lucy|Ray|Tiger|Musk)\s*/i);
+  if (!match) return { target: fallbackAgent, message: trimmed };
+
+  const rawTarget = match[1];
+  const normalizedTarget = rawTarget.slice(0, 1).toUpperCase() + rawTarget.slice(1).toLowerCase();
+  return {
+    target: isAgentName(normalizedTarget) ? normalizedTarget : fallbackAgent,
+    message: trimmed.slice(match[0].length).trim()
+  };
+}
+
+function emptyConversations(): AgentConversations {
+  return {
+    Lucy: [],
+    Ray: [],
+    Tiger: [],
+    Musk: []
+  };
+}
+
+function appendConversationMessage(
+  conversations: AgentConversations,
+  agentName: AgentName,
+  message: LucyConversationMessage
+): AgentConversations {
+  return {
+    ...conversations,
+    [agentName]: [...conversations[agentName], message]
+  };
+}
+
+function appendConversationDelta(
+  conversations: AgentConversations,
+  messageId: string,
+  delta: string
+): AgentConversations {
+  let changed = false;
+  const next = { ...conversations };
+
+  for (const agentName of Object.keys(next) as AgentName[]) {
+    const messages = next[agentName];
+    const messageIndex = messages.findIndex((message) => message.role === "agent" && message.id === messageId);
+    if (messageIndex < 0) continue;
+
+    changed = true;
+    next[agentName] = messages.map((message, index) =>
+      index === messageIndex ? { ...message, content: `${message.content}${delta}` } : message
+    );
+  }
+
+  return changed ? next : conversations;
+}
+
+function buildConversationsFromEvents(events: ConsoleEvent[]) {
+  let conversations = emptyConversations();
 
   for (const event of events) {
     if (event.type === EventType.RUN_STARTED) {
@@ -56,37 +127,75 @@ function buildLucyConversationFromEvents(events: ConsoleEvent[]) {
               intent?: {
                 action?: string;
                 message?: string;
+                targetAgent?: string;
               };
             };
           }
         | undefined;
       const intent = input?.state?.intent;
-      if (intent?.action === "submit_requirement_to_lucy" && intent.message) {
-        messages.push({
-          id: `user-${event.runId || event.timestamp || messages.length}`,
+      if (
+        (intent?.action === "submit_requirement_to_lucy" || intent?.action === "manual_message") &&
+        intent.message
+      ) {
+        const targetAgent = isAgentName(intent.targetAgent) ? intent.targetAgent : "Lucy";
+        conversations = appendConversationMessage(conversations, targetAgent, {
+          id: `user-${event.runId || event.timestamp || conversations[targetAgent].length}`,
           role: "user",
           content: intent.message
         });
       }
     }
 
-    if (event.type === EventType.TEXT_MESSAGE_START && event.name === "Lucy") {
-      messages.push({
+    if (event.type === EventType.TEXT_MESSAGE_START && isAgentName(event.name)) {
+      conversations = appendConversationMessage(conversations, event.name, {
         id: event.messageId,
-        role: "lucy",
+        role: "agent",
+        agentName: event.name,
         content: ""
       });
     }
 
     if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
-      const last = messages[messages.length - 1];
-      if (last?.role === "lucy" && last.id === event.messageId) {
-        last.content += cleanLucyDelta(event.delta);
-      }
+      conversations = appendConversationDelta(conversations, event.messageId, cleanLucyDelta(event.delta));
     }
   }
 
-  return messages.filter((message) => message.content.trim());
+  return Object.fromEntries(
+    (Object.keys(conversations) as AgentName[]).map((agentName) => [
+      agentName,
+      conversations[agentName].filter((message) => message.content.trim())
+    ])
+  ) as AgentConversations;
+}
+
+function hasConversationMessages(conversations: AgentConversations) {
+  return (Object.keys(conversations) as AgentName[]).some((agentName) => conversations[agentName].length > 0);
+}
+
+function latestConversationAgentFromEvents(events: ConsoleEvent[]): AgentName | undefined {
+  for (const event of [...events].reverse()) {
+    if (event.type === EventType.TEXT_MESSAGE_START && isAgentName(event.name)) return event.name;
+    if (event.type === EventType.RUN_STARTED) {
+      const input = event.input as
+        | {
+            state?: {
+              intent?: {
+                action?: string;
+                targetAgent?: string;
+              };
+            };
+          }
+        | undefined;
+      const intent = input?.state?.intent;
+      if (
+        (intent?.action === "submit_requirement_to_lucy" || intent?.action === "manual_message") &&
+        isAgentName(intent.targetAgent)
+      ) {
+        return intent.targetAgent;
+      }
+    }
+  }
+  return undefined;
 }
 
 function clock() {
@@ -176,7 +285,6 @@ function agentStatusFromPlan(agentName: AgentName, tasks: TaskItem[]): AgentStat
     if (agentName === "Lucy") return "reviewing";
     return "working";
   }
-  if (ownedTasks.some((task) => task.planStatus === "blocked")) return "blocked";
   return "ready";
 }
 
@@ -203,9 +311,14 @@ export default function Home() {
   const [connection, setConnection] = useState<"Local Connected" | "Streaming" | "Error">("Local Connected");
   const [lucyPlan, setLucyPlan] = useState<LucyPlan | null>(null);
   const [lucyConversationActive, setLucyConversationActive] = useState(false);
-  const [lucyMessages, setLucyMessages] = useState<LucyConversationMessage[]>([]);
+  const [conversations, setConversations] = useState<AgentConversations>(() => emptyConversations());
+  const [activeProjectId, setActiveProjectId] = useState<ProjectId>("demo-project");
+  const [activeConversationAgent, setActiveConversationAgent] = useState<AgentName>("Lucy");
 
   const activeTask = useMemo(() => tasks.find((task) => task.status === "ready") || tasks[0] || initialTasks[0], [tasks]);
+  const composerRoute = useMemo(() => extractComposerRoute(requirement, activeConversationAgent), [requirement, activeConversationAgent]);
+  const activeConversationMessages = conversations[activeConversationAgent];
+  const hasAnyConversation = hasConversationMessages(conversations);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -227,9 +340,11 @@ export default function Home() {
           setEvents(history.events);
           setTasks((current) => replayStateDeltas(current, history.events, applyStateDelta));
           setAgents((current) => replayStateDeltas(current, history.events, applyAgentStateDelta));
-          const restoredLucyMessages = buildLucyConversationFromEvents(history.events);
-          if (restoredLucyMessages.length) {
-            setLucyMessages(restoredLucyMessages);
+          const restoredConversations = buildConversationsFromEvents(history.events);
+          if (hasConversationMessages(restoredConversations)) {
+            setConversations(restoredConversations);
+            const lastAgent = latestConversationAgentFromEvents(history.events);
+            if (lastAgent) setActiveConversationAgent(lastAgent);
           }
         }
         if (history.lucyPlan) {
@@ -296,27 +411,22 @@ export default function Home() {
       setAgents((current) => applyAgentStateDelta(current, event));
     }
 
-    if (event.type === EventType.TEXT_MESSAGE_START && event.name === "Lucy") {
-      setLucyMessages((current) => [
-        ...current,
-        {
+    if (event.type === EventType.TEXT_MESSAGE_START && isAgentName(event.name)) {
+      const agentName = event.name;
+      setConversations((current) =>
+        appendConversationMessage(current, agentName, {
           id: event.messageId,
-          role: "lucy",
+          role: "agent",
+          agentName,
           content: ""
-        }
-      ]);
+        })
+      );
     }
 
     if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
       const delta = cleanLucyDelta(event.delta);
       if (!delta) return;
-      setLucyMessages((current) =>
-        current.map((message) =>
-          message.role === "lucy" && message.id === event.messageId
-            ? { ...message, content: `${message.content}${delta}` }
-            : message
-        )
-      );
+      setConversations((current) => appendConversationDelta(current, event.messageId, delta));
     }
 
     if (event.type === EventType.CUSTOM) {
@@ -360,12 +470,16 @@ export default function Home() {
 
     setTasks((current) => current.map((task) => (task.id === taskId ? { ...task, status: "blocked" } : task)));
     setAgents((current) =>
-      current.map((agent) => (linkedAgents.includes(agent.name) ? { ...agent, status: "blocked" } : agent))
+      current.map((agent) => (linkedAgents.includes(agent.name) ? { ...agent, status: "ready" } : agent))
     );
   }
 
-  async function runAction(action: AgentAction, manualMessage?: string, options?: { selectedTaskIds?: string[]; planId?: string }) {
-    const targetAgent = targetForAction(action);
+  async function runAction(
+    action: AgentAction,
+    manualMessage?: string,
+    options?: { selectedTaskIds?: string[]; planId?: string; targetAgent?: AgentName }
+  ) {
+    const targetAgent = options?.targetAgent || targetForAction(action);
     const taskId = activeTask.id;
     setRunning(true);
     setNotice(null);
@@ -375,7 +489,7 @@ export default function Home() {
       {
         action,
         targetAgent,
-        projectId: "demo-project",
+        projectId: activeProjectId,
         taskId,
         message: manualMessage,
         selectedTaskIds: options?.selectedTaskIds,
@@ -411,25 +525,41 @@ export default function Home() {
   }
 
   async function submitRequirement() {
-    const message = requirement.trim();
+    const route = extractComposerRoute(requirement, activeConversationAgent);
+    const targetAgent = route.target;
+    const message = route.message;
     if (!message) return;
+    const action: AgentAction = targetAgent === "Lucy" ? "submit_requirement_to_lucy" : "manual_message";
     setLucyConversationActive(true);
-    setLucyMessages((current) => [
-      ...current,
-      {
+    setActiveConversationAgent(targetAgent);
+    setConversations((current) =>
+      appendConversationMessage(current, targetAgent, {
         id: `user-${Date.now()}`,
         role: "user",
         content: message
-      }
-    ]);
+      })
+    );
     setRequirement("");
-    await runAction("submit_requirement_to_lucy", message);
+    await runAction(action, message, { targetAgent });
   }
 
   async function generateLucyPlan() {
-    const lastUserMessage = [...lucyMessages].reverse().find((message) => message.role === "user")?.content || "";
+    const lastUserMessage =
+      [...activeConversationMessages].reverse().find((message) => message.role === "user")?.content ||
+      [...conversations.Lucy].reverse().find((message) => message.role === "user")?.content ||
+      "";
     const message = requirement.trim() || lucyPlan?.requirement || lastUserMessage;
     if (!message) return;
+    setActiveConversationAgent("Lucy");
+    if (activeConversationAgent !== "Lucy") {
+      setConversations((current) =>
+        appendConversationMessage(current, "Lucy", {
+          id: `user-escalate-${Date.now()}`,
+          role: "user",
+          content: message
+        })
+      );
+    }
     await runAction("generate_lucy_plan", message, { planId: lucyPlan?.id });
   }
 
@@ -475,7 +605,7 @@ export default function Home() {
       setAgents(initialAgents);
       setEvents([]);
       setLucyPlan(null);
-      setLucyMessages([]);
+      setConversations(emptyConversations());
       setLucyConversationActive(false);
       setConnection("Local Connected");
       setNotice({ message: "运行状态已重置。", tone: "success" });
@@ -488,7 +618,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto flex h-screen max-w-[1920px] flex-col overflow-hidden">
-      <Header />
+      <Header connection={connection} />
       {notice ? (
         <div
           className={`fixed right-8 top-28 z-30 rounded-xl px-5 py-3 text-sm font-semibold shadow-[0_18px_48px_rgba(0,0,0,0.3)] backdrop-blur ${
@@ -502,16 +632,28 @@ export default function Home() {
       ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] gap-7 overflow-hidden px-9 pb-6 pt-0 max-lg:grid-cols-1 max-md:px-5">
-        <div className="flex min-h-0 min-w-0 flex-col gap-5">
+        <div className="relative flex min-h-0 min-w-0 flex-col gap-5 overflow-visible">
           {lucyConversationActive ? (
-            <LucyConversationPanel
-              plan={lucyPlan}
-              messages={lucyMessages}
-              running={running}
-              onGeneratePlan={generateLucyPlan}
-              onClose={() => setLucyConversationActive(false)}
-              className="min-h-0 flex-1"
-            />
+            <>
+              <AgentStatus
+                agents={agents}
+                running={running}
+                connection={connection}
+                onReset={resetHistory}
+                selectedAgent={activeConversationAgent}
+                onSelectAgent={setActiveConversationAgent}
+                collapsed
+              />
+              <LucyConversationPanel
+                plan={activeConversationAgent === "Lucy" ? lucyPlan : null}
+                messages={activeConversationMessages}
+                running={running}
+                activeAgent={activeConversationAgent}
+                onGeneratePlan={generateLucyPlan}
+                onClose={() => setLucyConversationActive(false)}
+                className="min-h-0 flex-1"
+              />
+            </>
           ) : (
             <AgentStatus
               agents={agents}
@@ -525,10 +667,14 @@ export default function Home() {
           <RequirementComposer
             value={requirement}
             running={running}
+            agents={agents}
+            projectId={activeProjectId}
+            target={composerRoute.target}
+            onProjectChange={setActiveProjectId}
             onChange={setRequirement}
             onSubmit={submitRequirement}
             onOpenConversation={() => setLucyConversationActive(true)}
-            canOpenConversation={!lucyConversationActive && Boolean(lucyMessages.length || lucyPlan)}
+            canOpenConversation={!lucyConversationActive && Boolean(hasAnyConversation || lucyPlan)}
             className="shrink-0"
           />
         </div>

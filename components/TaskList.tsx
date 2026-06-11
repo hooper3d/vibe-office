@@ -32,9 +32,9 @@ export function TaskList({
       <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <CheckSquare className="h-5 w-5 text-slate-300" />
-          <h2 className="text-lg font-semibold text-slate-100">任务列表</h2>
+          <h2 className="text-base font-semibold text-slate-100">任务列表</h2>
         </div>
-        <span className="soft-pill bg-slate-500/10 px-2.5 py-1 text-xs text-slate-300">{tasks.length} 项</span>
+        <span className="soft-pill bg-slate-500/10 px-2 py-0.5 text-xs text-slate-300">{tasks.length} 项</span>
       </div>
 
       {selectable ? (
@@ -44,7 +44,7 @@ export function TaskList({
             type="button"
             onClick={onExecuteSelected}
             disabled={running || selectedCount === 0}
-            className="inline-flex h-8 items-center justify-center gap-2 rounded-full bg-cyan-500/14 px-3 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-full bg-cyan-500/14 px-2.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Play className="h-3.5 w-3.5" />
             执行选中任务

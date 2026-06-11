@@ -43,6 +43,11 @@ export const contextHubFiles = [
     purpose: "Blog 素材"
   },
   {
+    path: "ops/ARTIFACTS.md",
+    label: "ARTIFACTS.md",
+    purpose: "产物出口"
+  },
+  {
     path: "docs/AG_UI_FIRST_MVP_DEV.md",
     label: "AG_UI_FIRST_MVP_DEV.md",
     purpose: "MVP dev doc"

@@ -34,10 +34,11 @@ function wait(ms: number) {
 function getIntent(input: RunAgentInput): AguiIntent {
   const state = input.state as { intent?: Partial<AguiIntent> };
   const intent = state.intent || {};
+  const projectId = intent.projectId === "free-project" ? "free-project" : "demo-project";
   return {
     action: (intent.action || "dispatch_to_ray") as AgentAction,
     targetAgent: (intent.targetAgent || "Ray") as AgentName,
-    projectId: "demo-project",
+    projectId,
     taskId: intent.taskId || "task-001",
     message: intent.message,
     planId: intent.planId,
@@ -316,6 +317,154 @@ async function runRemoteAgentTask(input: { task: TaskItem; plan: LucyPlan; requi
   }
 
   throw new Error(`Remote execution is not configured for ${input.task.owner}.`);
+}
+
+async function buildDirectAgentContext(intent: AguiIntent) {
+  if (intent.projectId === "free-project") {
+    return [
+      "Project mode: 自由项目。",
+      "当前对话是开放性任务，不绑定 AG-UI 推广网页开发的共享记忆边界。",
+      "请直接回应用户请求；如果需要文件、图片、URL 或部署产物，请明确说明产出位置或下一步需要什么。"
+    ].join("\n");
+  }
+
+  const snapshot = await readContextHubSnapshot();
+  const contextHub = snapshot
+    .map((file) => {
+      const content = file.exists && file.content.trim() ? file.content.trim() : "暂无内容";
+      return `--- ${file.path} (${file.purpose}) ---\n${content}`;
+    })
+    .join("\n\n");
+
+  return `Project mode: AG-UI 推广网页开发 / Vibe Office。\nShared memory snapshot:\n${contextHub}`;
+}
+
+async function sendDirectAgentResponse(intent: AguiIntent, runId: string) {
+  const context = await buildDirectAgentContext(intent);
+  const message = [
+    `You are ${intent.targetAgent}, a real Hermes Agent in Vibe Office.`,
+    "This is a direct user message, not a Lucy-orchestrated task.",
+    "Do not pretend another agent completed work.",
+    "For simple requests, answer directly. For complex requests, say whether it should be escalated to Lucy for planning.",
+    "",
+    context,
+    "",
+    "User message:",
+    intent.message || ""
+  ].join("\n");
+  const conversation = `ag-ui-direct-${intent.projectId}-${intent.targetAgent.toLowerCase()}`;
+
+  if (intent.targetAgent === "Lucy") {
+    const result = await sendLucyResponse({ message, conversation });
+    return result.text;
+  }
+  if (intent.targetAgent === "Tiger") {
+    const result = await sendTigerResponse({ message, conversation });
+    return result.text;
+  }
+  if (intent.targetAgent === "Musk") {
+    const result = await sendMuskResponse({ message, conversation });
+    return result.text;
+  }
+
+  throw new Error(`Direct Hermes chat is not configured for ${intent.targetAgent}.`);
+}
+
+async function streamDirectAgentMessage(input: {
+  controller: ReadableStreamDefaultController<Uint8Array>;
+  intent: AguiIntent;
+  runId: string;
+  threadId?: string;
+  messageId: string;
+}) {
+  const toolCallId = `tool_direct_${input.intent.targetAgent.toLowerCase()}_${input.runId}`;
+
+  await emit(input.controller, {
+    type: EventType.STATE_DELTA,
+    delta: [{ op: "replace", path: `/agents/${input.intent.targetAgent}/status`, value: "working" }],
+    timestamp: Date.now()
+  });
+  await emit(input.controller, {
+    type: EventType.TOOL_CALL_START,
+    toolCallId,
+    toolCallName: "direct_agent_message",
+    parentMessageId: input.messageId,
+    timestamp: Date.now()
+  });
+  await emit(input.controller, {
+    type: EventType.TOOL_CALL_ARGS,
+    toolCallId,
+    delta: JSON.stringify({
+      targetAgent: input.intent.targetAgent,
+      projectId: input.intent.projectId,
+      mode: input.intent.projectId === "free-project" ? "free" : "context_hub"
+    }),
+    timestamp: Date.now()
+  });
+
+  try {
+    const outputText = await sendDirectAgentResponse(input.intent, input.runId);
+    await emit(input.controller, {
+      type: EventType.TOOL_CALL_END,
+      toolCallId,
+      timestamp: Date.now()
+    });
+    await emit(input.controller, {
+      type: EventType.TEXT_MESSAGE_CONTENT,
+      messageId: input.messageId,
+      delta: outputText,
+      timestamp: Date.now()
+    });
+    await emit(input.controller, {
+      type: EventType.STATE_DELTA,
+      delta: [{ op: "replace", path: `/agents/${input.intent.targetAgent}/status`, value: "ready" }],
+      timestamp: Date.now()
+    });
+    await finishRun({
+      controller: input.controller,
+      threadId: input.threadId,
+      runId: input.runId,
+      action: input.intent.action,
+      targetAgent: input.intent.targetAgent,
+      message: input.intent.message,
+      messageId: input.messageId,
+      status: "success",
+      resultStatus: "direct_message_completed",
+      notice: `${input.intent.targetAgent} 已回复。`,
+      outputText
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `${input.intent.targetAgent} 直连失败。`;
+    await emit(input.controller, {
+      type: EventType.TOOL_CALL_END,
+      toolCallId,
+      timestamp: Date.now()
+    });
+    await emit(input.controller, {
+      type: EventType.TEXT_MESSAGE_CONTENT,
+      messageId: input.messageId,
+      delta: `${input.intent.targetAgent} 未连接或直连失败：${message}`,
+      timestamp: Date.now()
+    });
+    await emit(input.controller, {
+      type: EventType.STATE_DELTA,
+      delta: [{ op: "replace", path: `/agents/${input.intent.targetAgent}/status`, value: "ready" }],
+      timestamp: Date.now()
+    });
+    await finishRun({
+      controller: input.controller,
+      threadId: input.threadId,
+      runId: input.runId,
+      action: input.intent.action,
+      targetAgent: input.intent.targetAgent,
+      message: input.intent.message,
+      messageId: input.messageId,
+      status: "needs_attention",
+      resultStatus: "needs_attention",
+      notice: `${input.intent.targetAgent} 直连失败，需要处理。`,
+      outputText: message
+    });
+  }
 }
 
 async function finishRun(input: {
@@ -995,7 +1144,7 @@ async function streamSelectedTasks(input: {
     await emit(input.controller, {
       type: EventType.STATE_DELTA,
       delta: [
-        { op: "replace", path: "/agents/" + task.owner + "/status", value: failed ? "blocked" : "idle" },
+        { op: "replace", path: "/agents/" + task.owner + "/status", value: "ready" },
         { op: "replace", path: "/tasks/" + task.id + "/status", value: failed ? "blocked" : "reviewing" },
         { op: "replace", path: "/tasks/" + task.id + "/planStatus", value: failed ? "blocked" : "selected" }
       ],
@@ -1095,6 +1244,10 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   }
   if (intent.action === "generate_lucy_plan") {
     await streamLucyPlan({ controller, intent, runId, threadId, messageId });
+    return;
+  }
+  if (intent.action === "manual_message" && intent.targetAgent !== "Ray") {
+    await streamDirectAgentMessage({ controller, intent, runId, threadId, messageId });
     return;
   }
   await emit(controller, {
@@ -1504,8 +1657,7 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
     finalAgentPaths.add("/agents/Ray/status");
   }
   const finalAgentDeltas = Array.from(finalAgentPaths).map((path) => {
-    if (hasRunFailure) return { op: "replace", path, value: "blocked" };
-    return { op: "replace", path, value: "idle" };
+    return { op: "replace", path, value: "ready" };
   });
 
   await emit(controller, {

@@ -2,11 +2,13 @@
 
 import { ChevronDown, Sparkles } from "lucide-react";
 import { useEffect, useRef } from "react";
+import type { AgentName } from "@/types/agent";
 import type { LucyPlan } from "@/types/task";
 
 export type LucyConversationMessage = {
   id: string;
-  role: "user" | "lucy";
+  role: "user" | "agent";
+  agentName?: AgentName;
   content: string;
 };
 
@@ -14,6 +16,7 @@ type LucyConversationPanelProps = {
   plan: LucyPlan | null;
   messages?: LucyConversationMessage[];
   running: boolean;
+  activeAgent: AgentName;
   onGeneratePlan: () => void;
   onClose?: () => void;
   className?: string;
@@ -23,6 +26,7 @@ export function LucyConversationPanel({
   plan,
   messages = [],
   running,
+  activeAgent,
   onGeneratePlan,
   onClose,
   className = ""
@@ -35,23 +39,28 @@ export function LucyConversationPanel({
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
   }, [messages, running, plan]);
 
-  if (!plan && !messages.length) return null;
-
   const isClarifying = plan?.stage === "clarifying";
   const hasMessages = messages.length > 0;
+  const activeInitial = activeAgent.slice(0, 1);
+  const activeTone =
+    activeAgent === "Lucy"
+      ? "bg-violet-200 text-violet-700 shadow-[0_0_0_5px_rgba(167,139,250,0.16)]"
+      : activeAgent === "Tiger"
+        ? "bg-amber-100 text-amber-700 shadow-[0_0_0_5px_rgba(245,158,11,0.14)]"
+        : activeAgent === "Musk"
+          ? "bg-slate-200 text-slate-700 shadow-[0_0_0_5px_rgba(148,163,184,0.14)]"
+          : "bg-blue-100 text-blue-700 shadow-[0_0_0_5px_rgba(96,165,250,0.14)]";
 
   return (
     <section className={`frost flex min-h-0 min-w-0 flex-col rounded-xl p-5 ${className}`}>
       <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-violet-200 text-lg font-semibold text-violet-700 shadow-[0_0_0_5px_rgba(167,139,250,0.16)]">
-            L
+        <div className="flex min-w-0 items-center gap-3">
+          <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-lg font-semibold ${activeTone}`}>
+            {activeInitial}
           </div>
+          <span className="truncate text-base font-semibold text-slate-100">{activeAgent}</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-200">
-            Lucy · {running ? "对话中" : "在线"}
-          </span>
           {onClose ? (
             <button
               type="button"
@@ -101,6 +110,12 @@ export function LucyConversationPanel({
             ) : null}
           </div>
         ) : null}
+
+        {!hasMessages && !plan ? (
+          <div className="flex h-full min-h-[180px] items-center justify-center text-sm text-slate-500">
+            还没有和 {activeAgent} 的对话。
+          </div>
+        ) : null}
       </div>
 
       {plan ? (
@@ -125,7 +140,7 @@ export function LucyConversationPanel({
             className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full bg-violet-500/14 px-4 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/22 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Sparkles className="h-4 w-4" />
-            生成计划
+            交给 Lucy 拆解
           </button>
         </div>
       ) : null}
@@ -135,7 +150,7 @@ export function LucyConversationPanel({
 
 function TypingDots() {
   return (
-    <span className="inline-flex h-5 items-center gap-1" aria-label="Lucy 正在输入">
+    <span className="inline-flex h-5 items-center gap-1" aria-label="Agent 正在输入">
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms]" />
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms]" />

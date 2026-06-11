@@ -1,7 +1,13 @@
-import { ChevronDown, Folder, ShieldAlert, Sparkles } from "lucide-react";
-import { project } from "@/lib/mock-data";
+import { ShieldAlert, Sparkles } from "lucide-react";
 
-export function Header() {
+type HeaderProps = {
+  connection: "Local Connected" | "Streaming" | "Error";
+};
+
+export function Header({ connection }: HeaderProps) {
+  const isError = connection === "Error";
+  const isStreaming = connection === "Streaming";
+
   return (
     <header className="flex h-[80px] items-center gap-6 bg-[#0a111c]/72 px-8 backdrop-blur max-md:px-5">
       <div className="flex min-w-0 items-center gap-4">
@@ -20,12 +26,13 @@ export function Header() {
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-4">
-        <div className="top-control hidden h-9 max-w-[320px] items-center justify-between gap-4 rounded-lg px-4 text-sm text-slate-100 md:flex">
-          <div className="flex min-w-0 items-center gap-3">
-            <Folder className="h-4 w-4 shrink-0 text-slate-300" />
-            <span className="truncate">{project.name}</span>
-          </div>
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+        <div
+          className={`top-control hidden h-9 min-w-44 items-center justify-center gap-2.5 rounded-lg px-3 text-sm font-medium md:flex ${
+            isError ? "text-red-300" : isStreaming ? "text-blue-300" : "text-emerald-300"
+          }`}
+        >
+          <span className={`status-dot ${isError ? "bg-red-500" : isStreaming ? "bg-blue-500" : "bg-emerald-500"}`} />
+          AG-UI · {connection}
         </div>
 
         <button

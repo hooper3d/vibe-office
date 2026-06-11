@@ -23,7 +23,7 @@ export function QuickActions({ running, onAction }: QuickActionsProps) {
     <section className="frost min-w-0 rounded-xl p-6">
       <div className="mb-5 flex items-center gap-3">
         <Send className="h-5 w-5 text-slate-300" />
-        <h2 className="text-lg font-semibold text-slate-100">快捷动作</h2>
+        <h2 className="text-base font-semibold text-slate-100">快捷动作</h2>
       </div>
 
       <div className="grid min-w-0 grid-cols-2 gap-3 max-sm:grid-cols-1">

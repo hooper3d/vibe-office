@@ -6,6 +6,21 @@ export const project = {
   name: "AG-UI 推广网页开发"
 } as const;
 
+export const projects = [
+  {
+    id: "demo-project",
+    name: "AG-UI 推广网页开发",
+    mode: "共享记忆",
+    description: "绑定 Project Context Hub 的正式项目"
+  },
+  {
+    id: "free-project",
+    name: "自由项目",
+    mode: "开放",
+    description: "开放性对话，不预设项目边界"
+  }
+] as const;
+
 export const initialAgents: AgentProfile[] = [
   { name: "Lucy", role: "项目经理 Agent", status: "ready", tone: "violet" },
   { name: "Ray", role: "全栈工程师 Agent", status: "ready", tone: "blue" },
@@ -41,5 +56,6 @@ export const contextHubOverview = [
   { file: "HANDOFF.md", role: "Agent 交接", flow: "Ray → Lucy/Tiger" },
   { file: "DECISIONS.md", role: "关键决策", flow: "User/Lucy" },
   { file: "RELEASE_NOTES.md", role: "发布摘要", flow: "Tiger 读取" },
-  { file: "BLOG_CONTEXT.md", role: "Blog 素材", flow: "Tiger 读取" }
+  { file: "BLOG_CONTEXT.md", role: "Blog 素材", flow: "Tiger 读取" },
+  { file: "ARTIFACTS.md", role: "产物出口", flow: "Ray 写入" }
 ];

@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, Database, FileText, Loader2, Network, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AlertTriangle, Bot, Clock3, Database, FileText, Loader2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { contextHubOverview } from "@/lib/mock-data";
 
 type ContextHubPanelProps = {
@@ -19,17 +19,35 @@ type ContextFilePreview = {
   error?: string;
 };
 
+type ContextFileMetadata = {
+  file: string;
+  updatedAt: string | null;
+  lastEditor: string;
+};
+
+type ContextFilesMetadataResponse = {
+  ok: boolean;
+  files: ContextFileMetadata[];
+};
+
 function formatUpdatedAt(value: string | null) {
-  if (!value) return "暂无更新时间";
+  if (!value) return "暂无更新";
 
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
     hour12: false
   }).format(new Date(value));
+}
+
+function isRecentlyUpdated(value: string | null) {
+  if (!value) return false;
+  const updatedAt = new Date(value).getTime();
+  if (Number.isNaN(updatedAt)) return false;
+
+  return Date.now() - updatedAt < 2 * 60 * 60 * 1000;
 }
 
 function MarkdownPreview({ content }: { content: string }) {
@@ -42,9 +60,27 @@ function MarkdownPreview({ content }: { content: string }) {
         if (line.startsWith("### ")) return <h4 key={index}>{line.slice(4)}</h4>;
         if (line.startsWith("## ")) return <h3 key={index}>{line.slice(3)}</h3>;
         if (line.startsWith("# ")) return <h2 key={index}>{line.slice(2)}</h2>;
-        if (line.startsWith("- ")) return <p key={index} className="markdown-list-item">{line.slice(2)}</p>;
-        if (/^\d+\.\s/.test(line)) return <p key={index} className="markdown-list-item">{line}</p>;
-        if (line.startsWith("```")) return <p key={index} className="font-mono text-slate-500">{line}</p>;
+        if (line.startsWith("- ")) {
+          return (
+            <p key={index} className="markdown-list-item">
+              {line.slice(2)}
+            </p>
+          );
+        }
+        if (/^\d+\.\s/.test(line)) {
+          return (
+            <p key={index} className="markdown-list-item">
+              {line}
+            </p>
+          );
+        }
+        if (line.startsWith("```")) {
+          return (
+            <p key={index} className="font-mono text-slate-500">
+              {line}
+            </p>
+          );
+        }
 
         return <p key={index}>{line}</p>;
       })}
@@ -55,11 +91,62 @@ function MarkdownPreview({ content }: { content: string }) {
 export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [preview, setPreview] = useState<ContextFilePreview | null>(null);
+  const [metadataByFile, setMetadataByFile] = useState<Record<string, ContextFileMetadata>>({});
+  const [changedFiles, setChangedFiles] = useState<Set<string>>(new Set());
+  const [acknowledgedUpdates, setAcknowledgedUpdates] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function openPreview(file: string) {
+  useEffect(() => {
+    let active = true;
+
+    async function loadMetadata() {
+      try {
+        const response = await fetch("/api/context-files", { cache: "no-store" });
+        const data = (await response.json()) as ContextFilesMetadataResponse;
+        if (!active || !response.ok || !data.ok) return;
+
+        setMetadataByFile((current) => {
+          const next = Object.fromEntries(data.files.map((item) => [item.file, item]));
+          const changed = data.files
+            .filter((item) => current[item.file] && current[item.file].updatedAt !== item.updatedAt)
+            .map((item) => item.file);
+
+          if (changed.length) {
+            setChangedFiles((currentChanged) => {
+              const nextChanged = new Set(currentChanged);
+              changed.forEach((file) => nextChanged.add(file));
+              return nextChanged;
+            });
+          }
+
+          return next;
+        });
+      } catch {
+        if (active) setMetadataByFile({});
+      }
+    }
+
+    void loadMetadata();
+    const interval = window.setInterval(loadMetadata, 10000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  async function openPreview(file: string, acknowledgedUpdatedAt?: string | null) {
     setSelectedFile(file);
+    setAcknowledgedUpdates((current) => ({
+      ...current,
+      [file]: acknowledgedUpdatedAt ?? metadataByFile[file]?.updatedAt ?? null
+    }));
+    setChangedFiles((current) => {
+      const next = new Set(current);
+      next.delete(file);
+      return next;
+    });
     setLoading(true);
     setError(null);
     setPreview(null);
@@ -87,43 +174,63 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
 
   return (
     <section className={`frost relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl p-6 ${className}`}>
-      <div className="mb-5 flex shrink-0 min-w-0 items-center justify-between gap-4">
+      <div className="mb-5 flex min-w-0 shrink-0 items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <Database className="h-5 w-5 text-emerald-300" />
-          <h2 className="truncate text-lg font-semibold text-slate-100">Project Context Hub</h2>
+          <h2 className="truncate text-base font-semibold text-slate-100">Project Context Hub</h2>
         </div>
-        <div className="soft-pill bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">共享记忆</div>
-      </div>
-
-      <div className="mb-5 grid shrink-0 grid-cols-3 gap-2 text-center text-xs font-semibold text-slate-300">
-        <div className="rounded-lg border border-slate-800 bg-slate-950/22 px-2 py-2">统一入口</div>
-        <div className="rounded-lg border border-slate-800 bg-slate-950/22 px-2 py-2">共享记忆</div>
-        <div className="rounded-lg border border-slate-800 bg-slate-950/22 px-2 py-2">上下文分发</div>
+        <div className="soft-pill h-7 max-w-20 shrink-0 truncate bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+          共享记忆
+        </div>
       </div>
 
       <div className="scrollbar-thin min-h-0 flex-1 space-y-2 overflow-auto pr-1">
-        {contextHubOverview.map((item) => (
-          <button
-            key={item.file}
-            type="button"
-            onClick={() => openPreview(item.file)}
-            className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_112px] gap-3 rounded-lg border px-3 py-2 text-left transition hover:border-emerald-400/35 hover:bg-slate-900/45 focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-300/40 ${
-              selectedFile === item.file ? "border-emerald-400/35 bg-slate-900/48" : "border-slate-800 bg-slate-950/18"
-            }`}
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 shrink-0 text-emerald-300" />
-                <span className="truncate font-mono text-sm font-semibold text-slate-100">{item.file}</span>
+        {contextHubOverview.map((item) => {
+          const metadata = metadataByFile[item.file];
+          const hasChanged = changedFiles.has(item.file);
+          const hasBeenSeen = acknowledgedUpdates[item.file] === (metadata?.updatedAt ?? null);
+          const hasUpdateStatus = !hasBeenSeen && (hasChanged || isRecentlyUpdated(metadata?.updatedAt ?? null));
+
+          return (
+            <button
+              key={item.file}
+              type="button"
+              onClick={() => openPreview(item.file, metadata?.updatedAt ?? null)}
+              className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_88px] gap-3 rounded-lg border px-3 py-2 text-left transition hover:border-emerald-400/35 hover:bg-slate-900/45 focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-300/40 ${
+                selectedFile === item.file
+                  ? "border-emerald-400/35 bg-slate-900/48"
+                  : hasUpdateStatus
+                    ? "border-sky-400/45 bg-sky-400/10"
+                    : "border-slate-800 bg-slate-950/18"
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="relative shrink-0">
+                    <FileText className="h-4 w-4 text-emerald-300" />
+                  </span>
+                  <span className="truncate font-mono text-sm font-semibold text-slate-100">{item.file}</span>
+                  {hasUpdateStatus ? (
+                    <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-sky-400/12 px-1.5 text-xs font-medium text-sky-200 shadow-[inset_0_0_0_1px_rgba(125,211,252,0.16)]">
+                      更新
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 truncate text-xs text-slate-400">{item.role}</p>
               </div>
-              <p className="mt-1 text-xs text-slate-400">{item.role}</p>
-            </div>
-            <div className="flex items-center justify-end gap-2 text-xs text-slate-400">
-              <Network className="h-4 w-4 text-sky-300" />
-              <span>{item.flow}</span>
-            </div>
-          </button>
-        ))}
+              <div className="flex min-w-0 flex-col items-end justify-center gap-1 text-xs text-slate-400">
+                <span className="flex max-w-full items-center gap-1 truncate">
+                  <Clock3 className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+                  <span className="truncate">{formatUpdatedAt(metadata?.updatedAt ?? null)}</span>
+                </span>
+                <span className="flex max-w-full items-center gap-1 truncate">
+                  <Bot className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                  <span className="truncate">{metadata?.lastEditor ?? "Unknown"}</span>
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {selectedFile ? (
@@ -134,8 +241,9 @@ export function ContextHubPanel({ className = "" }: ContextHubPanelProps) {
                 <FileText className="h-4 w-4 shrink-0 text-emerald-300" />
                 <h3 className="truncate font-mono text-sm font-semibold text-slate-50">{selectedFile}</h3>
               </div>
-              <p className="mt-1 text-xs text-slate-400">
-                {preview?.purpose || "Project Context Hub"} · {formatUpdatedAt(preview?.updatedAt ?? null)}
+              <p className="mt-1 truncate text-xs text-slate-400">
+                {preview?.purpose || "Project Context Hub"} · 更新 {formatUpdatedAt(preview?.updatedAt ?? null)} · 编辑{" "}
+                {metadataByFile[selectedFile]?.lastEditor ?? "Unknown"}
               </p>
             </div>
             <button

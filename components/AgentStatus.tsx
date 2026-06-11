@@ -9,6 +9,8 @@ type AgentStatusProps = {
   running: boolean;
   connection: "Local Connected" | "Streaming" | "Error";
   onReset: () => void;
+  selectedAgent?: AgentProfile["name"];
+  onSelectAgent?: (agentName: AgentProfile["name"]) => void;
   className?: string;
   collapsed?: boolean;
 };
@@ -53,9 +55,9 @@ const agentMetaLine: Partial<Record<AgentProfile["name"], string>> = {
 function displayStatus(agent: AgentProfile) {
   if (agent.status === "blocked") {
     return {
-      label: "需处理",
-      className: "bg-red-500/10 text-red-300 shadow-[inset_0_0_0_1px_rgba(248,113,113,0.1)]",
-      dot: "bg-red-500",
+      label: "空闲中",
+      className: "bg-emerald-500/10 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.1)]",
+      dot: "bg-emerald-500",
       active: false
     };
   }
@@ -89,9 +91,9 @@ function displayStatus(agent: AgentProfile) {
 
   if (agent.status === "idle") {
     return {
-      label: "已完成",
-      className: "bg-sky-500/10 text-sky-300 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.1)]",
-      dot: "bg-sky-500",
+      label: "空闲中",
+      className: "bg-emerald-500/10 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.1)]",
+      dot: "bg-emerald-500",
       active: false
     };
   }
@@ -109,12 +111,13 @@ export function AgentStatus({
   running,
   connection,
   onReset,
+  selectedAgent,
+  onSelectAgent,
   className = "",
   collapsed = false
 }: AgentStatusProps) {
   const [openAgentName, setOpenAgentName] = useState<AgentProfile["name"] | null>(null);
-  const isError = connection === "Error";
-  const isStreaming = connection === "Streaming";
+  void connection;
   const leader = agents.find((agent) => agent.name === "Lucy");
   const executors = agents.filter((agent) => agent.name !== "Lucy");
   const leaderOpen = Boolean(leader && openAgentName === leader.name);
@@ -125,22 +128,64 @@ export function AgentStatus({
       .map((agent) => agent.name)
   );
 
+  if (collapsed) {
+    return (
+      <section className={`frost relative z-40 flex min-w-0 shrink-0 items-center gap-4 rounded-xl p-4 ${className}`}>
+        <div className="flex min-w-0 shrink-0 items-center gap-3">
+          <Bot className="h-5 w-5 text-slate-300" />
+          <h2 className="text-base font-semibold text-slate-100">Agent 列表</h2>
+        </div>
+
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-3 overflow-hidden">
+          {agents.map((agent) => {
+            const status = displayStatus(agent);
+            return (
+              <button
+                key={agent.name}
+                type="button"
+                onClick={() => {
+                  onSelectAgent?.(agent.name);
+                  setOpenAgentName(null);
+                }}
+                className={`group relative flex min-w-0 items-center gap-2 rounded-full px-2 py-1 transition hover:bg-slate-900/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-sky-400/50 ${
+                  selectedAgent === agent.name ? "bg-slate-800/70 shadow-[inset_0_0_0_1px_rgba(125,211,252,0.16)]" : ""
+                }`}
+                title={`切换到 ${agent.name} 对话`}
+              >
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-semibold ${toneClass[agent.tone]}`}>
+                  {agent.name.slice(0, 1)}
+                </span>
+                <span className="min-w-0 truncate text-sm font-semibold text-slate-100">{agent.name}</span>
+                <span className={`status-dot shrink-0 ${status.dot}`} />
+                {openAgentName === agent.name ? <AgentDetailCard agent={agent} compact /> : null}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={running}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-400 transition hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
+            title="重置运行状态"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
-      <section className={`frost relative z-20 flex min-w-0 flex-col rounded-xl transition-all duration-300 ${collapsed ? "p-4" : "p-6"} ${className}`}>
-        <div className={`${collapsed ? "mb-3" : "mb-5"} flex items-center justify-between gap-3`}>
+      <section className={`frost agent-canvas-bg relative z-40 flex min-w-0 flex-col rounded-xl transition-all duration-300 ${collapsed ? "p-4" : "p-6"} ${className}`}>
+        <div className={`relative z-10 ${collapsed ? "mb-3" : "mb-5"} flex items-center justify-between gap-3`}>
           <div className="flex items-center gap-3">
             <Bot className="h-5 w-5 text-slate-300" />
-            <h2 className="text-lg font-semibold text-slate-100">Agent 列表</h2>
+            <h2 className="text-base font-semibold text-slate-100">Agent 列表</h2>
           </div>
           <div className="flex min-w-0 items-center gap-3">
-            <div
-              className={`top-control flex h-8 min-w-44 items-center justify-center gap-2.5 rounded-lg px-3 text-sm font-medium ${
-                isError ? "text-red-300" : isStreaming ? "text-blue-300" : "text-emerald-300"
-              }`}
-            >
-              <span className={`status-dot ${isError ? "bg-red-500" : isStreaming ? "bg-blue-500" : "bg-emerald-500"}`} />
-              AG-UI · {connection}
-            </div>
             <button
               type="button"
               onClick={onReset}
@@ -153,7 +198,7 @@ export function AgentStatus({
           </div>
         </div>
 
-        <div className={`relative flex max-h-[calc(100%-48px)] flex-col justify-between overflow-visible transition-all duration-300 max-md:h-[360px] ${
+        <div className={`relative z-10 flex max-h-[calc(100%-48px)] flex-col justify-between overflow-visible transition-all duration-300 max-md:h-[360px] ${
           collapsed ? "h-[220px] min-h-[210px]" : "h-[500px] min-h-[440px]"
         }`}>
           <AgentFlowLines activeExecutors={activeExecutors} collapsed={collapsed} />
@@ -257,7 +302,7 @@ function AgentNode({
           </span>
         ) : null}
         <h3 className={`${collapsed ? "text-sm" : "text-lg"} font-semibold leading-6 text-slate-100`}>{agent.name}</h3>
-        <span className={`inline-flex h-6 items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${status.className}`}>
+        <span className={`inline-flex h-6 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-medium ${status.className}`}>
           <span className={`status-dot ${status.dot}`} />
           {status.label}
         </span>
@@ -272,7 +317,7 @@ function popoverPosition(agent: AgentProfile) {
   return "left-1/2 -translate-x-1/2";
 }
 
-function AgentDetailCard({ agent }: { agent: AgentProfile }) {
+function AgentDetailCard({ agent, compact = false }: { agent: AgentProfile; compact?: boolean }) {
   const status = displayStatus(agent);
   const detail = agentDetails[agent.name];
   const metaLine = agentMetaLine[agent.name] || agent.role;
@@ -281,7 +326,7 @@ function AgentDetailCard({ agent }: { agent: AgentProfile }) {
       <div
         role="region"
         aria-label={`${agent.name} Agent 介绍`}
-        className={`absolute top-[118px] z-[80] w-[330px] rounded-xl border border-slate-700/90 bg-[#0b121c] p-5 text-left text-slate-100 shadow-[0_22px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] ${popoverPosition(agent)}`}
+        className={`absolute ${compact ? "top-12" : "top-[118px]"} z-[80] w-[330px] rounded-xl border border-slate-700/90 bg-[#0b121c] p-5 text-left text-slate-100 shadow-[0_22px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] ${popoverPosition(agent)}`}
       >
         <span
           aria-hidden="true"

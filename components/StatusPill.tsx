@@ -67,9 +67,9 @@ export function StatusPill({ label, compact }: StatusPillProps) {
 
   return (
     <span
-      className={`inline-flex min-h-7 items-center justify-center gap-2 rounded-full px-3 text-sm font-medium ${
+      className={`inline-flex min-h-6 items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${
         palette[text] || "bg-slate-500/10 text-slate-300 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.1)]"
-      } ${compact ? "min-w-16" : "min-w-24"}`}
+      } ${compact ? "min-w-12" : "min-w-20"}`}
     >
       {showDot ? <span className={`status-dot ${dot[text]}`} /> : null}
       {displayText[text] || text}

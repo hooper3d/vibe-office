@@ -576,3 +576,47 @@ Agent?Musk / Ray
 
 ???
 Musk Hermes ?????????????????????????? shell ?????Ray ???????????????????? Project Context Hub?????? Musk ??????????? SOP?
+
+## 2026-06-11 · Ray 开发记录：MVP-1 收口
+
+时间：2026-06-11
+Agent：Ray
+动作：mvp_1_stabilization
+
+结果：
+- 输入框支持 @Agent 直接路由，复杂任务仍可交给 Lucy 编排。
+- 对话区按 Agent 分房间，Tiger / Musk / Lucy / Ray 不再混在同一个聊天线程。
+- 当前项目频道切换移动到输入框左下角，并使用频道语义图标，发送前可见。
+- Agent 状态机收口：Agent 列表只显示可用性和忙闲，任务完成/需处理留在任务列表。
+- AG-UI 全站连接状态移动到顶部 nav 右侧。
+- Project Context Hub、Event Stream、Task List 等面板视觉继续向极简工作台风格收口。
+
+验证：
+- npm run lint 通过。
+- npx tsc --noEmit 通过。
+
+下一步：
+- 增加 Agent 能力边界文档。
+- 增加共享记忆归因约束到 Agent prompt / 运行规则。
+- 设计产物出口。
+
+## 2026-06-11 · Ray 开发记录：记录 Agent 产物出口需求
+
+时间：2026-06-11
+Agent：Ray
+动作：record_artifact_output_requirement
+
+背景：
+- 用户确认 Tiger 的图片生成能力已经成功，但当前平台无法把图片直接展示到对话框。
+- 这暴露出 Vibe Office 第二阶段的关键缺口：真实 Agent 不只返回文字，还会返回图片、文件、链接、部署结果等产物。
+
+结果：
+- 已将“Agent 产物出口”列为第二阶段 P0 需求。
+- 已新增 `ops/ARTIFACTS.md` 作为重点需求文档。
+- 已在 `ops/DECISIONS.md` 中记录产品决策。
+
+后续实现方向：
+- Artifact registry/API。
+- 图片气泡和文件卡片。
+- Project Context Hub 产物归档。
+- Hermes Agent 结构化 artifact 返回协议。

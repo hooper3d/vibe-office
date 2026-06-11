@@ -1,4 +1,6 @@
 export type AgentName = "Lucy" | "Ray" | "Tiger" | "Musk";
+export type AgentMentionTarget = "Auto" | AgentName;
+export type ProjectId = "demo-project" | "free-project";
 
 export type AgentStatus =
   | "idle"
@@ -32,7 +34,7 @@ export type AgentProfile = {
 export type AguiIntent = {
   action: AgentAction;
   targetAgent: AgentName;
-  projectId: "demo-project";
+  projectId: ProjectId;
   taskId?: string;
   message?: string;
   planId?: string;
