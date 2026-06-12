@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { AlertTriangle, Bot, Clock3, Database, FileText, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -35,7 +35,7 @@ type ContextFilesMetadataResponse = {
 };
 
 function formatUpdatedAt(value: string | null) {
-  if (!value) return "鏆傛棤鏇存柊";
+  if (!value) return "暂无更新";
 
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -189,7 +189,7 @@ export function ContextHubPanel({ projectId, embedded = false, className = "" }:
                   <span className="truncate font-mono text-sm font-semibold text-slate-100">{item.file}</span>
                   {hasUpdateStatus ? (
                     <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-sky-400/12 px-1.5 text-xs font-medium text-sky-200 shadow-[inset_0_0_0_1px_rgba(125,211,252,0.16)]">
-                      鏇存柊
+                      更新
                     </span>
                   ) : null}
                 </div>
@@ -219,14 +219,14 @@ export function ContextHubPanel({ projectId, embedded = false, className = "" }:
                 <h3 className="truncate font-mono text-sm font-semibold text-slate-50">{selectedFile}</h3>
               </div>
               <p className="mt-1 truncate text-xs text-slate-400">
-                {preview?.purpose || "Project Context Hub"} 路 鏇存柊 {formatUpdatedAt(preview?.updatedAt ?? null)} 路 缂栬緫{" "}
+                {preview?.purpose || "Project Context Hub"} / 更新 {formatUpdatedAt(preview?.updatedAt ?? null)} / 编辑{" "}
                 {metadataByFile[selectedFile]?.lastEditor ?? "Unknown"}
               </p>
             </div>
             <button
               type="button"
               onClick={closePreview}
-              aria-label="鍏抽棴棰勮"
+              aria-label="关闭预览"
               className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800/80 hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-400/50"
             >
               <X className="h-4 w-4" />
@@ -237,7 +237,7 @@ export function ContextHubPanel({ projectId, embedded = false, className = "" }:
             {loading ? (
               <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                姝ｅ湪璇诲彇鍏变韩璁板繂...
+                正在读取共享记忆...
               </div>
             ) : error ? (
               <div className="flex items-center gap-2 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
@@ -247,7 +247,7 @@ export function ContextHubPanel({ projectId, embedded = false, className = "" }:
             ) : preview?.exists && preview.content.trim() ? (
               <MarkdownPreview content={preview.content} />
             ) : (
-              <div className="text-sm text-slate-400">鏆傛棤鍐呭</div>
+              <div className="text-sm text-slate-400">暂无内容</div>
             )}
           </div>
         </div>

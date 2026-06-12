@@ -1,3 +1,5 @@
+import type { HermesResponsesInput } from "@/lib/hermes-multimodal";
+
 const DEFAULT_TIGER_BASE_URL = "http://127.0.0.1:18643/v1";
 const DEFAULT_CONVERSATION = "ag-ui-tiger";
 const DEFAULT_RESPONSE_TIMEOUT_MS = Number(process.env.AG_UI_HERMES_RESPONSE_TIMEOUT_MS || 180_000);
@@ -117,13 +119,14 @@ export async function checkTigerHermesHealth() {
 
 export async function sendTigerResponse(input: {
   message: string;
+  responsesInput?: HermesResponsesInput;
   conversation?: string;
   context?: string;
 }): Promise<HermesTigerResponse> {
   const { baseUrl, apiKey, model } = getTigerHermesConfig();
   const body: Record<string, unknown> = {
     conversation: input.conversation || DEFAULT_CONVERSATION,
-    input: input.context ? `${input.context}\n\nUser request:\n${input.message}` : input.message
+    input: input.responsesInput || (input.context ? `${input.context}\n\nUser request:\n${input.message}` : input.message)
   };
 
   if (model) body.model = model;

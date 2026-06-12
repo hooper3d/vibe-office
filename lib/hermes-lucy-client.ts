@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
+import type { HermesResponsesInput } from "@/lib/hermes-multimodal";
 
 const DEFAULT_HERMES_BASE_URL = "http://127.0.0.1:8642/v1";
 const DEFAULT_CONVERSATION = "ag-ui-lucy";
@@ -136,6 +137,7 @@ export async function checkHermesHealth() {
 
 export async function sendLucyResponse(input: {
   message: string;
+  responsesInput?: HermesResponsesInput;
   conversation?: string;
   context?: string;
 }): Promise<HermesLucyResponse> {
@@ -145,6 +147,7 @@ export async function sendLucyResponse(input: {
     input: input.context ? `${input.context}\n\n用户需求：\n${input.message}` : input.message
   };
 
+  if (input.responsesInput) body.input = input.responsesInput;
   if (model) body.model = model;
 
   let response: Response;

@@ -3,6 +3,7 @@ import { registerArtifactsFromText } from "@/lib/artifacts";
 import { runCodexExec } from "@/lib/codex-exec-adapter";
 import { buildCommandTemplate } from "@/lib/command-templates";
 import { readContextHubSnapshot } from "@/lib/context-hub";
+import { buildHermesResponsesInput } from "@/lib/hermes-multimodal";
 import { HermesLucyError, sendLucyResponse } from "@/lib/hermes-lucy-client";
 import { sendMuskResponse } from "@/lib/hermes-musk-client";
 import { sendTigerResponse } from "@/lib/hermes-tiger-client";
@@ -435,17 +436,21 @@ async function sendDirectAgentResponse(intent: AguiIntent, runId: string) {
     attachmentContext
   ].join("\n");
   const conversation = `ag-ui-direct-${intent.projectId}-${intent.targetAgent.toLowerCase()}`;
+  const responsesInput = await buildHermesResponsesInput({
+    message,
+    attachments: intent.attachments
+  });
 
   if (intent.targetAgent === "Lucy") {
-    const result = await sendLucyResponse({ message, conversation });
+    const result = await sendLucyResponse({ message, responsesInput, conversation });
     return result.text;
   }
   if (intent.targetAgent === "Tiger") {
-    const result = await sendTigerResponse({ message, conversation });
+    const result = await sendTigerResponse({ message, responsesInput, conversation });
     return result.text;
   }
   if (intent.targetAgent === "Musk") {
-    const result = await sendMuskResponse({ message, conversation });
+    const result = await sendMuskResponse({ message, responsesInput, conversation });
     return result.text;
   }
 
@@ -707,8 +712,13 @@ async function streamHermesLucyRequirement(input: {
   }, 0);
 
   try {
+    const message = [input.intent.message || "", formatAttachmentContext(input.intent.attachments)].filter(Boolean).join("\n\n");
     const lucy = await sendLucyResponse({
-      message: [input.intent.message || "", formatAttachmentContext(input.intent.attachments)].filter(Boolean).join("\n\n"),
+      message,
+      responsesInput: await buildHermesResponsesInput({
+        message,
+        attachments: input.intent.attachments
+      }),
       conversation
     });
 
@@ -925,8 +935,13 @@ async function streamLucyPlan(input: {
   }, 0);
 
   try {
+    const message = buildHermesPlanPrompt(requirement, input.intent.attachments);
     const lucy = await sendLucyResponse({
-      message: buildHermesPlanPrompt(requirement, input.intent.attachments),
+      message,
+      responsesInput: await buildHermesResponsesInput({
+        message,
+        attachments: input.intent.attachments
+      }),
       conversation
     });
     const plan = parseHermesLucyPlan({ text: lucy.text, requirement, existingPlan });

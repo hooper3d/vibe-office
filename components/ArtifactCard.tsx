@@ -137,13 +137,14 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
         </a>
       ) : null}
 
-      <div className="flex min-w-0 items-start gap-3 px-3 py-3">
+      <div className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] gap-3 px-3 py-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-800/80 text-slate-200">
           {artifact.type === "image" ? <ImageIcon className="h-4 w-4" /> : <FileDown className="h-4 w-4" />}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-sm font-semibold leading-5 text-slate-100">{artifact.title}</p>
+
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-slate-100">{artifact.title}</p>
             <span className="shrink-0 rounded-full bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200">
               {archivedAt ? "Archived" : "Hub"}
             </span>
@@ -153,65 +154,67 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
           </p>
           {artifact.description ? <p className="mt-1 text-xs leading-5 text-slate-400">{artifact.description}</p> : null}
           {previewError ? <p className="mt-1 text-xs leading-5 text-red-200">{previewError}</p> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {canPreviewTextContent ? (
+
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {canPreviewTextContent ? (
+              <button
+                type="button"
+                onClick={togglePreview}
+                className="grid h-7 w-7 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                title={previewOpen ? "收起预览" : "预览"}
+              >
+                {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={togglePreview}
-              className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
-              title={previewOpen ? "收起预览" : "预览"}
+              onClick={archiveToHub}
+              disabled={Boolean(archivedAt) || archiveBusy}
+              className="grid h-7 w-7 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-default disabled:text-emerald-300 disabled:opacity-80"
+              title={archivedAt ? "已归档到 Hub" : "归档到 Hub"}
             >
-              {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              {archivedAt ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : archiveBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Archive className="h-4 w-4" />
+              )}
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={archiveToHub}
-            disabled={Boolean(archivedAt) || archiveBusy}
-            className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-default disabled:text-emerald-300 disabled:opacity-80"
-            title={archivedAt ? "已归档到 Hub" : "归档到 Hub"}
-          >
-            {archivedAt ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : archiveBusy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Archive className="h-4 w-4" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={copyLocation}
-            disabled={!copyValue}
-            className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-            title={copied ? "已复制" : "复制链接"}
-          >
-            <Copy className="h-4 w-4" />
-          </button>
-          {href ? (
-            <a
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
-              title="打开"
+            <button
+              type="button"
+              onClick={copyLocation}
+              disabled={!copyValue}
+              className="grid h-7 w-7 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              title={copied ? "已复制" : "复制链接"}
             >
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          ) : null}
-          {href ? (
-            <a
-              href={href}
-              download
-              className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
-              title="下载"
-            >
-              <Download className="h-4 w-4" />
-            </a>
-          ) : null}
+              <Copy className="h-4 w-4" />
+            </button>
+            {href ? (
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className="grid h-7 w-7 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                title="打开"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            ) : null}
+            {href ? (
+              <a
+                href={href}
+                download
+                className="grid h-7 w-7 place-items-center rounded-full text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                title="下载"
+              >
+                <Download className="h-4 w-4" />
+              </a>
+            ) : null}
+          </div>
         </div>
       </div>
+
       {previewOpen ? <PreviewText content={previewContent} truncated={previewTruncated} /> : null}
     </div>
   );

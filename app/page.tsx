@@ -789,8 +789,8 @@ export default function Home() {
     const project: ProjectProfile = {
       id: `project-${Date.now().toString(36)}`,
       name: cleanName,
-      mode: "骞插噣椤圭洰",
-      description: "鐙珛浠诲姟銆佸璇濆拰浜х墿娴嬭瘯绌洪棿",
+      mode: "干净项目",
+      description: "独立任务、对话和产物测试空间",
       createdAt: new Date().toISOString()
     };
     const emptyRuntime = createEmptyProjectRuntime(project.id);
@@ -804,7 +804,7 @@ export default function Home() {
     setActiveProjectId(project.id);
     applyProjectRuntime(emptyRuntime, project.id);
     setActiveOfficePanel(null);
-    setNotice({ message: `宸茶繘鍏ユ柊椤圭洰锛?{project.name}`, tone: "success" });
+    setNotice({ message: `已进入新项目：${project.name}`, tone: "success" });
     window.setTimeout(() => setNotice(null), 3200);
   }
 
