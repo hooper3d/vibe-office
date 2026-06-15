@@ -708,7 +708,7 @@ function uniqueOfficeAgentNames(names: string[]) {
   return Array.from(new Set(names.map((name) => normalizeHermesAgentName(name)).filter(Boolean)));
 }
 
-function inferOfficeActivityFromText(text: string, activeAgent: OfficeSetupAgent): OfficeActivityState {
+function inferOfficeActivityFromUserMessage(text: string, activeAgent: OfficeSetupAgent): OfficeActivityState {
   const normalized = text.toLowerCase();
   const activeName = normalizeOfficeAgentDisplayName(activeAgent);
   const isChief = activeAgent.isChief || activeAgent.profileName === "default";
@@ -2625,7 +2625,7 @@ export default function Home() {
     const profileName = activeAgent.profileName || "default";
     const displayName = normalizeHermesAgentName(activeAgent.displayName);
     const roleLabel = activeAgent.isChief ? "Chief Agent" : activeAgent.role || "Worker Agent";
-    const initialOfficeActivity = inferOfficeActivityFromText(message, activeAgent);
+    const initialOfficeActivity = inferOfficeActivityFromUserMessage(message, activeAgent);
     const runtimeState = officeProfileRuntimeByName[profileName];
     if (!activeAgent.isChief && profileName !== "default" && runtimeState && !runtimeState.chatAvailable) {
       setNotice({
@@ -2717,7 +2717,7 @@ export default function Home() {
       const reply = result.ok
         ? result.message
         : `I could not reach ${displayName} through Hermes yet.\n\n${result.message || `Hermes chat failed (${response.status}).`}`;
-      showOfficeActivity(result.ok ? inferOfficeActivityFromText(reply, activeAgent) : initialOfficeActivity, result.ok ? 5200 : 1800);
+      showOfficeActivity(initialOfficeActivity, result.ok ? 3200 : 1800);
       let registeredArtifacts: Artifact[] = [];
 
       if (result.ok && reply.trim()) {
