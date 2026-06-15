@@ -8,77 +8,90 @@ type CommandTemplateInput = {
   localContextSummary?: string;
 };
 
+function withContext(body: string, localContextSummary?: string) {
+  if (!localContextSummary) return body;
+  return `${body}\n\nLocal context summary:\n${localContextSummary}`;
+}
+
 export function buildCommandTemplate(input: CommandTemplateInput) {
-  const contextBlock = input.localContextSummary
-    ? `\n\n本地上下文读取结果：\n${input.localContextSummary}`
-    : "";
-
   if (input.action === "daily_report") {
-    return `@Lucy
+    return withContext(
+      `@Chief
 
-请基于本地工作区当前状态生成一份项目日报：
-- 今日完成
-- 当前阻塞
-- 下一步计划
+Create a concise project daily report from the current workspace state:
+- completed today
+- current blockers
+- next plan
 
-保持简洁，先输出给用户确认。${contextBlock}`;
+Return the draft for user review first.`,
+      input.localContextSummary
+    );
   }
 
-  if (input.action === "submit_requirement_to_lucy") {
-    return `@Lucy
+  if (input.action === "submit_requirement_to_planning_agent") {
+    return withContext(
+      `@Chief
 
-用户发布了一个新需求：
+The user submitted a new requirement:
 
-${input.manualMessage || "请基于当前项目目标提出下一步任务。"}
+${input.manualMessage || "Propose the next useful task from the current project goal."}
 
-请先完成统筹编排：
-- 读取 Project Context Hub
-- 判断需求优先级 P0 / P1 / P2
-- 拆解目标、验收标准和风险
-- 写入 DECISIONS / PROGRESS_SUMMARY
-- 生成分配给 Ray 的开发任务
-- Ray 完成后继续验收
-
-保持输出简洁，重点说明优先级、分配给 Ray 的任务和验收标准。${contextBlock}`;
+Plan the work before execution:
+- read the Project Context Hub
+- assign priority P0 / P1 / P2
+- break down goal, acceptance criteria, and risks
+- update Decisions / Progress Summary when useful
+- create the development task for Ray
+- keep the output concise and action-oriented.`,
+      input.localContextSummary
+    );
   }
 
-  if (input.action === "ask_lucy_review") {
-    return `@Lucy
+  if (input.action === "ask_planning_agent_review") {
+    return withContext(
+      `@Chief
 
-请统筹验收当前 Project Context Hub 流程：
-- 读取 PROJECT_BRIEF / PROGRESS_SUMMARY / DEV_LOG / HANDOFF / DECISIONS
-- 检查 Ray 是否把开发过程沉淀成共享上下文
-- 标记风险和需要 Ray 返工的点
-- 输出一段简短验收结论
-
-优先基于本地 ops 文档和当前 git 状态判断。${contextBlock}`;
+Review the current Project Context Hub workflow:
+- read PROJECT_BRIEF / PROGRESS_SUMMARY / DEV_LOG / HANDOFF / DECISIONS
+- check whether Ray recorded the implementation context
+- call out risks or rework needed
+- return a short validation conclusion based on local files and current git state.`,
+      input.localContextSummary
+    );
   }
 
   if (input.action === "ask_tiger_blog" || input.action === "ask_tiger_publish") {
-    return `@Tiger
+    return withContext(
+      `@Writer
 
-请基于 Project Context Hub 生成一篇 Blog 草稿：
-- 优先读取 ops/BLOG_CONTEXT.md
-- 同时参考 ops/RELEASE_NOTES.md
-- 不要要求用户重新讲开发过程
-- 输出标题、导语、正文结构、发布摘要
+Use the Project Context Hub to draft publishing content:
+- read ops/BLOG_CONTEXT.md first
+- also reference ops/RELEASE_NOTES.md
+- do not ask the user to restate the development process
+- output title, hook, article outline, and publishing summary
 
-先不要执行真实发布，只生成 Blog / 发布内容草稿。${contextBlock}`;
+Do not perform a real publication.`,
+      input.localContextSummary
+    );
   }
 
   if (input.action === "manual_message") {
-    return `@${input.targetAgent}
+    return withContext(
+      `@${input.targetAgent}
 
-${input.manualMessage || "请处理这条来自控制台的手动测试消息。"}
+${input.manualMessage || "Handle this manual message from the Vibe Office console."}
 
-请通过 AG-UI 事件流返回执行状态和结果。${contextBlock}`;
+Return status and result through the AG-UI event stream.`,
+      input.localContextSummary
+    );
   }
 
-  const rayTask = input.manualMessage || input.taskTitle || "搭建推广页首屏与核心卖点";
+  const rayTask = input.manualMessage || input.taskTitle || "Build the next product-facing improvement.";
 
-  return `@Ray
+  return withContext(
+    `@Ray
 
-请读取当前项目的：
+Read the current project context:
 - AGENTS.md
 - ops/PROJECT_BRIEF.md
 - ops/PROGRESS_SUMMARY.md
@@ -87,13 +100,15 @@ ${input.manualMessage || "请处理这条来自控制台的手动测试消息。
 - ops/BLOG_CONTEXT.md
 - ops/CODEX_RULES.md
 
-Lucy 分配的具体开发任务：
+Development task:
 ${rayTask}
 
-执行要求：
-- 只做完成该任务所需的最小代码改动。
-- 理解 Lucy 分配的具体需求，不要依赖固定句式或 hard-coded demo 补丁。
-- 不要把任务只记录到 Project Context Hub 后就结束；除非环境不允许写入，否则必须完成代码改动。
-- 完成后运行合适的检查，并说明改了什么、如何验证。
-- 最后把开发过程沉淀到 Project Context Hub。${contextBlock}`;
+Execution rules:
+- make the smallest code change needed for this task
+- do not rely on hard-coded demo patches
+- do not only write notes to Project Context Hub unless the environment blocks code edits
+- run the appropriate checks after implementation
+- record useful implementation context back to Project Context Hub.`,
+    input.localContextSummary
+  );
 }

@@ -1,12 +1,15 @@
+import { lookup } from "dns/promises";
 import { promises as fs } from "fs";
+import net from "net";
 import path from "path";
-import type { AgentName, ProjectId } from "@/types/agent";
-import type { Artifact, ArtifactInput, ArtifactType } from "@/types/artifact";
+import type { ProjectId } from "@/types/agent";
+import type { Artifact, ArtifactInput, ArtifactOwner, ArtifactType } from "@/types/artifact";
 
 const WORKSPACE_ROOT = process.cwd();
 const OPS_DIR = path.join(WORKSPACE_ROOT, "ops");
 const REGISTRY_FILE = path.join(OPS_DIR, "ARTIFACT_REGISTRY.json");
 const HUB_FILE = path.join(OPS_DIR, "ARTIFACTS.md");
+const INLINE_ARTIFACT_DIR = path.join(OPS_DIR, "ARTIFACT_UPLOADS");
 
 const IMAGE_EXTENSIONS = new Set([".avif", ".gif", ".jpg", ".jpeg", ".png", ".svg", ".webp"]);
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
@@ -25,6 +28,9 @@ const FILE_EXTENSIONS = new Set([
   ".zip"
 ]);
 const TEXT_PREVIEW_MAX_CHARS = 12000;
+const REMOTE_ARTIFACT_TIMEOUT_MS = 10_000;
+const REMOTE_ARTIFACT_MAX_BYTES = 12 * 1024 * 1024;
+const BLOCKED_REMOTE_HOSTNAMES = new Set(["localhost", "localhost.localdomain"]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -45,6 +51,25 @@ function isHttpUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function sanitizeHttpUrl(value: string) {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(https?:\/\/[^/\s?#]+)([^\s?#]*)?([?#][^\s]*)?$/i);
+  if (!match) return null;
+
+  const origin = match[1];
+  let pathname = match[2] || "";
+  let suffix = match[3] || "";
+  const cjkBoundary = pathname.search(/[\u3400-\u9fff\uff00-\uffef]/u);
+  if (cjkBoundary >= 0) {
+    pathname = pathname.slice(0, cjkBoundary);
+    suffix = "";
+  }
+
+  const sourceUrl = `${origin}${pathname}${suffix}`.replace(/[-.,;:!?，。；：、！？）\])`]+$/u, "");
+  if (!isHttpUrl(sourceUrl)) return null;
+  return sourceUrl.endsWith(origin) ? `${origin}/` : sourceUrl;
 }
 
 function extensionFromValue(value: string) {
@@ -96,10 +121,71 @@ function titleFromInput(input: ArtifactInput) {
 
 function resolveWorkspacePath(filePath: string) {
   const resolved = path.resolve(WORKSPACE_ROOT, filePath);
-  if (!resolved.startsWith(WORKSPACE_ROOT)) {
+  const relative = path.relative(WORKSPACE_ROOT, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("Artifact path is outside the workspace.");
   }
   return resolved;
+}
+
+function normalizeHostname(hostname: string) {
+  return hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+}
+
+function isBlockedIpv4(address: string) {
+  const parts = address.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+  const [a, b] = parts;
+
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  );
+}
+
+function isBlockedIpv6(address: string) {
+  const normalized = normalizeHostname(address);
+  if (normalized === "::" || normalized === "::1") return true;
+
+  const mappedIpv4 = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i)?.[1];
+  if (mappedIpv4) return isBlockedIpv4(mappedIpv4);
+
+  return (
+    normalized.startsWith("fc") ||
+    normalized.startsWith("fd") ||
+    normalized.startsWith("fe8") ||
+    normalized.startsWith("fe9") ||
+    normalized.startsWith("fea") ||
+    normalized.startsWith("feb") ||
+    normalized.startsWith("ff")
+  );
+}
+
+function isBlockedIpAddress(address: string) {
+  const family = net.isIP(normalizeHostname(address));
+  if (family === 4) return isBlockedIpv4(normalizeHostname(address));
+  if (family === 6) return isBlockedIpv6(normalizeHostname(address));
+  return false;
+}
+
+async function assertRemoteArtifactUrlAllowed(value: string) {
+  const url = new URL(value);
+  const hostname = normalizeHostname(url.hostname);
+  if (BLOCKED_REMOTE_HOSTNAMES.has(hostname) || isBlockedIpAddress(hostname)) {
+    throw new Error("This remote artifact address points to a local or private network and was not opened.");
+  }
+
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some((address) => isBlockedIpAddress(address.address))) {
+    throw new Error("This remote artifact address resolves to a local or private network and was not opened.");
+  }
 }
 
 function isWorkspacePath(filePath: string) {
@@ -109,6 +195,73 @@ function isWorkspacePath(filePath: string) {
   } catch {
     return false;
   }
+}
+
+function toWorkspaceRelativePath(filePath: string) {
+  const resolved = resolveWorkspacePath(filePath);
+  return path.relative(WORKSPACE_ROOT, resolved).replace(/\\/g, "/");
+}
+
+function withRemoteLocationDescription(description: string | undefined, remoteLocation: string | undefined) {
+  if (!remoteLocation) return description;
+  const note = `Remote location: ${remoteLocation}. This path is not directly accessible from Vibe Office.`;
+  return [description?.trim(), note].filter(Boolean).join("\n");
+}
+
+function safeFilename(value: string) {
+  return value
+    .trim()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^\p{L}\p{N}_.-]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "inline-artifact";
+}
+
+async function uniqueWorkspacePath(filePath: string) {
+  const parsed = path.parse(filePath);
+  const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+  let candidate = filePath;
+  let index = 1;
+
+  while (true) {
+    try {
+      await fs.access(resolveWorkspacePath(candidate));
+      candidate = path.join(parsed.dir, `${parsed.name}-${timestamp}${index > 1 ? `-${index}` : ""}${parsed.ext}`).replace(/\\/g, "/");
+      index += 1;
+    } catch {
+      return candidate;
+    }
+  }
+}
+
+async function materializeInlineContent(input: ArtifactInput): Promise<ArtifactInput> {
+  const content = input.content?.trimEnd();
+  if (!content) return input;
+
+  const type = inferType(input);
+  const extension = type === "markdown" ? ".md" : ".txt";
+  const requestedPath = input.path?.trim();
+  const inlineArtifactDir = toWorkspaceRelativePath(INLINE_ARTIFACT_DIR);
+  const artifactPath =
+    requestedPath && isWorkspacePath(requestedPath)
+      ? toWorkspaceRelativePath(requestedPath)
+      : `${inlineArtifactDir}/${Date.now().toString(36)}-${safeFilename(input.title || "inline-artifact")}${extension}`;
+  const finalPath = await uniqueWorkspacePath(artifactPath);
+  const absolutePath = resolveWorkspacePath(finalPath);
+
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs.writeFile(absolutePath, `${content}\n`, "utf8");
+
+  const stats = await fs.stat(absolutePath);
+  return {
+    ...input,
+    sourceUrl: input.sourceUrl && isHttpUrl(input.sourceUrl) ? input.sourceUrl : undefined,
+    path: finalPath,
+    type,
+    mimeType: input.mimeType || inferMimeType(type, finalPath) || "text/plain",
+    size: stats.size,
+    content: undefined
+  };
 }
 
 async function ensureRegistry() {
@@ -241,13 +394,28 @@ export async function registerArtifacts(inputs: ArtifactInput[]) {
   const existing = await readRegistryUnsafe();
   const nextArtifacts: Artifact[] = [];
   const seenLocations = new Set(existing.map((artifact) => artifact.sourceUrl || artifact.path).filter(Boolean));
+  const seenMessageTitles = new Set(
+    existing
+      .filter((artifact) => artifact.messageId)
+      .map((artifact) => `${artifact.messageId}::${artifact.title.toLowerCase()}`)
+  );
 
   for (const input of inputs) {
-    const location = input.sourceUrl || input.path;
+    const materializedInput = await materializeInlineContent(input);
+    const title = titleFromInput(materializedInput);
+    const messageTitleKey = materializedInput.messageId ? `${materializedInput.messageId}::${title.toLowerCase()}` : "";
+    const location = materializedInput.sourceUrl || materializedInput.path;
     if (location && seenLocations.has(location)) continue;
-    const artifact = normalizeInput(input);
+    if (messageTitleKey && seenMessageTitles.has(messageTitleKey)) continue;
+    let artifact: Artifact;
+    try {
+      artifact = normalizeInput(materializedInput);
+    } catch {
+      continue;
+    }
     nextArtifacts.push(artifact);
     if (location) seenLocations.add(location);
+    if (messageTitleKey) seenMessageTitles.add(messageTitleKey);
   }
 
   if (!nextArtifacts.length) return [];
@@ -258,12 +426,19 @@ export async function registerArtifacts(inputs: ArtifactInput[]) {
   return nextArtifacts;
 }
 
-function parseStructuredArtifact(value: unknown, owner: AgentName, projectId: ProjectId, runId: string, messageId: string): ArtifactInput | null {
+function parseStructuredArtifact(value: unknown, owner: ArtifactOwner, projectId: ProjectId, runId: string, messageId: string): ArtifactInput | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const sourceUrl = typeof record.url === "string" ? record.url : typeof record.sourceUrl === "string" ? record.sourceUrl : undefined;
-  const artifactPath = typeof record.path === "string" ? record.path : undefined;
-  if (!sourceUrl && !artifactPath) return null;
+  const rawUrl = typeof record.url === "string" ? record.url : typeof record.sourceUrl === "string" ? record.sourceUrl : undefined;
+  const rawPath = typeof record.path === "string" ? record.path : undefined;
+  const content = typeof record.content === "string" ? record.content : undefined;
+  const sourceUrl = rawUrl && isHttpUrl(rawUrl) ? rawUrl : undefined;
+  const artifactPath = rawPath && isWorkspacePath(rawPath) ? rawPath : undefined;
+  const remoteLocation = !sourceUrl && rawUrl ? rawUrl : !artifactPath && rawPath ? rawPath : undefined;
+  const hasStructuredArtifactShape = Boolean(
+    record.type || record.title || record.mimeType || record.description || rawUrl || rawPath || content
+  );
+  if (!sourceUrl && !artifactPath && !content && !hasStructuredArtifactShape) return null;
 
   return {
     owner,
@@ -272,15 +447,19 @@ function parseStructuredArtifact(value: unknown, owner: AgentName, projectId: Pr
     messageId,
     sourceUrl,
     path: artifactPath,
+    content,
     type: typeof record.type === "string" ? (record.type as ArtifactType) : undefined,
     title: typeof record.title === "string" ? record.title : undefined,
     mimeType: typeof record.mimeType === "string" ? record.mimeType : undefined,
     size: typeof record.size === "number" ? record.size : undefined,
-    description: typeof record.description === "string" ? record.description : undefined
+    description: withRemoteLocationDescription(
+      typeof record.description === "string" ? record.description : undefined,
+      remoteLocation
+    )
   };
 }
 
-function extractStructuredArtifacts(text: string, owner: AgentName, projectId: ProjectId, runId: string, messageId: string) {
+function extractStructuredArtifacts(text: string, owner: ArtifactOwner, projectId: ProjectId, runId: string, messageId: string) {
   const inputs: ArtifactInput[] = [];
   const blocks = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => match[1]);
   const candidates = [...blocks, text];
@@ -306,30 +485,144 @@ function extractStructuredArtifacts(text: string, owner: AgentName, projectId: P
   return inputs;
 }
 
+function extractInlineContentArtifacts(
+  text: string,
+  owner: ArtifactOwner,
+  projectId: ProjectId,
+  runId: string,
+  messageId: string
+): ArtifactInput[] {
+  const pathMatch =
+    text.match(/Save this as a Vibe Office project file\s*(?:->|:)?\s*([^\s,.;]+?\.(?:md|markdown|txt|json|csv))/i) ||
+    text.match(/Vibe Office project file\s*(?:->|:)?\s*([^\s,.;]+?\.(?:md|markdown|txt|json|csv))/i) ||
+    text.match(/需要平台保存为项目文件\s*(?:->|→|:|：)?\s*([^\s，。；;]+?\.(?:md|markdown|txt|json|csv))/i);
+  const bodyMatch =
+    text.match(/Content\s*:\s*([\s\S]*?)\n\s*End of file[.]?/i) ||
+    text.match(/正文如下\s*[:：]\s*([\s\S]*?)\n\s*正文结束[。.]?/);
+  if (!pathMatch || !bodyMatch) return [];
+
+  const requestedPath = pathMatch[1].replace(/^[`"'“”*]+|[`"'“”，。*]+$/g, "");
+  const artifactPath =
+    requestedPath.includes("/") || requestedPath.includes("\\")
+      ? requestedPath
+      : `${toWorkspaceRelativePath(INLINE_ARTIFACT_DIR)}/${safeFilename(requestedPath)}${path.extname(requestedPath) || ".md"}`;
+  if (!isWorkspacePath(artifactPath)) return [];
+
+  const content = bodyMatch[1].trim();
+  if (!content) return [];
+
+  const type = inferType({ path: artifactPath });
+  return [
+    {
+      owner,
+      projectId,
+      runId,
+      messageId,
+      path: toWorkspaceRelativePath(artifactPath),
+      content,
+      type,
+      title: path.basename(artifactPath),
+      mimeType: inferMimeType(type, artifactPath) || (type === "markdown" ? "text/markdown" : "text/plain"),
+      description: "Saved from inline agent response."
+    } satisfies ArtifactInput
+  ];
+}
+
+function titleFromMentionedFile(value: string) {
+  return value
+    .trim()
+    .replace(/^[`"'\u201c\u201d\u2018\u2019]+|[`"'\u201c\u201d\u2018\u2019,.;:!?，。；：！？）\])]+$/gu, "")
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop();
+}
+
+function extractMentionedFileArtifact(
+  text: string,
+  owner: ArtifactOwner,
+  projectId: ProjectId,
+  runId: string,
+  messageId: string
+): ArtifactInput[] {
+  const hasDeliveryLanguage =
+    /(desktop|saved|written|created|document|markdown|file|download|artifact)/i.test(text) ||
+    /[\u5199\u4fdd\u5b58\u6587\u4ef6\u6587\u6863\u684c\u9762\u4e0b\u8f7d\u751f\u6210]/u.test(text) ||
+    /(鍐欏ソ|淇濆瓨|鏂囦欢|鏂囨。|妗岄潰|鐢熸垚|涓嬭浇)/.test(text);
+  if (!hasDeliveryLanguage) return [];
+
+  const filenameMatches = Array.from(
+    text.matchAll(/(?:^|[\s:：,，`"'（(])([^\s`"'<>|:：,，。；;]+?\.(?:md|markdown|txt|json|csv))(?:$|[\s`"',.;:!?，。；：！？）)\]])/gi)
+  );
+  const filename = filenameMatches.length ? titleFromMentionedFile(filenameMatches[filenameMatches.length - 1][1]) : null;
+  if (!filename) return [];
+
+  const type = inferType({ path: filename });
+  const content = [
+    `# ${filename}`,
+    "",
+    "Vibe Office captured this fallback artifact because the agent mentioned a delivered file but did not provide a structured artifact envelope.",
+    "",
+    "## Original agent reply",
+    "",
+    text.trim()
+  ].join("\n");
+
+  return [
+    {
+      owner,
+      projectId,
+      runId,
+      messageId,
+      content,
+      type,
+      title: filename,
+      mimeType: inferMimeType(type, filename) || (type === "markdown" ? "text/markdown" : "text/plain"),
+      description: "Fallback capture from an agent file-delivery message."
+    } satisfies ArtifactInput
+  ];
+}
+
 export function extractArtifactInputsFromText(input: {
   text: string;
-  owner: AgentName;
+  owner: ArtifactOwner;
   projectId: ProjectId;
   runId: string;
   messageId: string;
 }) {
   const structured = extractStructuredArtifacts(input.text, input.owner, input.projectId, input.runId, input.messageId);
+  const inlineContent = extractInlineContentArtifacts(input.text, input.owner, input.projectId, input.runId, input.messageId);
+  const mentionedFile = extractMentionedFileArtifact(input.text, input.owner, input.projectId, input.runId, input.messageId);
+  const explicitArtifacts = [...structured, ...inlineContent, ...mentionedFile];
+
+  if (explicitArtifacts.length) {
+    const seen = new Set<string>();
+    return explicitArtifacts.filter((artifact, index) => {
+      const location = artifact.sourceUrl || artifact.path || artifact.title || `inline:${index}`;
+      if (seen.has(location)) return false;
+      seen.add(location);
+      return true;
+    });
+  }
+
   const urlMatches = input.text.match(/https?:\/\/[^\s<>"')\]]+/g) || [];
-  const urlInputs: ArtifactInput[] = urlMatches.map((rawUrl) => {
-    const sourceUrl = rawUrl.replace(/[-.,;:!?，。；：、）)\]】]+$/, "");
-    return {
-      owner: input.owner,
-      projectId: input.projectId,
-      runId: input.runId,
-      messageId: input.messageId,
-      sourceUrl,
-      type: inferType({ sourceUrl }),
-      title: titleFromInput({ owner: input.owner, projectId: input.projectId, sourceUrl })
-    } satisfies ArtifactInput;
+  const urlInputs: ArtifactInput[] = urlMatches.flatMap((rawUrl) => {
+    const sourceUrl = sanitizeHttpUrl(rawUrl);
+    if (!sourceUrl) return [];
+    return [
+      {
+        owner: input.owner,
+        projectId: input.projectId,
+        runId: input.runId,
+        messageId: input.messageId,
+        sourceUrl,
+        type: inferType({ sourceUrl }),
+        title: titleFromInput({ owner: input.owner, projectId: input.projectId, sourceUrl })
+      } satisfies ArtifactInput
+    ];
   });
 
   const seen = new Set<string>();
-  return [...structured, ...urlInputs].filter((artifact) => {
+  return urlInputs.filter((artifact) => {
     const location = artifact.sourceUrl || artifact.path;
     if (!location || seen.has(location)) return false;
     seen.add(location);
@@ -339,7 +632,7 @@ export function extractArtifactInputsFromText(input: {
 
 export async function registerArtifactsFromText(input: {
   text: string;
-  owner: AgentName;
+  owner: ArtifactOwner;
   projectId: ProjectId;
   runId: string;
   messageId: string;
@@ -348,17 +641,75 @@ export async function registerArtifactsFromText(input: {
   return registerArtifacts(artifacts);
 }
 
+function remoteArtifactTooLargeMessage() {
+  return `Artifact source is larger than ${Math.round(REMOTE_ARTIFACT_MAX_BYTES / 1024 / 1024)}MB.`;
+}
+
+async function readRemoteArtifactBody(response: Response) {
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > REMOTE_ARTIFACT_MAX_BYTES) {
+    throw new Error(remoteArtifactTooLargeMessage());
+  }
+
+  if (!response.body) {
+    const body = await response.arrayBuffer();
+    if (body.byteLength > REMOTE_ARTIFACT_MAX_BYTES) {
+      throw new Error(remoteArtifactTooLargeMessage());
+    }
+    return body;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+
+    received += value.byteLength;
+    if (received > REMOTE_ARTIFACT_MAX_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error(remoteArtifactTooLargeMessage());
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer;
+}
+
 export async function readArtifactContent(artifact: Artifact) {
   if (artifact.sourceUrl) {
-    const response = await fetch(artifact.sourceUrl);
-    if (!response.ok) throw new Error(`Artifact source returned ${response.status}`);
-    const contentType = response.headers.get("content-type") || artifact.mimeType || "application/octet-stream";
-    const body = await response.arrayBuffer();
-    return {
-      body,
-      contentType,
-      filename: artifact.title
-    };
+    await assertRemoteArtifactUrlAllowed(artifact.sourceUrl);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REMOTE_ARTIFACT_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(artifact.sourceUrl, { signal: controller.signal });
+      if (!response.ok) throw new Error(`Artifact source returned ${response.status}`);
+      const contentType = response.headers.get("content-type") || artifact.mimeType || "application/octet-stream";
+      const body = await readRemoteArtifactBody(response);
+      return {
+        body,
+        contentType,
+        filename: artifact.title
+      };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error("Artifact source timed out.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   if (!artifact.path) throw new Error("Artifact has no readable location.");

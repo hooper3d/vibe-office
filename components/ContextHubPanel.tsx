@@ -145,7 +145,7 @@ export function ContextHubPanel({ projectId, embedded = false, className = "" }:
       <div className="mb-5 flex min-w-0 shrink-0 items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <Database className="h-5 w-5 text-emerald-300" />
-          <h2 className="truncate text-base font-semibold text-slate-100">Archive Library</h2>
+          <h2 className="truncate text-base font-semibold text-slate-100">Project Context Hub</h2>
         </div>
         <div className="soft-pill h-7 max-w-20 shrink-0 truncate bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
           共享记忆
@@ -156,9 +156,9 @@ export function ContextHubPanel({ projectId, embedded = false, className = "" }:
       <div className="scrollbar-thin min-h-0 flex-1 space-y-2 overflow-auto pr-1">
         {!usesDefaultContextFiles ? (
           <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-950/10 px-6 text-center">
-            <p className="text-sm font-semibold text-slate-300">这个项目还没有共享记忆文件</p>
+            <p className="text-sm font-semibold text-slate-300">当前项目还没有写入共享记忆</p>
             <p className="mt-2 max-w-[260px] text-xs leading-5 text-slate-500">
-              新项目会先保持干净，只显示本项目产生的任务、对话和产物。
+              等任务、对话或产物沉淀为项目上下文后，会在这里显示。
             </p>
           </div>
         ) : null}

@@ -11,6 +11,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 dev-*.log
+logs/
+config/runtime.json
+workspace/
+runtime/hermes/
 ops/*_INBOX.md
 ops/runs/
 ops/RUN_HISTORY.jsonl

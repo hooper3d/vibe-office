@@ -1,5 +1,6 @@
-import { Code2 } from "lucide-react";
+import { ArrowDownToLine, Code2, Pause } from "lucide-react";
 import { EventType, type AGUIEvent } from "@ag-ui/core";
+import { useEffect, useRef } from "react";
 import type { ConsoleEvent } from "@/types/event";
 
 type EventStreamProps = {
@@ -60,21 +61,21 @@ function eventText(event: AGUIEvent) {
     const value = event.value as { files?: string[] };
     return `blog_context_used: ${value.files?.join(", ") || "BLOG_CONTEXT.md"}`;
   }
-  if (event.type === EventType.CUSTOM && event.name === "handoff_to_lucy") {
+  if (event.type === EventType.CUSTOM && event.name === "handoff_to_planning_agent") {
     const value = event.value as { from?: string; to?: string; reason?: string };
-    return `handoff_to_lucy: ${value.from || "Ray"} -> ${value.to || "Lucy"} ${value.reason || ""}`;
+    return `handoff_to_planning_agent: ${value.from || "Ray"} -> ${value.to || "Planning Agent"} ${value.reason || ""}`;
   }
-  if (event.type === EventType.CUSTOM && event.name === "lucy_plan_created") {
+  if (event.type === EventType.CUSTOM && event.name === "plan_workflow_created") {
     const value = event.value as { assignedTo?: string; requirement?: string };
-    return `lucy_plan_created: assigned=${value.assignedTo || "Ray"} requirement=${value.requirement || "new requirement"}`;
+    return `plan_workflow_created: assigned=${value.assignedTo || "Ray"} requirement=${value.requirement || "new requirement"}`;
   }
-  if (event.type === EventType.CUSTOM && event.name === "lucy_clarification") {
+  if (event.type === EventType.CUSTOM && event.name === "planning_agent_clarification") {
     const value = event.value as { plan?: { questions?: string[] } };
-    return `lucy_clarification: questions=${value.plan?.questions?.length || 0}`;
+    return `planning_agent_clarification: questions=${value.plan?.questions?.length || 0}`;
   }
-  if (event.type === EventType.CUSTOM && event.name === "lucy_plan_ready") {
+  if (event.type === EventType.CUSTOM && event.name === "plan_workflow_ready") {
     const value = event.value as { plan?: { tasks?: unknown[] } };
-    return `lucy_plan_ready: tasks=${value.plan?.tasks?.length || 0}`;
+    return `plan_workflow_ready: tasks=${value.plan?.tasks?.length || 0}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "selected_tasks_started") {
     const value = event.value as { selectedTaskIds?: string[]; remoteTaskIds?: string[] };
@@ -86,8 +87,8 @@ function eventText(event: AGUIEvent) {
     return `agent_task_started: ${value.taskId || "task"} owner=${value.owner || "Agent"} mode=${value.mode || "unknown"}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "selected_task_result") {
-    const value = event.value as { taskId?: string; owner?: string; exitCode?: number | null; error?: string; awaitingLucyReview?: boolean };
-    const review = value.awaitingLucyReview ? " awaiting_lucy_review=true" : "";
+    const value = event.value as { taskId?: string; owner?: string; exitCode?: number | null; error?: string; awaitingPlanningAgentReview?: boolean };
+    const review = value.awaitingPlanningAgentReview ? " awaiting_planning_agent_review=true" : "";
     return `selected_task_result: ${value.taskId || "task"} owner=${value.owner || "Agent"} exit=${value.exitCode ?? "n/a"}${review}${value.error ? ` error=${value.error}` : ""}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "selected_task_deferred") {
@@ -95,24 +96,24 @@ function eventText(event: AGUIEvent) {
     return `selected_task_deferred: ${value.taskId || "task"} owner=${value.owner || "Agent"}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "ray_execution_completed") {
-    const value = event.value as { summaries?: string[]; awaitingLucyReview?: boolean };
-    return `ray_execution_completed: awaiting_lucy_review=${value.awaitingLucyReview ? "true" : "false"} ${value.summaries?.join(" / ") || ""}`;
+    const value = event.value as { summaries?: string[]; awaitingPlanningAgentReview?: boolean };
+    return `ray_execution_completed: awaiting_planning_agent_review=${value.awaitingPlanningAgentReview ? "true" : "false"} ${value.summaries?.join(" / ") || ""}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "agent_execution_completed") {
-    const value = event.value as { summaries?: string[]; awaitingLucyReview?: boolean };
-    return `agent_execution_completed: awaiting_lucy_review=${value.awaitingLucyReview ? "true" : "false"} ${value.summaries?.join(" / ") || ""}`;
+    const value = event.value as { summaries?: string[]; awaitingPlanningAgentReview?: boolean };
+    return `agent_execution_completed: awaiting_planning_agent_review=${value.awaitingPlanningAgentReview ? "true" : "false"} ${value.summaries?.join(" / ") || ""}`;
   }
-  if (event.type === EventType.CUSTOM && event.name === "lucy_plan_completed") {
+  if (event.type === EventType.CUSTOM && event.name === "plan_workflow_completed") {
     const value = event.value as { summaries?: string[] };
-    return `lucy_plan_completed: ${value.summaries?.join(" / ") || "done"}`;
+    return `plan_workflow_completed: ${value.summaries?.join(" / ") || "done"}`;
   }
-  if (event.type === EventType.CUSTOM && event.name === "lucy_triage") {
+  if (event.type === EventType.CUSTOM && event.name === "planning_agent_triage") {
     const value = event.value as { priority?: string; mode?: string; owner?: string; reason?: string };
-    return `lucy_triage: ${value.priority || "P2"} ${value.mode || "execute_now"} owner=${value.owner || "Ray"} ${value.reason || ""}`;
+    return `planning_agent_triage: ${value.priority || "P2"} ${value.mode || "execute_now"} owner=${value.owner || "Ray"} ${value.reason || ""}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "handoff_to_ray") {
     const value = event.value as { from?: string; to?: string; reason?: string };
-    return `handoff_to_ray: ${value.from || "Lucy"} -> ${value.to || "Ray"} ${value.reason || ""}`;
+    return `handoff_to_ray: ${value.from || "Planning Agent"} -> ${value.to || "Ray"} ${value.reason || ""}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "ray_linked_execution") {
     const value = event.value as { contextHubWrites?: string[]; writtenFiles?: string[]; codex?: { mode?: string; exitCode?: number | null } };
@@ -124,9 +125,21 @@ function eventText(event: AGUIEvent) {
     if (!value.enabled) return `ray_code_result: disabled ${value.error || ""}`;
     return `ray_code_result: mode=${value.mode} exit=${value.exitCode ?? "n/a"} output=${value.outputFile || "none"}${value.error ? ` error=${value.error}` : ""}`;
   }
-  if (event.type === EventType.CUSTOM && event.name === "lucy_linked_review") {
+  if (event.type === EventType.CUSTOM && event.name === "office_agent_message") {
+    const value = event.value as { displayName?: string; profileName?: string; message?: string };
+    return `office_agent_message: ${value.displayName || value.profileName || "Agent"} <= ${value.message || ""}`;
+  }
+  if (event.type === EventType.CUSTOM && event.name === "office_agent_response") {
+    const value = event.value as { displayName?: string; profileName?: string; ok?: boolean };
+    return `office_agent_response: ${value.displayName || value.profileName || "Agent"} ok=${value.ok ? "true" : "false"}`;
+  }
+  if (event.type === EventType.CUSTOM && event.name === "office_agent_error") {
+    const value = event.value as { displayName?: string; profileName?: string; ok?: boolean };
+    return `office_agent_error: ${value.displayName || value.profileName || "Agent"} ok=${value.ok ? "true" : "false"}`;
+  }
+  if (event.type === EventType.CUSTOM && event.name === "planning_agent_linked_review") {
     const value = event.value as { exitCode?: number | null; outputFile?: string; error?: string };
-    return `lucy_linked_review: exit=${value.exitCode ?? "n/a"} output=${value.outputFile || "none"}${value.error ? ` error=${value.error}` : ""}`;
+    return `planning_agent_linked_review: exit=${value.exitCode ?? "n/a"} output=${value.outputFile || "none"}${value.error ? ` error=${value.error}` : ""}`;
   }
   if (event.type === EventType.CUSTOM && event.name === "generated_command") return "generated_command: command updated";
   if (event.type === EventType.CUSTOM) return `${event.name}: ${JSON.stringify(event.value)}`;
@@ -140,6 +153,16 @@ function eventText(event: AGUIEvent) {
 }
 
 export function EventStream({ events, autoScroll, onToggleAutoScroll, embedded = false }: EventStreamProps) {
+  const logRef = useRef<HTMLDivElement | null>(null);
+  const AutoScrollIcon = autoScroll ? ArrowDownToLine : Pause;
+
+  useEffect(() => {
+    if (!autoScroll) return;
+    const log = logRef.current;
+    if (!log) return;
+    log.scrollTop = log.scrollHeight;
+  }, [autoScroll, events]);
+
   return (
     <section className={embedded ? "flex h-full min-h-0 min-w-0 flex-col" : "min-h-[260px] min-w-0 p-5"}>
       {!embedded ? (
@@ -150,64 +173,31 @@ export function EventStream({ events, autoScroll, onToggleAutoScroll, embedded =
           </span>
           <h2 className="truncate text-base font-semibold text-white">AG-UI Event Stream</h2>
           <span className="status-dot bg-emerald-400" />
-          <span className="text-sm text-slate-300">实时连接中</span>
+          <span className="text-sm text-slate-300">Live</span>
         </div>
         <button
           type="button"
           onClick={onToggleAutoScroll}
-          aria-label="切换自动滚动"
+          aria-label={autoScroll ? "Disable auto-scroll" : "Enable auto-scroll"}
           aria-pressed={autoScroll}
-          className="group inline-flex shrink-0 items-center gap-2 rounded-full text-sm text-slate-300 transition hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-500/40"
+          title={autoScroll ? "Auto-scroll on" : "Auto-scroll off"}
+          className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-500/50 ${
+            autoScroll
+              ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15"
+              : "border-slate-700/85 bg-slate-950/45 text-slate-400 hover:bg-slate-800/75 hover:text-slate-100"
+          }`}
         >
-          <span>自动滚动</span>
-          <span
-            className={`relative h-7 w-14 rounded-full border border-slate-700 p-0.5 transition ${
-              autoScroll ? "bg-slate-800/80" : "bg-slate-900/70"
-            }`}
-          >
-            <span
-              className={`absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full transition ${
-                autoScroll ? "left-7 bg-emerald-300" : "left-1 bg-slate-500"
-              }`}
-            />
-          </span>
+          <AutoScrollIcon className="h-4 w-4" />
         </button>
       </div>
-      ) : (
-        <div className="hidden">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="status-dot bg-emerald-400" />
-            <span className="truncate text-sm text-slate-300">实时连接中</span>
-          </div>
-          <button
-            type="button"
-            onClick={onToggleAutoScroll}
-            aria-label="切换自动滚动"
-            aria-pressed={autoScroll}
-            className="group inline-flex shrink-0 items-center gap-2 rounded-full text-xs text-slate-300 transition hover:text-white focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-500/40"
-          >
-            <span>自动滚动</span>
-            <span
-              className={`relative h-6 w-11 rounded-full border border-slate-700 p-0.5 transition ${
-                autoScroll ? "bg-slate-800/80" : "bg-slate-900/70"
-              }`}
-            >
-              <span
-                className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition ${
-                  autoScroll ? "left-6 bg-emerald-300" : "left-1 bg-slate-500"
-                }`}
-              />
-            </span>
-          </button>
-        </div>
-      )}
+      ) : null}
 
       <div
-        id="event-stream-log"
+        ref={logRef}
         className={`${embedded ? "min-h-0 flex-1" : "h-[180px]"} scrollbar-thin min-w-0 overflow-auto rounded-lg border border-slate-800/80 bg-slate-950/60 px-3 py-2 font-mono text-sm leading-7`}
       >
         {events.length === 0 ? (
-          <p className="text-slate-400">等待需求或手动消息...</p>
+          <p className="text-slate-400">Waiting for requirements or manual messages...</p>
         ) : (
           events.map((event, index) => (
             <div key={`${event.receivedAt}-${index}`} className="grid min-w-0 grid-cols-[116px_190px_minmax(0,1fr)] gap-3 text-slate-300 max-xl:grid-cols-1 max-xl:gap-0">

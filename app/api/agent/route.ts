@@ -4,22 +4,20 @@ import { runCodexExec } from "@/lib/codex-exec-adapter";
 import { buildCommandTemplate } from "@/lib/command-templates";
 import { readContextHubSnapshot } from "@/lib/context-hub";
 import { buildHermesResponsesInput } from "@/lib/hermes-multimodal";
-import { HermesLucyError, sendLucyResponse } from "@/lib/hermes-lucy-client";
-import { sendMuskResponse } from "@/lib/hermes-musk-client";
-import { sendTigerResponse } from "@/lib/hermes-tiger-client";
+import { HermesAgentError, sendHermesAgentResponse } from "@/lib/hermes-agent-client";
 import { runLocalAgentAction } from "@/lib/local-agent-runtime";
 import {
-  inferLucyPlanStage,
-  readLucyPlan,
+  inferPlanWorkflowStage,
+  readPlanWorkflow,
   sortTasksForExecution,
-  updateLucyPlan,
-  writeLucyPlan
-} from "@/lib/lucy-plan-store";
+  updatePlanWorkflow,
+  writePlanWorkflow
+} from "@/lib/plan-workflow-store";
 import { initialTasks } from "@/lib/mock-data";
 import { appendEventRecord, appendRunRecord, writeLastResult } from "@/lib/run-history";
 import { triageRequirement, triageSummary } from "@/lib/workflow-triage";
 import type { AgentAction, AgentName, AguiIntent } from "@/types/agent";
-import type { LucyPlan, TaskItem, TaskPriority } from "@/types/task";
+import type { PlanWorkflow, TaskItem, TaskPriority } from "@/types/task";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,12 +41,32 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalizeAgentAction(action: unknown): AgentAction {
+  if (action === "submit_requirement_to_lucy") return "submit_requirement_to_planning_agent";
+  if (action === "generate_lucy_plan") return "generate_plan_workflow";
+  if (action === "ask_lucy_review") return "ask_planning_agent_review";
+  if (
+    action === "submit_requirement_to_planning_agent" ||
+    action === "generate_plan_workflow" ||
+    action === "execute_selected_tasks" ||
+    action === "dispatch_to_ray" ||
+    action === "ask_planning_agent_review" ||
+    action === "ask_tiger_blog" ||
+    action === "ask_tiger_publish" ||
+    action === "daily_report" ||
+    action === "manual_message"
+  ) {
+    return action;
+  }
+  return "dispatch_to_ray";
+}
+
 function getIntent(input: RunAgentInput): AguiIntent {
   const state = input.state as { intent?: Partial<AguiIntent> };
   const intent = state.intent || {};
   const projectId = typeof intent.projectId === "string" && intent.projectId.trim() ? intent.projectId.trim() : "demo-project";
   return {
-    action: (intent.action || "dispatch_to_ray") as AgentAction,
+    action: normalizeAgentAction(intent.action),
     targetAgent: (intent.targetAgent || "Ray") as AgentName,
     projectId,
     taskId: intent.taskId || "task-001",
@@ -61,48 +79,48 @@ function getIntent(input: RunAgentInput): AguiIntent {
 
 function actionCopy(action: AgentAction) {
   const copy: Record<AgentAction, { step: string; tool: string; status: string }> = {
-    generate_lucy_plan: {
-      step: "生成 Lucy 任务计划",
-      tool: "generate_lucy_plan",
+    generate_plan_workflow: {
+      step: "Generate plan workflow",
+      tool: "generate_plan_workflow",
       status: "reviewing"
     },
     execute_selected_tasks: {
-      step: "执行选中任务",
+      step: "Execute selected tasks",
       tool: "execute_selected_tasks",
       status: "working"
     },
     dispatch_to_ray: {
-      step: "派发开发任务",
+      step: "Dispatch development task",
       tool: "dispatch_task",
       status: "coding"
     },
-    submit_requirement_to_lucy: {
-      step: "提交需求并编排",
-      tool: "lucy_requirement_planning",
+    submit_requirement_to_planning_agent: {
+      step: "Submit requirement for planning",
+      tool: "planning_agent_requirement_planning",
       status: "reviewing"
     },
-    ask_lucy_review: {
-      step: "请求验收",
+    ask_planning_agent_review: {
+      step: "Request planning-agent review",
       tool: "request_review",
       status: "reviewing"
     },
     ask_tiger_publish: {
-      step: "准备 Blog 内容",
+      step: "Prepare publishing content",
       tool: "prepare_publish",
       status: "working"
     },
     ask_tiger_blog: {
-      step: "生成 Blog 草稿",
+      step: "Draft blog content",
       tool: "write_blog_draft",
       status: "working"
     },
     daily_report: {
-      step: "生成项目日报",
+      step: "Generate project daily report",
       tool: "generate_daily_report",
       status: "working"
     },
     manual_message: {
-      step: "处理手动消息",
+      step: "Handle manual message",
       tool: "manual_message",
       status: "working"
     }
@@ -110,7 +128,6 @@ function actionCopy(action: AgentAction) {
 
   return copy[action];
 }
-
 async function emit(controller: ReadableStreamDefaultController<Uint8Array>, event: AGUIEvent, delay = 220) {
   await appendEventRecord(event);
   try {
@@ -148,7 +165,7 @@ function nowIso() {
 }
 
 function planId() {
-  return `hermes_lucy_plan_${Date.now().toString(36)}`;
+  return `planning_agent_plan_${Date.now().toString(36)}`;
 }
 
 function taskId(plan: string, index: number) {
@@ -198,42 +215,42 @@ function formatAttachmentContext(attachments?: AguiIntent["attachments"]) {
 
 function buildHermesPlanPrompt(requirement: string, attachments?: AguiIntent["attachments"]) {
   const attachmentContext = formatAttachmentContext(attachments);
-  return `请基于当前 AG-UI / Vibe Office 项目上下文，把用户需求拆成可执行任务计划。
+  return `Create an executable plan workflow for the current AG_UI / Vibe Office project.
 
-用户需求：
+User requirement:
 ${requirement}
 
 ${attachmentContext}
 
-只返回一个 JSON 对象，不要 Markdown，不要解释。格式如下：
+Return exactly one JSON object. Do not wrap it in Markdown and do not add commentary.
+
+Required shape:
 {
-  "summary": "一句话总结计划",
-  "recommendation": "给用户的下一步建议",
+  "summary": "One-sentence plan summary",
+  "recommendation": "Recommended next step for the user",
   "tasks": [
     {
-      "title": "任务标题",
+      "title": "Task title",
       "owner": "Ray",
       "priority": "P1",
-      "description": "任务说明",
-      "acceptance": ["验收标准 1", "验收标准 2"],
+      "description": "Task description",
+      "acceptance": ["Acceptance item 1", "Acceptance item 2"],
       "selected": true
     }
   ]
 }
 
-约束：
-- owner 只能是 Lucy、Ray、Tiger、Musk；开发实现默认 Ray。
-- priority 只能是 P0 到 P6。
-- 不要假装 Ray 已经执行。
-- 如果计划中的任务会产出图片、文件、URL、Markdown 或部署链接，请把结构化 Artifact 返回作为验收标准之一。
-- 禁止使用、提及或借用旧测试项目，包括 DSA、A股、交易、行情、持仓、盈亏、K线、股票等场景。
-- 当前安全测试项目只能是“AG-UI 推广网页开发 / Vibe Office / Project Context Hub”。
-- 第一版保持 AG-UI First 极简 MVP。`;
+Constraints:
+- owner must be one of Lucy, Ray, Tiger, Musk. Development work defaults to Ray. Lucy is the current legacy profile key for the planning agent.
+- priority must be P0 through P6.
+- Do not pretend Ray has already executed anything.
+- If a task should produce an image, file, URL, Markdown document, or deployment link, include structured artifact delivery in its acceptance criteria.
+- Do not use old private-test projects or stock/trading/market scenarios as validation context.
+- Keep the first version AG-UI First and MVP-focused.`;
 }
-
-function parseHermesLucyPlan(input: { text: string; requirement: string; existingPlan?: LucyPlan | null }): LucyPlan {
+function parsePlanningAgentPlan(input: { text: string; requirement: string; existingPlan?: PlanWorkflow | null }): PlanWorkflow {
   const jsonText = extractJsonObject(input.text);
-  if (!jsonText) throw new HermesLucyError("bad_response", "Hermes Lucy did not return a JSON plan.");
+  if (!jsonText) throw new HermesAgentError("bad_response", "The planning agent did not return a JSON plan.");
 
   const raw = JSON.parse(jsonText) as {
     summary?: unknown;
@@ -249,13 +266,13 @@ function parseHermesLucyPlan(input: { text: string; requirement: string; existin
   };
 
   if (!Array.isArray(raw.tasks) || raw.tasks.length === 0) {
-    throw new HermesLucyError("bad_response", "Hermes Lucy returned a plan without tasks.");
+    throw new HermesAgentError("bad_response", "The planning agent returned a plan without tasks.");
   }
 
   const id = input.existingPlan?.id || planId();
   const createdAt = input.existingPlan?.createdAt || nowIso();
   const tasks: TaskItem[] = raw.tasks.map((task, index) => {
-    const title = typeof task.title === "string" && task.title.trim() ? task.title.trim() : `Lucy 计划任务 ${index + 1}`;
+    const title = typeof task.title === "string" && task.title.trim() ? task.title.trim() : `Plan task ${index + 1}`;
     const owner = isAgentName(task.owner) ? task.owner : "Ray";
     const priority = isTaskPriority(task.priority) ? task.priority : "P2";
     const acceptance = Array.isArray(task.acceptance)
@@ -280,12 +297,12 @@ function parseHermesLucyPlan(input: { text: string; requirement: string; existin
     id,
     requirement: input.requirement,
     stage: "planned",
-    summary: typeof raw.summary === "string" && raw.summary.trim() ? raw.summary.trim() : "Lucy 已生成任务计划。",
+    summary: typeof raw.summary === "string" && raw.summary.trim() ? raw.summary.trim() : "Planning agent generated a task plan.",
     questions: [],
     recommendation:
       typeof raw.recommendation === "string" && raw.recommendation.trim()
         ? raw.recommendation.trim()
-        : "请勾选要执行的任务，再交给对应 Agent。",
+        : "Select the tasks to execute, then hand them to the assigned agents.",
     tasks,
     createdAt,
     updatedAt: nowIso()
@@ -334,7 +351,7 @@ async function emitRegisteredArtifacts(input: {
   return artifacts;
 }
 
-function buildRemoteTaskPrompt(input: { task: TaskItem; plan: LucyPlan; requirement?: string; contextHub: string }) {
+function buildRemoteTaskPrompt(input: { task: TaskItem; plan: PlanWorkflow; requirement?: string; contextHub: string }) {
   const acceptance = input.task.acceptance?.length ? input.task.acceptance.map((item) => `- ${item}`).join("\n") : "- Report what was done and what remains.";
 
   return `You are ${input.task.owner}, a real Hermes Agent in the AG_UI distributed team.
@@ -369,7 +386,7 @@ ${ARTIFACT_OUTPUT_PROTOCOL}
 `;
 }
 
-async function runRemoteAgentTask(input: { task: TaskItem; plan: LucyPlan; requirement?: string; runId: string }) {
+async function runRemoteAgentTask(input: { task: TaskItem; plan: PlanWorkflow; requirement?: string; runId: string }) {
   const snapshot = await readContextHubSnapshot();
   const contextHub = snapshot
     .map((file) => {
@@ -381,17 +398,17 @@ async function runRemoteAgentTask(input: { task: TaskItem; plan: LucyPlan; requi
   const conversation = `ag-ui-${input.task.owner.toLowerCase()}-${input.runId}-${input.task.id}`;
 
   if (input.task.owner === "Lucy") {
-    const result = await sendLucyResponse({ message, conversation });
+    const result = await sendHermesAgentResponse("Lucy", { message, conversation });
     return result.text;
   }
 
   if (input.task.owner === "Tiger") {
-    const result = await sendTigerResponse({ message, conversation });
+    const result = await sendHermesAgentResponse("Tiger", { message, conversation });
     return result.text;
   }
 
   if (input.task.owner === "Musk") {
-    const result = await sendMuskResponse({ message, conversation });
+    const result = await sendHermesAgentResponse("Musk", { message, conversation });
     return result.text;
   }
 
@@ -423,9 +440,9 @@ async function sendDirectAgentResponse(intent: AguiIntent, runId: string) {
   const attachmentContext = formatAttachmentContext(intent.attachments);
   const message = [
     `You are ${intent.targetAgent}, a real Hermes Agent in Vibe Office.`,
-    "This is a direct user message, not a Lucy-orchestrated task.",
+    "This is a direct user message, not a planning-agent-orchestrated task.",
     "Do not pretend another agent completed work.",
-    "For simple requests, answer directly. For complex requests, say whether it should be escalated to Lucy for planning.",
+    "For simple requests, answer directly. For complex requests, say whether it should be escalated to the planning agent.",
     ARTIFACT_OUTPUT_PROTOCOL,
     "",
     context,
@@ -442,15 +459,15 @@ async function sendDirectAgentResponse(intent: AguiIntent, runId: string) {
   });
 
   if (intent.targetAgent === "Lucy") {
-    const result = await sendLucyResponse({ message, responsesInput, conversation });
+    const result = await sendHermesAgentResponse("Lucy", { message, responsesInput, conversation });
     return result.text;
   }
   if (intent.targetAgent === "Tiger") {
-    const result = await sendTigerResponse({ message, responsesInput, conversation });
+    const result = await sendHermesAgentResponse("Tiger", { message, responsesInput, conversation });
     return result.text;
   }
   if (intent.targetAgent === "Musk") {
-    const result = await sendMuskResponse({ message, responsesInput, conversation });
+    const result = await sendHermesAgentResponse("Musk", { message, responsesInput, conversation });
     return result.text;
   }
 
@@ -611,15 +628,15 @@ async function finishRun(input: {
 }
 
 /*
-async function legacyStreamLucyClarification(input: {
+async function legacyStreamPlanningAgentClarification(input: {
   controller: ReadableStreamDefaultController<Uint8Array>;
   intent: AguiIntent;
   runId: string;
   threadId?: string;
   messageId: string;
 }) {
-  let plan = buildLucyClarification(input.intent.message || "");
-  await writeLucyPlan(plan);
+  let plan = buildPlanWorkflowClarification(input.intent.message || "");
+  await writePlanWorkflow(plan);
   await emit(input.controller, {
     type: EventType.STATE_DELTA,
     delta: [
@@ -630,14 +647,14 @@ async function legacyStreamLucyClarification(input: {
   });
   await emit(input.controller, {
     type: EventType.CUSTOM,
-    name: "lucy_clarification",
+    name: "planning_agent_clarification",
     value: { plan },
     timestamp: Date.now()
   });
   await emit(input.controller, {
     type: EventType.TEXT_MESSAGE_CONTENT,
     messageId: input.messageId,
-    delta: `Lucy 已进入需求沟通阶段：${plan.summary}`,
+    delta: `Planning agent entered clarification: ${plan.summary}`,
     timestamp: Date.now()
   });
   await emit(input.controller, {
@@ -655,38 +672,37 @@ async function legacyStreamLucyClarification(input: {
     messageId: input.messageId,
     status: "success",
     resultStatus: "clarifying",
-    notice: "Lucy 已开始沟通澄清，暂未派发执行。",
+    notice: "Planning agent started clarification and has not dispatched execution yet.",
     outputText: plan.summary
   });
 }
 
 */
-function hermesLucyErrorMessage(error: unknown) {
-  if (error instanceof HermesLucyError) {
+function planningAgentErrorMessage(error: unknown) {
+  if (error instanceof HermesAgentError) {
     if (error.code === "not_configured") {
-      return "Lucy 未连接 Hermes API：缺少 API_SERVER_KEY。请在 ~/.hermes/.env 设置 API_SERVER_ENABLED=true 和 API_SERVER_KEY，并启动 hermes gateway。";
+      return "Planning agent is not connected to Hermes API: API_SERVER_KEY is missing. Set API_SERVER_ENABLED=true and API_SERVER_KEY in ~/.hermes/.env, then start hermes gateway.";
     }
     if (error.code === "unauthorized") {
-      return "Lucy 未连接 Hermes API：API_SERVER_KEY 鉴权失败，请检查 ~/.hermes/.env。";
+      return "Planning agent is not connected to Hermes API: API_SERVER_KEY authorization failed. Check ~/.hermes/.env.";
     }
     if (error.code === "unreachable") {
-      return "Lucy 未连接 Hermes API：无法连接 http://127.0.0.1:8642，请确认 hermes gateway 已启动。";
+      return "Planning agent is not connected to Hermes API: cannot reach http://127.0.0.1:8642. Confirm hermes gateway is running.";
     }
-    return `Lucy 未连接 Hermes API：Hermes 返回异常，${error.message}`;
+    return `Planning agent Hermes API error: ${error.message}`;
   }
 
-  return error instanceof Error ? error.message : "Lucy 未连接 Hermes API。";
+  return error instanceof Error ? error.message : "Planning agent is not connected to Hermes API.";
 }
-
-async function streamHermesLucyRequirement(input: {
+async function streamPlanningAgentRequirement(input: {
   controller: ReadableStreamDefaultController<Uint8Array>;
   intent: AguiIntent;
   runId: string;
   threadId?: string;
   messageId: string;
 }) {
-  const toolCallId = `tool_hermes_lucy_${input.runId}`;
-  const conversation = `ag-ui-lucy-${input.intent.projectId}`;
+  const toolCallId = `tool_planning_agent_${input.runId}`;
+  const conversation = `ag-ui-planning-agent-${input.intent.projectId}`;
 
   await emit(input.controller, {
     type: EventType.STATE_DELTA,
@@ -696,7 +712,7 @@ async function streamHermesLucyRequirement(input: {
   await emit(input.controller, {
     type: EventType.TOOL_CALL_START,
     toolCallId,
-    toolCallName: "hermes_lucy_responses",
+    toolCallName: "planning_agent_responses",
     parentMessageId: input.messageId,
     timestamp: Date.now()
   });
@@ -713,7 +729,7 @@ async function streamHermesLucyRequirement(input: {
 
   try {
     const message = [input.intent.message || "", formatAttachmentContext(input.intent.attachments)].filter(Boolean).join("\n\n");
-    const lucy = await sendLucyResponse({
+    const lucy = await sendHermesAgentResponse("Lucy", {
       message,
       responsesInput: await buildHermesResponsesInput({
         message,
@@ -729,7 +745,7 @@ async function streamHermesLucyRequirement(input: {
     });
     await emit(input.controller, {
       type: EventType.CUSTOM,
-      name: "hermes_lucy_response",
+      name: "planning_agent_response",
       value: {
         connected: true,
         conversation
@@ -737,25 +753,25 @@ async function streamHermesLucyRequirement(input: {
       timestamp: Date.now()
     });
 
-    let parsedPlan: LucyPlan | null = null;
+    let parsedPlan: PlanWorkflow | null = null;
     try {
-      parsedPlan = parseHermesLucyPlan({ text: lucy.text, requirement: input.intent.message || "" });
+      parsedPlan = parsePlanningAgentPlan({ text: lucy.text, requirement: input.intent.message || "" });
     } catch {
       parsedPlan = null;
     }
 
     if (parsedPlan) {
-      await writeLucyPlan(parsedPlan);
+      await writePlanWorkflow(parsedPlan);
       await emit(input.controller, {
         type: EventType.CUSTOM,
-        name: "lucy_plan_ready",
+        name: "plan_workflow_ready",
         value: { plan: parsedPlan, source: "hermes" },
         timestamp: Date.now()
       });
       await emit(input.controller, {
         type: EventType.TEXT_MESSAGE_CONTENT,
         messageId: input.messageId,
-        delta: `Lucy generated ${parsedPlan.tasks.length} executable tasks. Please review and select them in the task list.`,
+        delta: `Planning agent generated ${parsedPlan.tasks.length} executable tasks. Please review and select them in the task list.`,
         timestamp: Date.now()
       });
       await emit(input.controller, {
@@ -773,7 +789,7 @@ async function streamHermesLucyRequirement(input: {
         messageId: input.messageId,
         status: "success",
         resultStatus: "planned",
-        notice: "Lucy returned a structured plan through Hermes.",
+        notice: "Planning agent returned a structured plan through Hermes.",
         outputText: parsedPlan.summary
       });
       return;
@@ -799,12 +815,12 @@ async function streamHermesLucyRequirement(input: {
       message: input.intent.message,
       messageId: input.messageId,
       status: "success",
-      resultStatus: "lucy_connected",
-      notice: "Lucy 已通过 Hermes API 返回真实响应。",
+      resultStatus: "planning_agent_connected",
+      notice: "Planning agent returned a real response through Hermes API.",
       outputText: lucy.text
     });
   } catch (error) {
-    const message = hermesLucyErrorMessage(error);
+    const message = planningAgentErrorMessage(error);
 
     await emit(input.controller, {
       type: EventType.TOOL_CALL_END,
@@ -813,11 +829,11 @@ async function streamHermesLucyRequirement(input: {
     });
     await emit(input.controller, {
       type: EventType.CUSTOM,
-      name: "hermes_lucy_connection",
+      name: "planning_agent_connection",
       value: {
         connected: false,
         status: "offline",
-        reason: error instanceof HermesLucyError ? error.code : "unreachable",
+        reason: error instanceof HermesAgentError ? error.code : "unreachable",
         message
       },
       timestamp: Date.now()
@@ -843,23 +859,23 @@ async function streamHermesLucyRequirement(input: {
       messageId: input.messageId,
       status: "needs_attention",
       resultStatus: "needs_attention",
-      notice: "Lucy 未连接 Hermes API，当前为离线状态。",
+      notice: "Planning agent is not connected to Hermes API and is currently offline.",
       outputText: message
     });
   }
 }
 
 /*
-async function legacyStreamLucyPlan(input: {
+async function legacyStreamPlanWorkflow(input: {
   controller: ReadableStreamDefaultController<Uint8Array>;
   intent: AguiIntent;
   runId: string;
   threadId?: string;
   messageId: string;
 }) {
-  const existingPlan = await readLucyPlan();
-  const plan = buildLucyTaskPlan(input.intent.message || existingPlan?.requirement || "", existingPlan);
-  await writeLucyPlan(plan);
+  const existingPlan = await readPlanWorkflow();
+  const plan = buildPlanWorkflowTaskPlan(input.intent.message || existingPlan?.requirement || "", existingPlan);
+  await writePlanWorkflow(plan);
   await emit(input.controller, {
     type: EventType.STATE_DELTA,
     delta: [{ op: "replace", path: "/agents/Lucy/status", value: "reviewing" }],
@@ -867,14 +883,14 @@ async function legacyStreamLucyPlan(input: {
   });
   await emit(input.controller, {
     type: EventType.CUSTOM,
-    name: "lucy_plan_ready",
+    name: "plan_workflow_ready",
     value: { plan },
     timestamp: Date.now()
   });
   await emit(input.controller, {
     type: EventType.TEXT_MESSAGE_CONTENT,
     messageId: input.messageId,
-    delta: `Lucy 已生成 ${plan.tasks.length} 个计划任务，等待你勾选执行。`,
+    delta: `Planning agent generated ${plan.tasks.length} planned tasks and is waiting for your selection.`,
     timestamp: Date.now()
   });
   await emit(input.controller, {
@@ -892,24 +908,24 @@ async function legacyStreamLucyPlan(input: {
     messageId: input.messageId,
     status: "success",
     resultStatus: "planned",
-    notice: "Lucy 已生成计划，请在任务列表勾选执行。",
+    notice: "Planning agent generated a plan. Select tasks in the task list to execute.",
     outputText: plan.summary
   });
 }
 
 */
 
-async function streamLucyPlan(input: {
+async function streamPlanWorkflow(input: {
   controller: ReadableStreamDefaultController<Uint8Array>;
   intent: AguiIntent;
   runId: string;
   threadId?: string;
   messageId: string;
 }) {
-  const existingPlan = await readLucyPlan();
+  const existingPlan = await readPlanWorkflow();
   const requirement = input.intent.message || existingPlan?.requirement || "";
-  const toolCallId = `tool_hermes_lucy_plan_${input.runId}`;
-  const conversation = `ag-ui-lucy-${input.intent.projectId}`;
+  const toolCallId = `tool_planning_agent_plan_${input.runId}`;
+  const conversation = `ag-ui-planning-agent-${input.intent.projectId}`;
 
   await emit(input.controller, {
     type: EventType.STATE_DELTA,
@@ -919,7 +935,7 @@ async function streamLucyPlan(input: {
   await emit(input.controller, {
     type: EventType.TOOL_CALL_START,
     toolCallId,
-    toolCallName: "hermes_lucy_plan",
+    toolCallName: "planning_agent_plan",
     parentMessageId: input.messageId,
     timestamp: Date.now()
   });
@@ -936,7 +952,7 @@ async function streamLucyPlan(input: {
 
   try {
     const message = buildHermesPlanPrompt(requirement, input.intent.attachments);
-    const lucy = await sendLucyResponse({
+    const lucy = await sendHermesAgentResponse("Lucy", {
       message,
       responsesInput: await buildHermesResponsesInput({
         message,
@@ -944,8 +960,8 @@ async function streamLucyPlan(input: {
       }),
       conversation
     });
-    const plan = parseHermesLucyPlan({ text: lucy.text, requirement, existingPlan });
-    await writeLucyPlan(plan);
+    const plan = parsePlanningAgentPlan({ text: lucy.text, requirement, existingPlan });
+    await writePlanWorkflow(plan);
 
     await emit(input.controller, {
       type: EventType.TOOL_CALL_END,
@@ -954,14 +970,14 @@ async function streamLucyPlan(input: {
     });
     await emit(input.controller, {
       type: EventType.CUSTOM,
-      name: "lucy_plan_ready",
+      name: "plan_workflow_ready",
       value: { plan, source: "hermes" },
       timestamp: Date.now()
     });
     await emit(input.controller, {
       type: EventType.TEXT_MESSAGE_CONTENT,
       messageId: input.messageId,
-      delta: `Lucy 已生成 ${plan.tasks.length} 个计划任务，请在任务列表勾选执行。`,
+      delta: `Planning agent generated ${plan.tasks.length} planned tasks. Select tasks in the task list to execute.`,
       timestamp: Date.now()
     });
     await emit(input.controller, {
@@ -979,16 +995,16 @@ async function streamLucyPlan(input: {
       messageId: input.messageId,
       status: "success",
       resultStatus: "planned",
-      notice: "Lucy 已通过 Hermes 生成计划，请在任务列表勾选执行。",
+      notice: "Planning agent generated a plan through Hermes. Select tasks in the task list to execute.",
       outputText: plan.summary
     });
   } catch (error) {
     const message =
-      error instanceof HermesLucyError
-        ? `Lucy 计划生成需处理：${error.message}`
+      error instanceof HermesAgentError
+        ? `Planning-agent plan generation needs attention: ${error.message}`
         : error instanceof Error
-          ? `Lucy 计划生成需处理：${error.message}`
-          : "Lucy 计划生成需处理。";
+          ? `Planning-agent plan generation needs attention: ${error.message}`
+          : "Planning-agent plan generation needs attention.";
 
     await emit(input.controller, {
       type: EventType.TOOL_CALL_END,
@@ -997,7 +1013,7 @@ async function streamLucyPlan(input: {
     });
     await emit(input.controller, {
       type: EventType.CUSTOM,
-      name: "lucy_plan_failed",
+      name: "plan_workflow_failed",
       value: { source: "hermes", message },
       timestamp: Date.now()
     });
@@ -1022,7 +1038,7 @@ async function streamLucyPlan(input: {
       messageId: input.messageId,
       status: "needs_attention",
       resultStatus: "needs_attention",
-      notice: "Lucy 返回了不可用的计划格式，需要处理。",
+      notice: "Planning agent returned an unusable plan format that needs attention.",
       outputText: message
     });
   }
@@ -1041,7 +1057,7 @@ function intentForTask(task: TaskItem): AguiIntent {
 
   if (task.owner === "Lucy") {
     return {
-      action: "ask_lucy_review",
+      action: "ask_planning_agent_review",
       targetAgent: "Lucy",
       projectId: "demo-project",
       taskId: task.id,
@@ -1083,7 +1099,7 @@ async function streamSelectedTasks(input: {
   threadId?: string;
   messageId: string;
 }) {
-  const plan = await readLucyPlan();
+  const plan = await readPlanWorkflow();
   const selectedIds = new Set(input.intent.selectedTaskIds || []);
   const selectedTasks = sortTasksForExecution((plan?.tasks || []).filter((task) => selectedIds.has(task.id)));
 
@@ -1115,7 +1131,7 @@ async function streamSelectedTasks(input: {
   let hasDisabledLocalRunner = false;
   const taskResults = new Map<string, { status: "completed" | "reviewing" | "blocked" | "deferred" | "selected"; summary: string }>();
 
-  const executingPlan: LucyPlan = {
+  const executingPlan: PlanWorkflow = {
     ...plan,
     stage: "executing",
     tasks: plan.tasks.map((task) =>
@@ -1123,7 +1139,7 @@ async function streamSelectedTasks(input: {
     )
   };
 
-  await writeLucyPlan(executingPlan);
+  await writePlanWorkflow(executingPlan);
   await emit(input.controller, {
     type: EventType.CUSTOM,
     name: "selected_tasks_started",
@@ -1254,7 +1270,7 @@ async function streamSelectedTasks(input: {
           failed
             ? `${task.owner} needs attention${error ? ` (${error})` : ""}`
             : task.owner === "Lucy"
-              ? "Lucy finished and marked the task completed"
+              ? "Planning agent finished and marked the task completed"
               : `${task.owner} finished; awaiting review`
         }`;
     taskResults.set(task.id, { status: resultStatus, summary });
@@ -1273,7 +1289,7 @@ async function streamSelectedTasks(input: {
         outputText: outputText.slice(0, 1200),
         artifacts,
         error,
-        awaitingLucyReview: enabled && !failed && task.owner !== "Lucy"
+        awaitingPlanningAgentReview: enabled && !failed && task.owner !== "Lucy"
       },
       timestamp: Date.now()
     });
@@ -1288,7 +1304,7 @@ async function streamSelectedTasks(input: {
     });
   }
 
-  const nextPlan = await updateLucyPlan((current) => {
+  const nextPlan = await updatePlanWorkflow((current) => {
     const tasks: TaskItem[] = (current || executingPlan).tasks.map((task): TaskItem => {
       if (!selectedIds.has(task.id)) return task;
       const result = taskResults.get(task.id);
@@ -1301,7 +1317,7 @@ async function streamSelectedTasks(input: {
 
     return {
       ...(current || executingPlan),
-      stage: hasFailure ? "blocked" : hasDisabledLocalRunner ? "planned" : inferLucyPlanStage(tasks),
+      stage: hasFailure ? "blocked" : hasDisabledLocalRunner ? "planned" : inferPlanWorkflowStage(tasks),
       tasks
     };
   });
@@ -1312,7 +1328,7 @@ async function streamSelectedTasks(input: {
     value: {
       plan: nextPlan,
       summaries,
-      awaitingLucyReview: !hasFailure && !hasDisabledLocalRunner && Array.from(taskResults.values()).some((result) => result.status === "reviewing")
+      awaitingPlanningAgentReview: !hasFailure && !hasDisabledLocalRunner && Array.from(taskResults.values()).some((result) => result.status === "reviewing")
     },
     timestamp: Date.now()
   });
@@ -1336,13 +1352,13 @@ async function streamSelectedTasks(input: {
     message: input.intent.message,
     messageId: input.messageId,
     status: hasFailure ? "needs_attention" : "success",
-    resultStatus: hasFailure ? "needs_attention" : hasDisabledLocalRunner ? "ray_runner_disabled" : nextPlan.stage === "reviewing" ? "awaiting_lucy_review" : "completed",
+    resultStatus: hasFailure ? "needs_attention" : hasDisabledLocalRunner ? "ray_runner_disabled" : nextPlan.stage === "reviewing" ? "awaiting_planning_agent_review" : "completed",
     notice: hasFailure
       ? "Agent task needs attention."
       : hasDisabledLocalRunner
         ? "Ray runner is not enabled; selected task remains queued."
         : nextPlan.stage === "reviewing"
-          ? "Agent task is ready for Lucy review."
+          ? "Agent task is ready for planning-agent review."
           : "Agent task completed.",
     outputText: summaries.join("\n")
   });
@@ -1357,15 +1373,15 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   const inboxToolCallId = `tool_inbox_${runId}`;
   const codexToolCallId = `tool_codex_${runId}`;
   const rayToolCallId = `tool_ray_execute_${runId}`;
-  const lucyToolCallId = `tool_lucy_review_${runId}`;
-  const currentPlan = await readLucyPlan().catch(() => null);
+  const planningAgentToolCallId = `tool_planning_agent_review_${runId}`;
+  const currentPlan = await readPlanWorkflow().catch(() => null);
   const task =
     currentPlan?.tasks.find((item) => item.id === intent.taskId) ||
     initialTasks.find((item) => item.id === intent.taskId) ||
     initialTasks[0];
   const copy = actionCopy(intent.action);
-  const triage = intent.action === "submit_requirement_to_lucy" ? triageRequirement(intent.message) : undefined;
-  const shouldHandoffToRay = intent.action === "submit_requirement_to_lucy";
+  const triage = intent.action === "submit_requirement_to_planning_agent" ? triageRequirement(intent.message) : undefined;
+  const shouldHandoffToRay = intent.action === "submit_requirement_to_planning_agent";
 
   await emit(controller, {
     type: EventType.RUN_STARTED,
@@ -1390,12 +1406,12 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
     name: intent.targetAgent,
     timestamp: Date.now()
   });
-  if (intent.action === "submit_requirement_to_lucy") {
-    await streamHermesLucyRequirement({ controller, intent, runId, threadId, messageId });
+  if (intent.action === "submit_requirement_to_planning_agent") {
+    await streamPlanningAgentRequirement({ controller, intent, runId, threadId, messageId });
     return;
   }
-  if (intent.action === "generate_lucy_plan") {
-    await streamLucyPlan({ controller, intent, runId, threadId, messageId });
+  if (intent.action === "generate_plan_workflow") {
+    await streamPlanWorkflow({ controller, intent, runId, threadId, messageId });
     return;
   }
   if (intent.action === "manual_message" && intent.targetAgent !== "Ray") {
@@ -1511,7 +1527,7 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   if (triage) {
     await emit(controller, {
       type: EventType.CUSTOM,
-      name: "lucy_triage",
+      name: "planning_agent_triage",
       value: {
         priority: triage.priority,
         mode: triage.mode,
@@ -1560,15 +1576,15 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
     runId
   });
   let commandPreview = codexRun.outputText
-    ? `${command}\n\n---\n\n本地 Codex 执行结果：\n\n${codexRun.outputText}`
+    ? `${command}\n\n---\n\nLocal Codex execution result:\n\n${codexRun.outputText}`
     : command;
   if (triage) {
-    commandPreview = `${commandPreview}\n\n---\n\nLucy 分诊：\n\n${triageSummary(triage)}`;
+    commandPreview = `${commandPreview}\n\n---\n\nPlanning-agent triage:\n\n${triageSummary(triage)}`;
   }
 
   let linkedRayRun: Awaited<ReturnType<typeof runLocalAgentAction>> | undefined;
   let linkedRayCodexRun: Awaited<ReturnType<typeof runCodexExec>> | undefined;
-  let linkedLucyRun: Awaited<ReturnType<typeof runCodexExec>> | undefined;
+  let linkedPlanningAgentRun: Awaited<ReturnType<typeof runCodexExec>> | undefined;
 
   if (shouldHandoffToRay) {
     const rayIntent: AguiIntent = {
@@ -1576,16 +1592,16 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
       targetAgent: "Ray",
       projectId: "demo-project",
       taskId: intent.taskId,
-      message: `Lucy 拆解后的 Ray 任务：${intent.message || task.title}`
+      message: `Planning-agent Ray task: ${intent.message || task.title}`
     };
 
     await emit(controller, {
       type: EventType.CUSTOM,
-      name: "lucy_plan_created",
+      name: "plan_workflow_created",
       value: {
         requirement: intent.message,
         assignedTo: "Ray",
-        acceptance: ["更新 Project Context Hub", "输出可验收结果", "交回 Lucy 验收"]
+        acceptance: ["Update Project Context Hub", "Deliver a verifiable result", "Return for planning-agent review"]
       },
       timestamp: Date.now()
     });
@@ -1593,9 +1609,9 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
       type: EventType.CUSTOM,
       name: "handoff_to_ray",
       value: {
-        from: "Lucy",
+        from: "Planning Agent",
         to: "Ray",
-        reason: "Lucy 已拆解用户需求，自动分配给 Ray 执行。"
+        reason: "Planning agent broke down the user requirement and assigned Ray to execute."
       },
       timestamp: Date.now()
     });
@@ -1628,7 +1644,7 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
       type: EventType.TOOL_CALL_ARGS,
       toolCallId: rayToolCallId,
       delta: JSON.stringify({
-        sourceAgent: "Lucy",
+        sourceAgent: "Planning Agent",
         targetAgent: "Ray",
         writtenFiles: linkedRayRun.writtenFiles,
         contextHubWrites: linkedRayRun.contextHub.writtenFiles,
@@ -1675,8 +1691,8 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
     await writeLastResult({
       status:
         linkedRayCodexRun.exitCode === 0 && !linkedRayCodexRun.error
-            ? "Ray 执行完成"
-            : "Ray 执行需处理",
+            ? "Ray execution completed"
+            : "Ray execution needs attention",
       outputText: linkedRayCodexRun.outputText || linkedRayCodexRun.error,
       outputFile: linkedRayCodexRun.outputFile
     });
@@ -1692,34 +1708,34 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   }
 
   if (intent.action === "dispatch_to_ray" || shouldHandoffToRay) {
-    const lucyIntent: AguiIntent = {
-      action: "ask_lucy_review",
+    const planningAgentIntent: AguiIntent = {
+      action: "ask_planning_agent_review",
       targetAgent: "Lucy",
       projectId: "demo-project",
       taskId: intent.taskId,
       message:
         shouldHandoffToRay
-          ? "Ray 已按 Lucy 拆解执行并写入 Project Context Hub，请 Lucy 自动验收。"
-          : "Ray 已完成 Project Context Hub 写入，请基于共享上下文自动验收。"
+          ? "Ray executed the plan workflow and wrote to Project Context Hub. Ask the planning agent to review automatically."
+          : "Ray completed the Project Context Hub write. Review automatically from shared context."
     };
     const reviewSource = linkedRayRun || localRun;
-    const lucyCommand = buildCommandTemplate({
-      action: lucyIntent.action,
-      targetAgent: lucyIntent.targetAgent,
+    const planningAgentCommand = buildCommandTemplate({
+      action: planningAgentIntent.action,
+      targetAgent: planningAgentIntent.targetAgent,
       taskTitle: task.title,
-      manualMessage: lucyIntent.message,
-      localContextSummary: `${reviewSource.summary}\nProject Context Hub 文件：${reviewSource.contextHub.readFiles.join(", ")}\nRay 本次写入：${
-        reviewSource.contextHub.writtenFiles.length ? reviewSource.contextHub.writtenFiles.join(", ") : "无"
+      manualMessage: planningAgentIntent.message,
+      localContextSummary: `${reviewSource.summary}\nProject Context Hub files: ${reviewSource.contextHub.readFiles.join(", ")}\nRay wrote this time: ${
+        reviewSource.contextHub.writtenFiles.length ? reviewSource.contextHub.writtenFiles.join(", ") : "none"
       }`
     });
 
     await emit(controller, {
       type: EventType.CUSTOM,
-      name: "handoff_to_lucy",
+      name: "handoff_to_planning_agent",
       value: {
-        from: shouldHandoffToRay ? "Ray (via Lucy plan)" : "Ray",
-        to: "Lucy",
-        reason: "Ray 已写入 Project Context Hub，自动触发 Lucy 统筹验收。"
+        from: shouldHandoffToRay ? "Ray (via plan workflow)" : "Ray",
+        to: "Planning Agent",
+        reason: "Ray wrote to Project Context Hub, triggering planning-agent review automatically."
       },
       timestamp: Date.now()
     });
@@ -1733,14 +1749,14 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
     });
     await emit(controller, {
       type: EventType.TOOL_CALL_START,
-      toolCallId: lucyToolCallId,
-      toolCallName: "linked_lucy_review",
+      toolCallId: planningAgentToolCallId,
+      toolCallName: "linked_planning_agent_review",
       parentMessageId: messageId,
       timestamp: Date.now()
     });
     await emit(controller, {
       type: EventType.TOOL_CALL_ARGS,
-      toolCallId: lucyToolCallId,
+      toolCallId: planningAgentToolCallId,
       delta: JSON.stringify({
         sourceAgent: "Ray",
         targetAgent: "Lucy",
@@ -1750,33 +1766,33 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
       timestamp: Date.now()
     }, 0);
 
-    linkedLucyRun = await runCodexExec({
-      intent: lucyIntent,
+    linkedPlanningAgentRun = await runCodexExec({
+      intent: planningAgentIntent,
       taskTitle: task.title,
-      command: lucyCommand,
-      runId: `${runId}_lucy`
+      command: planningAgentCommand,
+      runId: `${runId}_planning_agent`
     });
 
     await emit(controller, {
       type: EventType.TOOL_CALL_END,
-      toolCallId: lucyToolCallId,
+      toolCallId: planningAgentToolCallId,
       timestamp: Date.now()
     });
     await emit(controller, {
       type: EventType.CUSTOM,
-      name: "lucy_linked_review",
+      name: "planning_agent_linked_review",
       value: {
-        exitCode: linkedLucyRun.exitCode,
-        outputFile: linkedLucyRun.outputFile,
-        outputText: linkedLucyRun.outputText,
-        error: linkedLucyRun.error
+        exitCode: linkedPlanningAgentRun.exitCode,
+        outputFile: linkedPlanningAgentRun.outputFile,
+        outputText: linkedPlanningAgentRun.outputText,
+        error: linkedPlanningAgentRun.error
       },
       timestamp: Date.now()
     });
     await writeLastResult({
-      status: linkedLucyRun.exitCode === 0 ? "Lucy 验收完成" : "Lucy 验收需处理",
-      outputText: linkedLucyRun.outputText || linkedLucyRun.error,
-      outputFile: linkedLucyRun.outputFile
+      status: linkedPlanningAgentRun.exitCode === 0 ? "Planning-agent review completed" : "Planning-agent review needs attention",
+      outputText: linkedPlanningAgentRun.outputText || linkedPlanningAgentRun.error,
+      outputFile: linkedPlanningAgentRun.outputFile
     });
 
     const rayResultText =
@@ -1784,24 +1800,24 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
       codexRunNote("Ray", linkedRayCodexRun);
 
     commandPreview = `${commandPreview}\n\n---\n\n${
-      shouldHandoffToRay ? "Lucy → Ray → Lucy 自动编排结果" : "Ray → Lucy 自动联动验收结果"
-    }：\n\n${
-      rayResultText ? `Ray 结果：\n\n${rayResultText}\n\n---\n\n` : ""
+      shouldHandoffToRay ? "Planning Agent -> Ray -> Planning Agent orchestration result" : "Ray -> Planning Agent linked review result"
+    }:\n\n${
+      rayResultText ? `Ray result:\n\n${rayResultText}\n\n---\n\n` : ""
     }${
-      linkedLucyRun.outputText || linkedLucyRun.error || "Lucy 未返回验收结果。"
+      linkedPlanningAgentRun.outputText || linkedPlanningAgentRun.error || "Planning agent did not return a review result."
     }`;
   }
 
   const hasRunFailure = Boolean(
     (codexRun.enabled && (codexRun.exitCode !== 0 || codexRun.error)) ||
       (linkedRayCodexRun && (!linkedRayCodexRun.enabled || linkedRayCodexRun.exitCode !== 0 || linkedRayCodexRun.error)) ||
-      (linkedLucyRun?.enabled && (linkedLucyRun.exitCode !== 0 || linkedLucyRun.error))
+      (linkedPlanningAgentRun?.enabled && (linkedPlanningAgentRun.exitCode !== 0 || linkedPlanningAgentRun.error))
   );
   const finalTaskStatus = hasRunFailure ? "blocked" : "idle";
   const failureSummary = [
     codexRunIssue(intent.targetAgent, codexRun),
     codexRunIssue("Ray", linkedRayCodexRun),
-    codexRunIssue("Lucy", linkedLucyRun)
+    codexRunIssue("Planning Agent", linkedPlanningAgentRun)
   ].filter(Boolean);
   const finalAgentPaths = new Set<string>([`/agents/${intent.targetAgent}/status`]);
   if (shouldHandoffToRay || intent.action === "dispatch_to_ray") {
@@ -1811,10 +1827,10 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   const finalAgentDeltas = Array.from(finalAgentPaths).map((path) => {
     return { op: "replace", path, value: "ready" };
   });
-  let reviewedPlan: LucyPlan | null = null;
+  let reviewedPlan: PlanWorkflow | null = null;
 
-  if (intent.action === "ask_lucy_review" && currentPlan?.tasks.some((item) => item.id === task.id)) {
-    reviewedPlan = await updateLucyPlan((current) => {
+  if (intent.action === "ask_planning_agent_review" && currentPlan?.tasks.some((item) => item.id === task.id)) {
+    reviewedPlan = await updatePlanWorkflow((current) => {
       const plan = current || currentPlan;
       const nextStatus: TaskItem["status"] = hasRunFailure ? "blocked" : "ready";
       const nextPlanStatus: TaskItem["planStatus"] = hasRunFailure ? "blocked" : "completed";
@@ -1843,7 +1859,7 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
     delta: [
       ...finalAgentDeltas,
       { op: "replace", path: `/tasks/${task.id}/status`, value: finalTaskStatus },
-      ...(intent.action === "ask_lucy_review"
+      ...(intent.action === "ask_planning_agent_review"
         ? [{ op: "replace", path: `/tasks/${task.id}/planStatus`, value: hasRunFailure ? "blocked" : "completed" }]
         : [])
     ],
@@ -1852,7 +1868,7 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   if (reviewedPlan) {
     await emit(controller, {
       type: EventType.CUSTOM,
-      name: "lucy_plan_completed",
+      name: "plan_workflow_completed",
       value: {
         plan: reviewedPlan,
         reviewedTaskId: task.id
@@ -1868,10 +1884,10 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
   });
 
   const completionMessage = hasRunFailure
-    ? ` 流程已结束，但有执行步骤需处理：${failureSummary.join("；") || "本地执行未成功完成"}。`
+    ? ` Flow finished, but execution needs attention: ${failureSummary.join("; ") || "local execution did not complete successfully"}.`
     : codexRun.enabled
-      ? ` 已写入 ${localRun.writtenFiles.join(", ")}，Ray 已执行，Lucy 已自动完成统筹验收。`
-      : ` 已写入 ${localRun.writtenFiles.join(", ")}。Codex exec 未启用，仅生成本地执行指令。`;
+      ? ` Wrote ${localRun.writtenFiles.join(", ")}. Ray executed and the planning agent completed the orchestration review.`
+      : ` Wrote ${localRun.writtenFiles.join(", ")}. Codex exec is disabled, so only local execution instructions were generated.`;
 
   await emit(controller, {
     type: EventType.TEXT_MESSAGE_CONTENT,
@@ -1908,12 +1924,12 @@ async function streamAgentRun(input: RunAgentInput, controller: ReadableStreamDe
     timestamp: Date.now()
   });
   await writeLastResult({
-    status: hasRunFailure ? "执行完成，但需要处理" : "已生成最终结果",
+    status: hasRunFailure ? "Execution completed with attention needed" : "Final result generated",
     command: commandPreview
   });
   const runNotice = hasRunFailure
-    ? "流程结束，但有真实执行步骤需处理。"
-    : "任务已完成，Lucy 已完成验收。";
+    ? "Flow finished, but a real execution step needs attention."
+    : "Task completed and the planning agent completed review.";
   await emit(controller, {
     type: EventType.RUN_FINISHED,
     threadId,

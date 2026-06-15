@@ -12,10 +12,10 @@ const actions: Array<{
   icon: typeof Send;
   tone: string;
 }> = [
-  { action: "dispatch_to_ray", label: "Ray → Lucy 联动", icon: Send, tone: "text-blue-400" },
-  { action: "ask_lucy_review", label: "让 Lucy 统筹验收", icon: UserCheck, tone: "text-violet-400" },
-  { action: "ask_tiger_blog", label: "让 Tiger 写 Blog", icon: Globe2, tone: "text-emerald-400" },
-  { action: "daily_report", label: "生成项目日报", icon: FileText, tone: "text-orange-400" }
+  { action: "dispatch_to_ray", label: "Dispatch to Ray", icon: Send, tone: "text-blue-400" },
+  { action: "ask_planning_agent_review", label: "Request review", icon: UserCheck, tone: "text-violet-400" },
+  { action: "ask_tiger_blog", label: "Draft blog", icon: Globe2, tone: "text-emerald-400" },
+  { action: "daily_report", label: "Daily report", icon: FileText, tone: "text-orange-400" }
 ];
 
 export function QuickActions({ running, onAction }: QuickActionsProps) {
@@ -23,7 +23,7 @@ export function QuickActions({ running, onAction }: QuickActionsProps) {
     <section className="frost min-w-0 rounded-xl p-6">
       <div className="mb-5 flex items-center gap-3">
         <Send className="h-5 w-5 text-slate-300" />
-        <h2 className="text-base font-semibold text-slate-100">快捷动作</h2>
+        <h2 className="text-base font-semibold text-slate-100">Quick Actions</h2>
       </div>
 
       <div className="grid min-w-0 grid-cols-2 gap-3 max-sm:grid-cols-1">

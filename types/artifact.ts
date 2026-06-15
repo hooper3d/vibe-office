@@ -1,7 +1,7 @@
-import type { AgentName, ProjectId } from "@/types/agent";
+import type { ProjectId } from "@/types/agent";
 
 export type ArtifactType = "image" | "file" | "url" | "markdown";
-export type ArtifactOwner = AgentName | "User";
+export type ArtifactOwner = string;
 
 export type Artifact = {
   id: string;
@@ -28,6 +28,7 @@ export type ArtifactInput = {
   projectId: ProjectId;
   sourceUrl?: string;
   path?: string;
+  content?: string;
   mimeType?: string;
   size?: number;
   description?: string;

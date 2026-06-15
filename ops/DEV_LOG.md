@@ -19,6 +19,21 @@ Agent：Ray
 
 结果：已通过控制台派发开发任务，并沉淀到 Project Context Hub。
 
+## 2026-06-12T04:02:00+08:00 · Ray 开发记录
+
+时间：2026-06-12T04:02:00+08:00
+Agent：Ray
+动作：direct_edit
+任务：定义 Agent Office Canvas v1 交互边界
+补充说明：按决策边界补齐交互入口（world/viewport、pan zoom、复位、缩放指示、Escape、触控）。
+
+结果：
+- 增强 `components/AgentStatus.tsx` 的画布交互：支持点击空白关闭详情卡、鼠标平移、滚轮缩放、触控双指缩放与单指拖拽，边界控制层保留在 viewport 覆盖层不随 world 变换。
+- 新增 `Reset` 与缩放百分比指示，支持 `Esc` 快速关闭详情卡。
+- 本次改动保持文件最小化，未改动后端逻辑或数据模型。
+验证：
+- 已执行 `npm run lint`（见后续输出）。
+
 
 ## 2026-06-11T00:00:00+08:00 · Ray 平台能力记录
 
@@ -650,3 +665,380 @@ Agent：Ray
 补充说明：在画布上为每个 Agent 显示产出入口，点击后按 owner 过滤 artifact。Tiger 产出箱应能看到当前真实图片产物。
 
 结果：已通过控制台派发开发任务，并沉淀到 Project Context Hub。
+
+
+## 2026-06-12T03:51:10.479Z · Ray 开发记录
+
+时间：2026-06-12T03:51:10.479Z
+Agent：Ray
+动作：dispatch_to_ray
+任务：定义 Agent Office Canvas v1 交互边界
+补充说明：无
+
+结果：已通过控制台派发开发任务，并沉淀到 Project Context Hub。
+
+## 2026-06-14 · Ray development log: worker profile runtime guard
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_profile_runtime_guard
+
+Result:
+- Recovered localhost:3000 after the Next dev cache lost a compiled chunk; cleared `.next`, restarted the dev server, and confirmed `GET /` and setup reset return 200.
+- Added profile runtime status helpers for Hermes gateway state and dedicated worker profile base URL mapping.
+- Added `GET /api/runtime/profiles` so Vibe Office can see whether default and worker profiles are chat-ready.
+- Updated `/api/provision/hermes/chat` so worker chat no longer falls through to the default Hermes base URL.
+- Worker chat now returns `409 profile_runtime_unavailable` unless the worker profile has a dedicated base URL and a running gateway.
+- Refreshed Vibe Office worker templates on every profile apply, including `SOUL.md`, `memories/MEMORY.md`, `memories/USER.md`, and `VIBE_OFFICE_CONTEXT.md`.
+- Added a quiet composer disabled state when the selected worker runtime is unavailable.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- `npm run build` passed.
+- `GET /?setupTest=1&reset=1` returned 200.
+- `GET /api/runtime/profiles` returned default running and worker profiles unavailable.
+- Worker chat to `vibe-engineer` returned 409 instead of sending to default Hermes.
+
+Remaining risk:
+- Worker gateways are still not started or assigned dedicated API base URLs by Vibe Office.
+- Next implementation should start/register per-profile Hermes runtimes or add a Hermes-supported API profile switch.
+
+## 2026-06-14 · Ray development log: worker profile gateway startup
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_profile_gateway_startup
+
+Result:
+- Implemented per-worker Hermes API server startup for `vibe-engineer`, `vibe-content`, and `vibe-tools`.
+- Vibe Office writes each worker profile `.env` with `API_SERVER_ENABLED=true`, localhost host, a dedicated port, `API_SERVER_KEY`, and `API_SERVER_MODEL_NAME`.
+- Default worker API ports:
+  - `vibe-engineer`: `http://127.0.0.1:8650/v1`
+  - `vibe-content`: `http://127.0.0.1:8651/v1`
+  - `vibe-tools`: `http://127.0.0.1:8652/v1`
+- WSL Hermes gateways are started as detached Windows-owned `wsl.exe` processes so the worker gateways stay alive after the startup request returns.
+- `/api/runtime/profiles` can now refresh templates and start worker runtimes with `startRuntimes=true`.
+- `/api/provision/hermes/chat` now uses the selected worker profile API key from that profile's `.env`.
+- Profile runtime status now reads Hermes gateway list once per status request instead of once per profile.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- `POST /api/runtime/profiles` with `startRuntimes=true` returned 200.
+- `GET /api/runtime/profiles` returned all four profiles running/available.
+- `vibe-engineer` chat returned `engineer-runtime-ok`.
+- `vibe-content` chat returned `content-runtime-ok`.
+- `vibe-tools` chat returned `tools-runtime-ok`.
+- In-app browser refreshed successfully and retained stylesheet loading.
+
+Remaining risk:
+- Worker gateways are now separate runtimes, but long-running lifecycle management still needs a stop/restart UI and cleanup behavior.
+- Current worker ports are fixed defaults; future setup should detect conflicts and assign fallback ports.
+
+## 2026-06-14 · Ray development log: office chat empty state and persistence
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_chat_persistence_fix
+
+Result:
+- Fixed the Office chat empty state so it uses the selected Agent display name instead of the legacy Lucy route.
+- Added durable local storage for Office setup/worker chat messages under `vibe-office-provisioning-chat-messages-v1`.
+- Restored Office chat messages on reload and kept secrets in session-only storage.
+- Resetting Office setup now clears the persisted Office chat messages too.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check: selecting Engineer now shows `No conversation with Engineer Agent yet.` instead of Lucy.
+- Browser persistence check: sent a short Engineer message, reloaded the page, selected Engineer again, and confirmed both user message and reply persisted.
+
+## 2026-06-14 · Ray development log: office history log persistence
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_history_log_persistence_fix
+
+Result:
+- Added durable local storage for Office worker AG-UI events under `vibe-office-provisioning-chat-events-v1`.
+- Persisted Office worker events include:
+  - `office_agent_message`
+  - `office_agent_response`
+  - `office_agent_error`
+  - Office `TEXT_MESSAGE_CONTENT` events with `office-chat-*` message ids
+  - Office Hermes chat errors
+- Restored Office worker events into the History Log on reload.
+- Kept normal project/runtime events separate from the Office worker event store.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser persistence check: sent an Engineer message, opened History Log, reloaded, reopened History Log, and confirmed `office_agent_message`, `text_message_content`, and `office_agent_response` were still present.
+
+## 2026-06-14 · Ray development log: office dock count alignment
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_dock_count_alignment
+
+Result:
+- Fixed Agent Office bottom dock counts so each button reflects its own panel data.
+- Archive Library now shows shared context file count, not artifact count.
+- Outputs Cabinet now shows visible project output count.
+- History Log now shows AG-UI event count.
+- Current non-demo Office setup project correctly shows `Archive Library / 0 shared files` when shared memory is empty.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed dock text: `Archive Library / 0 shared files`, `Outputs Cabinet / 3 outputs`, `History Log / 21 events`.
+
+## 2026-06-14 · Ray development log: history log auto-scroll control
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_history_log_autoscroll_control_fix
+
+Result:
+- Moved EventStream auto-scroll behavior into the component via a local ref instead of a page-level global `event-stream-log` id.
+- Removed the duplicate hidden embedded auto-scroll control from EventStream.
+- Fixed the Office History Log header so auto-scroll is a readable `Auto-scroll` switch and the close action is a separate icon button.
+- Kept the control compact without merging the auto-scroll label and close action into one visual group.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed the History Log header shows one readable `Auto-scroll` switch plus one close icon button.
+- Browser check confirmed the switch toggles `aria-pressed` on/off and auto-scroll returns to the bottom when re-enabled.
+
+Follow-up:
+- Removed the outer border/background from the Office History Log `Auto-scroll` control while keeping the readable switch label and inner toggle.
+- Changed Outputs Cabinet to default to `All` artifacts and derive owner filters only from real artifact owners, not legacy Agent seed names.
+- Confirmed the current `3 outputs` are visible as three `User` image artifacts instead of showing a stale `Tiger has no outputs yet` empty state.
+
+## 2026-06-14 · Ray development log: office agent avatar tone sync
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_agent_avatar_tone_sync
+
+Result:
+- Added a deterministic Office Agent avatar tone palette so active Office agents receive unique tones in the current team.
+- Routed the left sidebar, chat header, and Agent Office canvas through the same tone assignment.
+- Removed fixed Chief/Worker avatar color assumptions from the active Office UI path.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed Hermes / Engineer / Content / Tools render as amber / blue / violet / slate with matching colors in sidebar, chat header, and canvas.
+
+## 2026-06-14 · Ray development log: history dock description copy
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_history_dock_description_copy
+
+Result:
+- Changed the Agent Office bottom dock History Log subtitle from a dynamic event count to the stable technical description `AG-UI events`.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed `History Log / AG-UI events` is visible and no event count is shown in the dock.
+
+## 2026-06-14 · Ray development log: archive empty state copy
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_archive_empty_state_copy
+
+Result:
+- Updated Archive Library empty-state copy so it no longer implies the project has not been created.
+- The empty state now explains that the current project simply has not written shared memory/context yet.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed the new copy is visible and the old `新项目会先保持干净` line is gone.
+
+## 2026-06-14 · Ray development log: office image chat input
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_image_chat_input
+
+Result:
+- Connected Office Agent chat attachments to `/api/provision/hermes/chat`.
+- The Office chat API now converts image artifacts into data URLs and sends them as OpenAI-compatible `image_url` chat content parts.
+- Text-only Office chat still sends a plain text user message.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- API smoke test with an existing pasted image artifact returned 200.
+- Hermes response described the image content, confirming the image reached the model instead of only rendering as a UI artifact card.
+
+## 2026-06-14 · Ray development log: chief role description copy
+
+Time: 2026-06-14
+Agent: Ray
+Action: chief_role_description_copy
+
+Result:
+- Replaced the visible Chief description `Chief / default Hermes` with `Coordinates agents and context`.
+- Normalized older active Office sessions so legacy Chief role strings are cleaned before rendering.
+- Kept backend profile names unchanged; the change is display copy only.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+
+## 2026-06-14 · Ray development log: materials outputs cabinet semantics
+
+Time: 2026-06-14
+Agent: Ray
+Action: materials_outputs_cabinet_semantics
+
+Result:
+- Renamed the Office dock and panel from `Outputs Cabinet` to `Materials & Outputs`.
+- Split user-uploaded artifacts into a `Materials` filter instead of displaying `User` as an output owner.
+- Added Agent display-name filters for Chief / Builder / Writer / Operator.
+- Updated dock buttons with stronger button backgrounds and a subtle hover lift animation.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed `Materials & Outputs`, `Materials`, Agent filters, and no `User 5` filter text.
+- Browser check confirmed the four dock buttons have non-transparent backgrounds and hover lift classes.
+
+## 2026-06-14 · Ray development log: context hub canvas node
+
+Time: 2026-06-14
+Agent: Ray
+Action: context_hub_canvas_node
+
+Result:
+- Added a visible Project Context Hub node into the active Agent Office canvas.
+- Positioned the hub between Chief and the worker Agents so it reads as the collaboration center.
+- Updated main canvas flow lines to route Chief -> Project Context Hub -> worker Agents.
+- Added the subtitle `共享记忆 · 知识 · 状态` to expose the core product function.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed the active canvas contains `Project Context Hub` and `共享记忆 · 知识 · 状态`.
+
+## 2026-06-14 · Ray development log: history event stream copy
+
+Time: 2026-06-14
+Agent: Ray
+Action: history_event_stream_copy
+
+Result:
+- Expanded the History Log dock description from `AG-UI events` to `AG-UI Event Stream`.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed `History Log / AG-UI Event Stream`.
+
+## 2026-06-14 · Ray development log: context hub node visual polish
+
+Time: 2026-06-14
+Agent: Ray
+Action: context_hub_node_visual_polish
+
+Result:
+- Reworked the Project Context Hub canvas node from a hard blue block into a subtler deep surface with a fine cyan border.
+- Added a compact floating database icon chamber and softer hub glow.
+- Switched the hub background to a stable solid class so the browser renders the intended surface.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed the hub background renders as `rgb(7, 21, 34)` with a cyan border.
+
+## 2026-06-14 · Ray development log: default office project
+
+Time: 2026-06-14
+Agent: Ray
+Action: default_office_project
+
+Result:
+- Added a stable `Default Project` for active Vibe Office sessions.
+- Office activation and restored active Office sessions now ensure the default project exists and select it when the app was still on the setup/empty container.
+- Normalized AG-UI actions and pasted-image uploads to use the default project instead of the setup/empty project id.
+- Updated the artifacts API so Default Project includes legacy setup/empty artifacts for compatibility.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- API check confirmed `office-default-project` returns the 5 legacy empty-project materials.
+- Browser check confirmed the sidebar shows `Default Project` and Materials & Outputs shows `5 files`.
+
+## 2026-06-14 · Ray development log: default product team template
+
+Time: 2026-06-14
+Agent: Ray
+Action: default_product_team_template
+
+Result:
+- Renamed the first/default Office template to `产品开发团队`.
+- Kept the stable template id as `default-product-team`.
+- Preserved the default team roles as Chief, Builder, Writer, and Operator.
+- Repaired encoding damage in the template source, the project create label, and the quick-start entry after the rename pass.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed localhost loads, the sidebar shows `新建项目`, and the main Office surface remains available.
+
+## 2026-06-14 · Ray development log: office scope selectors
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_scope_selectors
+
+Result:
+- Replaced the canvas header static `Agent Office / Project` labels with two compact selectors.
+- Added a team-template selector seeded by `default-product-team` / `产品开发团队` for future team switching.
+- Added a project selector wired to the existing project switch flow, so it stays synchronized with the sidebar project list.
+- Kept the selector styling subtle and aligned with the canvas header.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed the canvas header renders the `产品开发团队` team selector and a project selector without mojibake.
+
+## 2026-06-14 · Ray development log: office selector visual alignment
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_selector_visual_alignment
+
+Result:
+- Restyled the Office team and project selectors to match the dark Office canvas controls.
+- Switched the selector surface to the same deep `#111a28` family used by the dock buttons.
+- Added restrained border, hover, focus, and inset highlight treatment so the controls read as part of the product UI.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser computed-style check confirmed both header selectors render with `rgb(17, 26, 40)` background, slate border, and 8px radius.
+
+## 2026-06-14 · Ray development log: office scope custom dropdown
+
+Time: 2026-06-14
+Agent: Ray
+Action: office_scope_custom_dropdown
+
+Result:
+- Replaced the native Office team and project `<select>` controls with custom button/listbox dropdowns.
+- Reused the existing provider picker interaction model and menu styling for the Office canvas header.
+- Removed the OS-native expanded menu so the dropdown surface stays inside the Vibe Office visual system.
+
+Verification:
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- Browser check confirmed `section.agent-canvas-bg` has `0` native selects, `2` dropdown buttons, and the opened listbox renders with the existing `rgb(7, 13, 25)` menu background.

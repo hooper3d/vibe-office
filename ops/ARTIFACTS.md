@@ -107,3 +107,168 @@ P0 范围：
 - createdAt: 2026-06-11T12:55:25.675Z
 - archivedAt: 2026-06-11T13:32:56.855Z
 - location: http://43.162.107.236/`
+
+
+## Registered Artifacts 2026-06-12T01:48:16.563Z
+
+### 0743dc13-95d1-44f1-8d53-e4477ac63c50.png
+- id: artifact_mqa9p0s0_spjrjb
+- type: image
+- owner: User
+- projectId: project-mq9kgf7d
+- createdAt: 2026-06-12T01:48:16.560Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqa9p0rv-eegqcq-0743dc13-95d1-44f1-8d53-e4477ac63c50.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-12T01:50:25.071Z
+
+### Pasted image
+- id: artifact_mqa9rrxp_e8kjsy
+- type: image
+- owner: User
+- projectId: project-mq9kgf7d
+- createdAt: 2026-06-12T01:50:25.070Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqa9rrxl-x6wlve-Pasted-image.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-12T02:00:22.264Z
+
+### Hooper 的博客 - 调整后
+- id: artifact_mqaa4kqe_ocfiy6
+- type: url
+- owner: Tiger
+- projectId: project-mq9kgf7d
+- createdAt: 2026-06-12T02:00:22.262Z
+- mimeType: text/html
+- location: https://www.hooper.ink/blog/
+- description: 博客列表页：摘要 2 行 + tag 上限 4，卡片高度约 200px，图左文右紧凑布局
+
+
+## Registered Artifacts 2026-06-12T03:31:03.063Z
+
+### 43.162.107.236
+- id: artifact_mqadd6vp_3fzu8p
+- type: url
+- owner: Musk
+- projectId: demo-project
+- createdAt: 2026-06-12T03:31:03.061Z
+- location: http://43.162.107.236/
+
+
+## Registered Artifacts 2026-06-12T03:59:29.187Z
+
+
+## Registered Artifacts 2026-06-12T04:25:11.704Z
+
+### POSITIONING.md
+- id: artifact_mqafatjq_tf1xg0
+- type: markdown
+- owner: Musk
+- projectId: demo-project
+- createdAt: 2026-06-12T04:25:11.702Z
+- mimeType: text/markdown
+- location: ops/POSITIONING.md
+- description: Vibe Office product positioning saved from Musk inline response.
+
+
+## Registered Artifacts 2026-06-13T19:21:52.726Z
+
+### 屏幕截图 2026-06-13 094200.png
+- id: artifact_mqcqrtcl_1kgci8
+- type: image
+- owner: User
+- projectId: office-provisioning-empty
+- createdAt: 2026-06-13T19:21:52.725Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqcqrtch-iqqao4-2026-06-13-094200.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-13T19:21:57.575Z
+
+### 屏幕截图 2026-06-13 094200.png
+- id: artifact_mqcqrx3a_4h261z
+- type: image
+- owner: User
+- projectId: office-provisioning-empty
+- createdAt: 2026-06-13T19:21:57.574Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqcqrx37-hlw45m-2026-06-13-094200.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-13T19:22:03.112Z
+
+### 屏幕截图 2026-06-13 094200.png
+- id: artifact_mqcqs1d3_2ndi7p
+- type: image
+- owner: User
+- projectId: office-provisioning-empty
+- createdAt: 2026-06-13T19:22:03.111Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqcqs1d1-24zqtt-2026-06-13-094200.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-14T04:18:40.899Z
+
+### Pasted image
+- id: artifact_mqd9y5c2_8ra2bg
+- type: image
+- owner: User
+- projectId: office-provisioning-empty
+- createdAt: 2026-06-14T04:18:40.898Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqd9y5c0-iuoqru-Pasted-image.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-14T04:26:28.030Z
+
+### Pasted image
+- id: artifact_mqda85rx_4rfbzz
+- type: image
+- owner: User
+- projectId: office-provisioning-empty
+- createdAt: 2026-06-14T04:26:28.029Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqda85rv-q2pvfj-Pasted-image.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-14T13:02:37.259Z
+
+## Registered Artifacts 2026-06-14T13:03:20.490Z
+
+
+## Registered Artifacts 2026-06-14T13:10:41.332Z
+
+
+## Registered Artifacts 2026-06-15T03:45:00.034Z
+
+### Pasted image
+- id: artifact_mqeo6oox_op75hj
+- type: image
+- owner: User
+- projectId: office-default-project
+- createdAt: 2026-06-15T03:45:00.033Z
+- mimeType: image/png
+- location: ops/ARTIFACT_UPLOADS/mqeo6oon-7h6i6a-Pasted-image.png
+- description: Image pasted into the Vibe Office composer.
+
+
+## Registered Artifacts 2026-06-15T04:46:54.393Z
+
+### PROJECT_BRIEF.md
+- id: artifact_mqeqeapa_fynq00
+- type: markdown
+- owner: Writer
+- projectId: office-default-project
+- createdAt: 2026-06-15T04:46:54.382Z
+- mimeType: text/markdown
+- location: ops/ARTIFACT_UPLOADS/mqeqeaov-PROJECT_BRIEF.md
+- description: Fallback capture from an agent file-delivery message.

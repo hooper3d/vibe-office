@@ -52,117 +52,116 @@ function buildCodexPrompt(input: {
   mode: "read-only" | "workspace-write";
 }) {
   if (input.intent.targetAgent === "Lucy" && input.intent.action === "manual_message") {
-    return `你是 Vibe Office 里的 Lucy，角色是项目经理 Agent。
+    return `You are Chief, the planning agent inside Vibe Office.
 
-当前项目是 AG-UI Agent Console + Project Context Hub，不是普通网页，也不是后台管理系统。
-你正在和用户进行第一阶段的自然对话：只理解、回应、澄清，不生成计划，不拆 P0-P6，不派发 Ray，不输出验收标准。
+Current product: AG-UI Agent Console + Project Context Hub. This is a product-development team template, not a generic admin panel.
+This is a natural clarification conversation. Understand and respond first; do not generate a task plan, P0-P6 breakdown, Ray handoff, or acceptance checklist unless the user explicitly asks for planning.
 
-对话要求：
-- 像一个真实项目经理和用户聊天，不要像表单、模板、客服话术。
-- 先结合当前项目语境直接回答用户的问题，可以表达你的判断和建议。
-- 如果确实需要确认，最多问一个最关键的问题。
-- 不要说“请补充目标、范围、验收方式”这种泛化句子。
-- 不要提 P0-P6、任务拆解、风险清单、验收清单。
-- 用中文，简洁自然，控制在 80 到 180 字。
+Conversation rules:
+- Speak like a real product lead coordinating work, not a form or support script.
+- Answer the user's immediate question with judgment and useful context.
+- If clarification is needed, ask at most one key question.
+- Do not mention task priorities, risk lists, or acceptance criteria in this mode.
+- Keep the reply concise and natural.
 
-用户刚刚说：
+User just said:
 ${input.intent.message || input.command}`;
   }
 
   if (input.intent.targetAgent === "Ray" && input.mode === "workspace-write") {
-    return `你是本地 Ray 开发 Agent。
+    return `You are Ray, the local development agent for this workspace.
 
-当前项目：AG-UI 推广网页开发
-当前任务：${input.taskTitle}
+Current project: AG_UI / Vibe Office.
+Current task: ${input.taskTitle}
 
-Lucy 分配给你的具体开发任务：
+Planning-agent assignment:
 ${input.intent.message || input.command}
 
-执行要求：
-- 先快速读取 AGENTS.md、package.json，以及和任务直接相关的源码文件。
-- 只做完成该任务所需的最小真实代码改动。
-- 不要写固定句式补丁，不要只更新 ops 文档来假装完成。
-- 不要启动长期服务。
-- 修改后运行必要检查；如果来不及完整检查，说明原因。
-- 最后用简短中文说明改了什么、验证了什么。`;
+Execution rules:
+- Read AGENTS.md, package.json, and the directly relevant source files before editing.
+- Make the smallest real code change needed for this task.
+- Do not fake completion by only updating ops documents.
+- Do not start long-running services.
+- Run the necessary checks after edits; if a check cannot run, explain why.
+- Finish with a concise summary of what changed and how it was verified.`;
   }
 
   const writeNote =
     input.mode === "workspace-write"
-      ? "你可以在当前工作区内做必要的小范围代码修改。完成后说明改了什么、如何验证。"
-      : "只做分析、验收、计划或日报，不要修改工作区文件。";
+      ? "You may make small, necessary edits inside the current workspace. Summarize what changed and how it was verified."
+      : "Analyze, review, plan, or report only. Do not modify workspace files.";
 
-  return `你是本地 ${input.intent.targetAgent} Agent。
+  return `You are the local ${input.intent.targetAgent} agent.
 
-当前项目：AG-UI 推广网页开发
-当前动作：${input.intent.action}
-当前任务：${input.taskTitle}
+Current project: AG_UI / Vibe Office.
+Current action: ${input.intent.action}
+Current task: ${input.taskTitle}
 
-执行约束：
+Execution constraints:
 - ${writeNote}
-- 优先读取 AGENTS.md、Project Context Hub 的 ops 文档、README.md、package.json 和 git 状态。
-- 输出要简洁，包含结果、风险、下一步。
-- 不要启动长期服务。
+- Prefer AGENTS.md, Project Context Hub ops files, README.md, package.json, and git status for context.
+- Keep output concise and include result, risk, and next step.
+- Do not start long-running services.
 
-控制台生成的指令如下：
+Generated control command:
 
 ${input.command}`;
 }
 
 function buildLocalContextHubReview(input: { taskTitle: string; command: string }) {
-  return `Lucy 统筹验收结论：
+  return `Planning-agent review:
 
-**结果**
-- 已确认当前任务「${input.taskTitle}」进入 Project Context Hub 验证链路。
-- Ray 写入链路应沉淀 DEV_LOG / PROGRESS_SUMMARY / HANDOFF / BLOG_CONTEXT / RELEASE_NOTES。
-- Tiger 可直接读取 BLOG_CONTEXT / RELEASE_NOTES 生成 Blog 草稿，不需要用户重新讲开发过程。
+**Result**
+- Current task "${input.taskTitle}" has entered Project Context Hub review.
+- Ray should record implementation facts in DEV_LOG / PROGRESS_SUMMARY / HANDOFF / BLOG_CONTEXT / RELEASE_NOTES.
+- Writer can later read BLOG_CONTEXT / RELEASE_NOTES without asking the user to repeat implementation details.
 
-**风险**
-- 如果 Ray 未持续更新 BLOG_CONTEXT，Tiger 的内容会变成旧上下文。
-- 如果 PROGRESS_SUMMARY 过长，Hub 会失去“共享项目事实源”的轻量优势。
+**Risk**
+- If Ray does not keep BLOG_CONTEXT current, Writer output will use stale context.
+- If PROGRESS_SUMMARY becomes too long, the hub loses its value as a lightweight shared source of truth.
 
-**下一步**
-- 继续用 AG-UI Event Stream 验证 context_hub_read / context_hub_write。
-- 完成浏览器端点击验收，确认页面不再出现旧的交易类测试项目。
+**Next step**
+- Verify context_hub_read and context_hub_write in the AG-UI Event Stream.
+- Confirm the browser UI no longer surfaces old private-test project semantics.
 
 ---
 
-本地指令摘要：
+Local command summary:
 
 ${input.command}`;
 }
 
-function buildLocalLucyPlan(input: { taskTitle: string; requirement?: string; command: string }) {
+function buildLocalPlanWorkflow(input: { taskTitle: string; requirement?: string; command: string }) {
   const triage = triageRequirement(input.requirement);
 
-  return `Lucy 需求拆解与派发计划：
+  return `Planning-agent requirement breakdown and dispatch plan:
 
-**用户需求**
-${input.requirement || "未提供详细需求。"}
+**User requirement**
+${input.requirement || "No detailed requirement provided."}
 
-**分诊结论**
+**Triage**
 - ${triageSummary(triage)}
 
-**拆解结果**
-- 当前任务：${input.taskTitle}
-- 目标：围绕 Project Context Hub 的价值优化推广页表达。
-- 执行 Agent：Ray
-- 验收 Agent：Lucy
+**Breakdown**
+- Current task: ${input.taskTitle}
+- Goal: improve the Vibe Office / Project Context Hub product experience.
+- Execution agent: Ray
+- Review agent: Planning Agent
 
-**分配给 Ray**
-- 读取 PROJECT_BRIEF / PROGRESS_SUMMARY / DECISIONS。
-- 按用户需求完成真实代码改动，不使用固定句式或 hard-coded demo 补丁。
-- 写入 DEV_LOG / HANDOFF / BLOG_CONTEXT / RELEASE_NOTES。
+**Assigned to Ray**
+- Read PROJECT_BRIEF / PROGRESS_SUMMARY / DECISIONS.
+- Make real code changes for the user requirement. Do not rely on hard-coded demo filler.
+- Record material changes in DEV_LOG / HANDOFF / BLOG_CONTEXT / RELEASE_NOTES as needed.
 
-**验收标准**
-- 用户需求被明确记录。
-- Ray 的执行过程进入 Project Context Hub。
-- Lucy 基于 Ray 的真实执行结果验收。
-- Lucy 可基于共享上下文完成验收，不需要用户重复说明。
+**Acceptance**
+- The user requirement is recorded clearly.
+- Ray's execution process enters Project Context Hub.
+- Planning Agent reviews Ray's real execution result from shared context.
+- The user does not need to repeat context for review.
 
 ---
 
-本地指令摘要：
+Local command summary:
 
 ${input.command}`;
 }
@@ -194,10 +193,10 @@ export async function runCodexExec(input: {
   const outputFile = path.join(WORKSPACE_ROOT, relOutputFile);
   await fs.mkdir(OUTPUT_DIR, { recursive: true });
 
-  if (input.intent.action === "submit_requirement_to_lucy" || input.intent.action === "ask_lucy_review") {
+  if (input.intent.action === "submit_requirement_to_planning_agent" || input.intent.action === "ask_planning_agent_review") {
     const outputText =
-      input.intent.action === "submit_requirement_to_lucy"
-        ? buildLocalLucyPlan({
+      input.intent.action === "submit_requirement_to_planning_agent"
+        ? buildLocalPlanWorkflow({
             taskTitle: input.taskTitle,
             requirement: input.intent.message,
             command: input.command
@@ -240,12 +239,7 @@ export async function runCodexExec(input: {
     } else {
       args.push("--sandbox", mode);
     }
-    args.push(
-      "--output-last-message",
-      outputFile,
-      "--json",
-      "-"
-    );
+    args.push("--output-last-message", outputFile, "--json", "-");
     const child = spawn(CODEX_EXE, args, {
       cwd: WORKSPACE_ROOT,
       windowsHide: true,
@@ -255,7 +249,9 @@ export async function runCodexExec(input: {
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const finish = async (result: Omit<CodexExecResult, "enabled" | "mode" | "outputFile" | "stdoutTail" | "stderrTail">) => {
+    const finish = async (
+      result: Omit<CodexExecResult, "enabled" | "mode" | "outputFile" | "stdoutTail" | "stderrTail">
+    ) => {
       if (settled) return;
       settled = true;
       let outputText = "";

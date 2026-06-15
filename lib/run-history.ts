@@ -1,14 +1,15 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { EventType, type AGUIEvent } from "@ag-ui/core";
-import { readLucyPlan } from "@/lib/lucy-plan-store";
+import { readPlanWorkflow } from "@/lib/plan-workflow-store";
 
 const WORKSPACE_ROOT = process.cwd();
 const OPS_DIR = path.join(WORKSPACE_ROOT, "ops");
 const RUN_HISTORY_FILE = path.join(OPS_DIR, "RUN_HISTORY.jsonl");
 const EVENT_STREAM_FILE = path.join(OPS_DIR, "EVENT_STREAM.jsonl");
 const LAST_RESULT_FILE = path.join(OPS_DIR, "LAST_RESULT.json");
-const LUCY_PLAN_FILE = path.join(OPS_DIR, "LUCY_PLAN.json");
+const PLAN_WORKFLOW_FILE = path.join(OPS_DIR, "PLAN_WORKFLOW.json");
+const LEGACY_LUCY_PLAN_FILE = path.join(OPS_DIR, "LUCY_PLAN.json");
 const MAX_EVENTS = 160;
 const MAX_RUNS = 40;
 const STALE_RUN_MS = Number(process.env.AG_UI_STALE_RUN_MS || 150_000);
@@ -65,11 +66,20 @@ async function appendJsonLine(filePath: string, value: unknown) {
 async function readJsonLines<T>(filePath: string, limit: number): Promise<T[]> {
   try {
     const content = await fs.readFile(filePath, "utf8");
-    return content
+    const records: T[] = [];
+    const lines = content
       .split("\n")
       .filter(Boolean)
-      .slice(-limit)
-      .map((line) => JSON.parse(line) as T);
+      .slice(-limit);
+
+    for (const line of lines) {
+      try {
+        records.push(JSON.parse(line) as T);
+      } catch {
+        // History is append-only runtime state. Ignore corrupted lines so the UI can keep loading.
+      }
+    }
+    return records;
   } catch (error) {
     const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
     if (code === "ENOENT") return [];
@@ -117,7 +127,7 @@ export async function writeLastResult(result: Omit<LastResult, "updatedAt">) {
 }
 
 export async function readRecentHistory() {
-  const [events, runs, lastResult, lucyPlan] = await Promise.all([
+  const [events, runs, lastResult, planWorkflow] = await Promise.all([
     readJsonLines<PersistedEvent>(EVENT_STREAM_FILE, MAX_EVENTS),
     readJsonLines<RunRecord>(RUN_HISTORY_FILE, MAX_RUNS),
     fs
@@ -128,7 +138,7 @@ export async function readRecentHistory() {
         if (code === "ENOENT") return null;
         throw error;
       }),
-    readLucyPlan()
+    readPlanWorkflow()
   ]);
   const recoveryEvents = buildStaleRunRecoveryEvents(events, runs);
 
@@ -136,7 +146,7 @@ export async function readRecentHistory() {
     events: [...events, ...recoveryEvents],
     runs,
     lastResult,
-    lucyPlan
+    planWorkflow
   };
 }
 
@@ -171,13 +181,13 @@ function buildStaleRunRecoveryEvents(events: PersistedEvent[], runs: RunRecord[]
     const targetAgent = intent?.targetAgent || run.targetAgent || "Ray";
     const taskId = intent?.taskId || "task-001";
     const linkedAgents =
-      action === "submit_requirement_to_lucy" || action === "dispatch_to_ray" ? ["Lucy", "Ray"] : [targetAgent];
+      action === "submit_requirement_to_planning_agent" || action === "dispatch_to_ray" ? ["Lucy", "Ray"] : [targetAgent];
     const receivedAt = displayTime(nowIso());
 
     return [
       {
         type: EventType.RUN_ERROR,
-        message: "本地运行流已超时或连接中断，状态恢复为需处理。",
+        message: "The local run stream timed out or disconnected. Status was restored to needs-attention.",
         runId: run.runId,
         receivedAt,
         timestamp: Date.now()
@@ -199,7 +209,7 @@ export async function resetRunHistory() {
   await ensureOpsDir();
 
   await Promise.all(
-    [EVENT_STREAM_FILE, RUN_HISTORY_FILE, LAST_RESULT_FILE, LUCY_PLAN_FILE].map((filePath) =>
+    [EVENT_STREAM_FILE, RUN_HISTORY_FILE, LAST_RESULT_FILE, PLAN_WORKFLOW_FILE, LEGACY_LUCY_PLAN_FILE].map((filePath) =>
       fs.unlink(filePath).catch((error) => {
         const code = error instanceof Error && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
         if (code !== "ENOENT") throw error;

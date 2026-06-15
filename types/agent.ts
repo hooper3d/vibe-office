@@ -22,11 +22,11 @@ export type AgentStatus =
   | "offline";
 
 export type AgentAction =
-  | "submit_requirement_to_lucy"
-  | "generate_lucy_plan"
+  | "submit_requirement_to_planning_agent"
+  | "generate_plan_workflow"
   | "execute_selected_tasks"
   | "dispatch_to_ray"
-  | "ask_lucy_review"
+  | "ask_planning_agent_review"
   | "ask_tiger_blog"
   | "ask_tiger_publish"
   | "daily_report"

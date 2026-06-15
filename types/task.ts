@@ -18,12 +18,12 @@ export type TaskItem = {
   order?: number;
 };
 
-export type LucyWorkflowStage = "idle" | "clarifying" | "planned" | "executing" | "reviewing" | "completed" | "blocked";
+export type PlanWorkflowStage = "idle" | "clarifying" | "planned" | "executing" | "reviewing" | "completed" | "blocked";
 
-export type LucyPlan = {
+export type PlanWorkflow = {
   id: string;
   requirement: string;
-  stage: LucyWorkflowStage;
+  stage: PlanWorkflowStage;
   summary: string;
   questions: string[];
   recommendation: string;
