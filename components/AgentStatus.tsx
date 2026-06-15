@@ -1909,6 +1909,22 @@ function OfficeDock({
     >
       <button
         type="button"
+        onClick={onOpenArchiveLibrary}
+        className={`flex h-14 w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left shadow-[0_12px_30px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.035)] transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.055)] active:translate-y-0 ${
+          activeOfficePanel === "archive"
+            ? "border-emerald-300/55 bg-emerald-500/20"
+            : "border-slate-700/85 bg-[#111a28] hover:border-emerald-400/40 hover:bg-[#172234]"
+        }`}
+      >
+        <Database className="h-4 w-4 shrink-0 text-emerald-300" />
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-slate-100">Project Context Hub</span>
+          <span className="block truncate text-[10px] text-slate-400">{contextCount} context files</span>
+        </span>
+      </button>
+
+      <button
+        type="button"
         onClick={onOpenTaskDesk}
         className={`flex h-14 w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left shadow-[0_12px_30px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.035)] transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.055)] active:translate-y-0 ${
           activeOfficePanel === "tasks"
@@ -1922,22 +1938,6 @@ function OfficeDock({
           <span className="block truncate text-[10px] text-slate-400">
             {plannedTasks.length} backlog / {reviewingTasks.length} review / {completedTasks.length} done
           </span>
-        </span>
-      </button>
-
-      <button
-        type="button"
-        onClick={onOpenArchiveLibrary}
-        className={`flex h-14 w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left shadow-[0_12px_30px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.035)] transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.055)] active:translate-y-0 ${
-          activeOfficePanel === "archive"
-            ? "border-emerald-300/55 bg-emerald-500/20"
-            : "border-slate-700/85 bg-[#111a28] hover:border-emerald-400/40 hover:bg-[#172234]"
-        }`}
-      >
-        <Database className="h-4 w-4 shrink-0 text-emerald-300" />
-        <span className="min-w-0">
-          <span className="block truncate text-xs font-semibold text-slate-100">Project Context Hub</span>
-          <span className="block truncate text-[10px] text-slate-400">{contextCount} context files</span>
         </span>
       </button>
 
