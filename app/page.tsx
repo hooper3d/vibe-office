@@ -149,6 +149,36 @@ type OfficeChatContextAgent = {
   contextFiles: string[];
 };
 
+type OfficeEvidenceLedger = {
+  profileRuntimes: Array<{
+    profileName: string;
+    displayName: string;
+    gatewayStatus: OfficeProfileRuntime["gatewayStatus"];
+    chatAvailable: boolean;
+    message: string;
+  }>;
+  workerRuns: Array<{
+    id: string;
+    agentName: string;
+    profileName: string;
+    task: string;
+    status: "running" | "completed" | "failed";
+    startedAt: string;
+    completedAt?: string;
+    durationMs?: number;
+    summary?: string;
+    artifactIds?: string[];
+  }>;
+  artifacts: Array<{
+    id: string;
+    title: string;
+    type: Artifact["type"];
+    owner: string;
+    createdAt: string;
+    description?: string;
+  }>;
+};
+
 type OfficeActivityState = {
   agentNames: string[];
   routeTargetNames: string[];
@@ -701,6 +731,35 @@ function buildOfficeChatContext(
     contextHubFiles: Array.from(new Set(agents.flatMap((agent) => agent.contextFiles))),
     selectedAgent,
     agents
+  };
+}
+
+function buildOfficeEvidenceLedger(
+  session: OfficeSetupSession,
+  profileRuntimes: OfficeProfileRuntime[],
+  artifacts: Artifact[]
+): OfficeEvidenceLedger {
+  const agents = orderedOfficeSetupAgents(session);
+  const agentByProfile = new Map(agents.map((agent) => [agent.profileName, normalizeOfficeAgentDisplayName(agent)]));
+
+  return {
+    profileRuntimes: profileRuntimes.map((runtime) => ({
+      profileName: runtime.profileName,
+      displayName: agentByProfile.get(runtime.profileName) || (runtime.profileName === "default" ? "Chief" : runtime.profileName),
+      gatewayStatus: runtime.gatewayStatus,
+      chatAvailable: runtime.chatAvailable,
+      message: runtime.message
+    })),
+    // Real worker execution records are not implemented yet. An explicit empty list prevents Chief from treating runtime availability as completed work.
+    workerRuns: [],
+    artifacts: artifacts.slice(0, 8).map((artifact) => ({
+      id: artifact.id,
+      title: artifact.title,
+      type: artifact.type,
+      owner: artifact.owner,
+      createdAt: artifact.createdAt,
+      description: artifact.description
+    }))
   };
 }
 
@@ -2692,6 +2751,7 @@ export default function Home() {
           role: roleLabel,
           profileName,
           officeContext: buildOfficeChatContext(activeOfficeSession, activeAgent, currentOfficeProject),
+          officeEvidence: buildOfficeEvidenceLedger(activeOfficeSession, officeProfileRuntimes, projectOfficeArtifacts),
           conversation: `vibe-office-${profileName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
           history: selectedOfficeAgentMessages
             .filter((item) => item.content.trim())

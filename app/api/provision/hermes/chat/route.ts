@@ -25,6 +25,7 @@ type HermesChatRequest = {
     selectedAgent?: OfficeContextAgent;
     agents?: OfficeContextAgent[];
   };
+  officeEvidence?: OfficeEvidenceLedger;
   history?: Array<{
     role?: string;
     content?: string;
@@ -38,6 +39,36 @@ type OfficeContextAgent = {
   profileName?: string;
   isChief?: boolean;
   contextFiles?: string[];
+};
+
+type OfficeEvidenceLedger = {
+  profileRuntimes?: Array<{
+    profileName?: string;
+    displayName?: string;
+    gatewayStatus?: string;
+    chatAvailable?: boolean;
+    message?: string;
+  }>;
+  workerRuns?: Array<{
+    id?: string;
+    agentName?: string;
+    profileName?: string;
+    task?: string;
+    status?: string;
+    startedAt?: string;
+    completedAt?: string;
+    durationMs?: number;
+    summary?: string;
+    artifactIds?: string[];
+  }>;
+  artifacts?: Array<{
+    id?: string;
+    title?: string;
+    type?: string;
+    owner?: string;
+    createdAt?: string;
+    description?: string;
+  }>;
 };
 
 type HermesChatMessageContent =
@@ -156,6 +187,54 @@ function buildOfficeContextPrompt(body: HermesChatRequest, displayName: string, 
     .join("\n");
 }
 
+function buildOfficeEvidencePrompt(body: HermesChatRequest) {
+  const evidence = body.officeEvidence;
+  const runtimes = evidence?.profileRuntimes || [];
+  const workerRuns = evidence?.workerRuns || [];
+  const artifacts = evidence?.artifacts || [];
+  const runtimeLines = runtimes
+    .map((runtime) => {
+      const name = cleanPromptValue(runtime.displayName) || cleanPromptValue(runtime.profileName) || "Unknown";
+      const profile = cleanPromptValue(runtime.profileName) || "unknown";
+      const status = runtime.chatAvailable ? "chat available" : "chat unavailable";
+      const gateway = cleanPromptValue(runtime.gatewayStatus) || "unknown gateway";
+      return `- ${name} (${profile}): ${status}, ${gateway}.`;
+    })
+    .join("\n");
+  const workerRunLines = workerRuns
+    .map((run) => {
+      const name = cleanPromptValue(run.agentName) || cleanPromptValue(run.profileName) || "Unknown worker";
+      const status = cleanPromptValue(run.status) || "unknown";
+      const task = cleanPromptValue(run.task) || "unspecified task";
+      const duration = typeof run.durationMs === "number" ? `, duration ${run.durationMs}ms` : "";
+      const artifactsText = run.artifactIds?.length ? `, artifacts ${run.artifactIds.join(", ")}` : "";
+      return `- ${name}: ${status} - ${task}${duration}${artifactsText}.`;
+    })
+    .join("\n");
+  const artifactLines = artifacts
+    .slice(0, 8)
+    .map((artifact) => {
+      const title = cleanPromptValue(artifact.title) || cleanPromptValue(artifact.id) || "Untitled artifact";
+      const owner = cleanPromptValue(artifact.owner) || "Unknown owner";
+      const type = cleanPromptValue(artifact.type) || "artifact";
+      return `- ${title} (${type}, owner ${owner})`;
+    })
+    .join("\n");
+
+  return [
+    "Evidence ledger for this request:",
+    runtimeLines ? `Runtime availability:\n${runtimeLines}` : "- Runtime availability: no runtime evidence provided.",
+    workerRunLines ? `Worker run records:\n${workerRunLines}` : "- Worker run records: none provided for this request.",
+    artifactLines ? `Recent registered artifacts:\n${artifactLines}` : "- Recent registered artifacts: none provided.",
+    "Evidence rules:",
+    "- Runtime availability only proves a profile can chat; it does not prove a teammate executed this task.",
+    "- Only worker run records can prove that Builder, Writer, or Operator started, completed, failed, used tools, used a model, or took a duration.",
+    "- Only registered artifacts can prove that a file or deliverable exists in Vibe Office.",
+    "- Do not invent curl results, service status, file existence, file size, model call counts, tool usage, durations, exit status, or completed teammate names.",
+    "- If evidence is missing, say what is unverified and offer the next concrete check instead of presenting it as fact."
+  ].join("\n");
+}
+
 async function imageAttachmentToDataUrl(attachment: NonNullable<AguiIntent["attachments"]>[number]) {
   if (attachment.type !== "image" && !attachment.mimeType?.startsWith("image/")) return null;
 
@@ -246,6 +325,7 @@ export async function POST(request: Request) {
     const displayName = body.displayName?.trim() || chiefAgentName;
     const role = body.role?.trim() || (displayName === chiefAgentName ? "Chief Agent" : "Worker Agent");
     const officeContextPrompt = buildOfficeContextPrompt(body, displayName, profileName);
+    const officeEvidencePrompt = buildOfficeEvidencePrompt(body);
     const userContent = await buildChatUserContent(message, body.attachments);
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -268,6 +348,7 @@ export async function POST(request: Request) {
               "Be concise, practical, and do not claim actions were completed unless Hermes actually performed them.",
               "When the user asks about project work, first orient around Vibe Office and Project Context Hub.",
               officeContextPrompt,
+              officeEvidencePrompt,
               "You cannot save files to the user's Desktop or local filesystem through this chat.",
               "Never say a document was saved to Desktop or to a local path unless Vibe Office explicitly provided an artifact confirmation.",
               [
