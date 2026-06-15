@@ -604,7 +604,7 @@ export function AgentStatus({
 
   if (agents.length === 0) {
     return (
-      <section className={`frost agent-canvas-bg relative isolate z-40 min-w-0 overflow-hidden rounded-xl ${className}`}>
+      <section className={`frost relative isolate z-40 min-w-0 overflow-hidden rounded-xl ${className}`}>
         <div className="absolute inset-x-0 top-0 z-[140] flex h-16 items-center justify-between border-b border-slate-800/80 bg-slate-950/18 px-8 backdrop-blur-sm">
           <div className="flex min-w-0 items-center gap-4">
             <span className="grid h-10 w-10 place-items-center rounded-xl border border-violet-300/20 bg-violet-300/8 text-violet-200">
@@ -729,7 +729,7 @@ export function AgentStatus({
   }
 
   return (
-      <section className={`frost agent-canvas-bg relative isolate z-40 min-w-0 select-none overflow-hidden rounded-xl transition-all duration-300 ${collapsed ? "h-[260px] min-h-[240px]" : "h-full min-h-[520px]"} ${className}`}>
+      <section className={`frost relative isolate z-40 min-w-0 select-none overflow-hidden rounded-xl transition-all duration-300 ${collapsed ? "h-[260px] min-h-[240px]" : "h-full min-h-[520px]"} ${className}`}>
         <div
           data-agent-interactive="true"
           className="absolute left-4 top-4 z-[140] flex items-center gap-3 px-1 py-1"

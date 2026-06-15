@@ -42,24 +42,6 @@ textarea {
   backdrop-filter: blur(18px);
 }
 
-.agent-canvas-bg {
-  isolation: isolate;
-}
-
-.agent-canvas-bg::before {
-  position: absolute;
-  inset: 1px;
-  z-index: 0;
-  content: "";
-  pointer-events: none;
-  border-radius: inherit;
-  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.24) 1px, transparent 1.3px);
-  background-position: 7px 7px;
-  background-size: 20px 20px;
-  mask-image: linear-gradient(180deg, transparent 0%, black 10%, black 92%, transparent 100%);
-  opacity: 0.58;
-}
-
 .dark-panel {
   border: 1px solid rgba(45, 58, 77, 0.9);
   background: rgba(10, 17, 27, 0.88);
