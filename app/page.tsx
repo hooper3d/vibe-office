@@ -149,6 +149,11 @@ type OfficeChatContextAgent = {
   contextFiles: string[];
 };
 
+type OfficeActivityState = {
+  agentNames: string[];
+  routeTargetNames: string[];
+};
+
 type ArtifactsFromTextResponse = {
   ok: boolean;
   artifacts?: Artifact[];
@@ -696,6 +701,38 @@ function buildOfficeChatContext(
     contextHubFiles: Array.from(new Set(agents.flatMap((agent) => agent.contextFiles))),
     selectedAgent,
     agents
+  };
+}
+
+function uniqueOfficeAgentNames(names: string[]) {
+  return Array.from(new Set(names.map((name) => normalizeHermesAgentName(name)).filter(Boolean)));
+}
+
+function inferOfficeActivityFromText(text: string, activeAgent: OfficeSetupAgent): OfficeActivityState {
+  const normalized = text.toLowerCase();
+  const activeName = normalizeOfficeAgentDisplayName(activeAgent);
+  const isChief = activeAgent.isChief || activeAgent.profileName === "default";
+  const routeTargetNames: string[] = [];
+
+  if (/\b(builder|engineer|developer|dev|ray)\b|构建|开发|修复|代码|工程/.test(normalized)) {
+    routeTargetNames.push("Builder");
+  }
+  if (/\b(writer|content|publisher|copy|blog|tiger)\b|写手|内容|发布|文案|博客/.test(normalized)) {
+    routeTargetNames.push("Writer");
+  }
+  if (/\b(operator|tool|tools|integration|external|musk)\b|工具|集成|外部/.test(normalized)) {
+    routeTargetNames.push("Operator");
+  }
+
+  if (!isChief && !routeTargetNames.length) {
+    routeTargetNames.push(activeName);
+  }
+
+  const agentNames = isChief ? uniqueOfficeAgentNames(["Chief", ...routeTargetNames]) : uniqueOfficeAgentNames([activeName, ...routeTargetNames]);
+
+  return {
+    agentNames,
+    routeTargetNames: uniqueOfficeAgentNames(routeTargetNames)
   };
 }
 
@@ -1426,6 +1463,7 @@ export default function Home() {
   const [events, setEvents] = useState<ConsoleEvent[]>([]);
   const [requirement, setRequirement] = useState("");
   const [running, setRunning] = useState(false);
+  const [officeActivity, setOfficeActivity] = useState<OfficeActivityState | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeOfficePanel, setActiveOfficePanel] = useState<OfficePanel>(null);
   const [activeSystemView, setActiveSystemView] = useState<SystemView>(null);
@@ -1458,6 +1496,7 @@ export default function Home() {
   const [officeArtifacts, setOfficeArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifactOwner, setSelectedArtifactOwner] = useState<ArtifactOwnerFilter>("all");
   const [artifactUploadBusy, setArtifactUploadBusy] = useState(false);
+  const officeActivityTimerRef = useRef<number | null>(null);
   const [runnerStatus, setRunnerStatus] = useState<RunnerStatus>({ enabled: false, rayWorkspaceWriteEnabled: false });
   const [runtimeHealth, setRuntimeHealth] = useState<LocalRuntimeHealth | null>(null);
   const [runtimeQuickStart, setRuntimeQuickStart] = useState<RuntimeQuickStartState | null>(null);
@@ -1474,6 +1513,28 @@ export default function Home() {
     () => tasks.filter((task) => task.selected && task.planStatus !== "completed" && task.planStatus !== "executing" && task.planStatus !== "reviewing"),
     [tasks]
   );
+
+  useEffect(() => {
+    return () => {
+      if (officeActivityTimerRef.current) {
+        window.clearTimeout(officeActivityTimerRef.current);
+      }
+    };
+  }, []);
+
+  function showOfficeActivity(activity: OfficeActivityState | null, holdMs?: number) {
+    if (officeActivityTimerRef.current) {
+      window.clearTimeout(officeActivityTimerRef.current);
+      officeActivityTimerRef.current = null;
+    }
+    setOfficeActivity(activity);
+    if (activity && holdMs) {
+      officeActivityTimerRef.current = window.setTimeout(() => {
+        setOfficeActivity(null);
+        officeActivityTimerRef.current = null;
+      }, holdMs);
+    }
+  }
   const executionDisabledReason = useMemo(() => {
     const hasRayTask = selectedExecutableTasks.some((task) => task.owner === "Ray");
     if (!hasRayTask) return null;
@@ -2564,6 +2625,7 @@ export default function Home() {
     const profileName = activeAgent.profileName || "default";
     const displayName = normalizeHermesAgentName(activeAgent.displayName);
     const roleLabel = activeAgent.isChief ? "Chief Agent" : activeAgent.role || "Worker Agent";
+    const initialOfficeActivity = inferOfficeActivityFromText(message, activeAgent);
     const runtimeState = officeProfileRuntimeByName[profileName];
     if (!activeAgent.isChief && profileName !== "default" && runtimeState && !runtimeState.chatAvailable) {
       setNotice({
@@ -2615,6 +2677,7 @@ export default function Home() {
     setRunning(true);
     setNotice(null);
     setConnection("Streaming");
+    showOfficeActivity(initialOfficeActivity);
 
     try {
       const savedSecrets = JSON.parse(window.sessionStorage.getItem(OFFICE_SETUP_SECRETS_STORAGE_KEY) || "null") as SavedOfficeSetupSecrets | null;
@@ -2654,6 +2717,7 @@ export default function Home() {
       const reply = result.ok
         ? result.message
         : `I could not reach ${displayName} through Hermes yet.\n\n${result.message || `Hermes chat failed (${response.status}).`}`;
+      showOfficeActivity(result.ok ? inferOfficeActivityFromText(reply, activeAgent) : initialOfficeActivity, result.ok ? 5200 : 1800);
       let registeredArtifacts: Artifact[] = [];
 
       if (result.ok && reply.trim()) {
@@ -2727,6 +2791,7 @@ export default function Home() {
         }
       } as AGUIEvent);
     } catch (error) {
+      showOfficeActivity(initialOfficeActivity, 1800);
       const errorMessage =
         error instanceof Error
           ? `I could not reach ${displayName} through Hermes yet.\n\n${error.message}`
@@ -4184,6 +4249,7 @@ export default function Home() {
                 onOfficeTemplateChange={handleOfficeTemplateChange}
                 selectedAgent={activeConversationAgent}
                 selectedVirtualAgent={activeVirtualAgent}
+                officeActivity={officeActivity}
                 onSelectAgent={(agentName) => {
                   setActiveConversationAgent(agentName);
                   setPlanningConversationActive(true);

@@ -51,6 +51,10 @@ type AgentStatusProps = {
   onOfficeTemplateChange?: (templateId: string) => void;
   selectedAgent?: AgentProfile["name"];
   selectedVirtualAgent?: VirtualOfficeAgent;
+  officeActivity?: {
+    agentNames: string[];
+    routeTargetNames: string[];
+  } | null;
   onSelectAgent?: (agentName: AgentProfile["name"]) => void;
   onSelectVirtualAgent?: (agentName: VirtualOfficeAgent) => void;
   tasks?: TaskItem[];
@@ -262,6 +266,7 @@ export function AgentStatus({
   onOfficeTemplateChange,
   selectedAgent,
   selectedVirtualAgent = "setup",
+  officeActivity = null,
   onSelectAgent,
   onSelectVirtualAgent,
   tasks = [],
@@ -328,6 +333,14 @@ export function AgentStatus({
     }
     return names;
   }, [tasks]);
+  const activeOfficeAgentNames = useMemo(
+    () => new Set([...activeTaskAgentNames, ...(officeActivity?.agentNames || [])]),
+    [activeTaskAgentNames, officeActivity]
+  );
+  const activeOfficeRouteTargetNames = useMemo(
+    () => new Set(officeActivity?.routeTargetNames || []),
+    [officeActivity]
+  );
   const activeProject = projects.find((project) => project.id === projectId) || projects[0];
   const activeOfficeTemplateId = officeTemplateId || officeSetupSession?.officeTemplateId || officeTemplates[0]?.id || "";
   const activeOfficeTemplate =
@@ -752,7 +765,8 @@ export function AgentStatus({
             executors={executors}
             collapsed={collapsed}
             running={running}
-            activeAgentNames={activeTaskAgentNames}
+            activeAgentNames={activeOfficeAgentNames}
+            activeRouteTargetNames={activeOfficeRouteTargetNames}
             openAgentName={openAgentName}
             setOpenAgentName={setOpenAgentName}
             viewport={flowViewport}
@@ -1222,6 +1236,7 @@ function LiveAgentOfficeArchitecture({
   collapsed,
   running,
   activeAgentNames,
+  activeRouteTargetNames,
   openAgentName,
   setOpenAgentName,
   viewport,
@@ -1233,6 +1248,7 @@ function LiveAgentOfficeArchitecture({
   collapsed: boolean;
   running: boolean;
   activeAgentNames: ReadonlySet<string>;
+  activeRouteTargetNames: ReadonlySet<string>;
   openAgentName: AgentProfile["name"] | null;
   setOpenAgentName: (agentName: AgentProfile["name"] | null) => void;
   viewport: Viewport;
@@ -1323,7 +1339,10 @@ function LiveAgentOfficeArchitecture({
               target: "context-hub",
               sourceHandle: "bottom",
               targetHandle: "top",
-              type: "officeLink"
+              type: "officeLink",
+              data: {
+                active: leaderBusy || activeRouteTargetNames.size > 0
+              }
             }
           ]
         : []),
@@ -1333,10 +1352,13 @@ function LiveAgentOfficeArchitecture({
         target: `agent-${agent.name}`,
         sourceHandle: index === 0 ? "left" : index === 1 ? "bottom" : "right",
         targetHandle: "top",
-        type: "officeLink"
+        type: "officeLink",
+        data: {
+          active: activeRouteTargetNames.has(agent.name) || activeAgentNames.has(agent.name)
+        }
       }))
     ],
-    [leader, visibleExecutors]
+    [activeAgentNames, activeRouteTargetNames, leader, leaderBusy, visibleExecutors]
   );
   const flowKey = useMemo(
     () => [leader?.name || "no-chief", ...visibleExecutors.map((agent) => agent.name)].join("|"),
@@ -1636,6 +1658,7 @@ function officeEdgePath(props: EdgeProps) {
 
 function OfficeDashedEdge(props: EdgeProps) {
   const edgePath = officeEdgePath(props);
+  const active = Boolean((props.data as { active?: boolean } | undefined)?.active);
 
   return (
     <>
@@ -1643,9 +1666,10 @@ function OfficeDashedEdge(props: EdgeProps) {
         id={props.id + "-glow"}
         path={edgePath}
         style={{
-          stroke: "rgba(34, 211, 238, 0.18)",
-          strokeWidth: 4,
+          stroke: active ? "rgba(34, 211, 238, 0.32)" : "rgba(34, 211, 238, 0.18)",
+          strokeWidth: active ? 5 : 4,
           strokeLinecap: "round",
+          filter: active ? "drop-shadow(0 0 8px rgba(56, 189, 248, 0.36))" : undefined,
           vectorEffect: "non-scaling-stroke"
         }}
       />
@@ -1653,15 +1677,16 @@ function OfficeDashedEdge(props: EdgeProps) {
         id={props.id}
         path={edgePath}
         style={{
-          stroke: "rgba(125, 211, 252, 0.86)",
-          strokeWidth: 1.5,
-          strokeDasharray: "5 7",
+          stroke: active ? "rgba(165, 243, 252, 0.96)" : "rgba(125, 211, 252, 0.86)",
+          strokeWidth: active ? 1.8 : 1.5,
+          strokeDasharray: active ? "8 10" : "5 7",
+          animation: active ? "agent-link-flow 1.15s linear infinite" : undefined,
           strokeLinecap: "round",
           vectorEffect: "non-scaling-stroke"
         }}
       />
-      <circle cx={props.sourceX} cy={props.sourceY} r="4.2" fill="#67e8f9" stroke="#0f3448" strokeWidth="1.6" />
-      <circle cx={props.targetX} cy={props.targetY} r="4.2" fill="#67e8f9" stroke="#0f3448" strokeWidth="1.6" />
+      <circle cx={props.sourceX} cy={props.sourceY} r={active ? "4.8" : "4.2"} fill="#67e8f9" stroke="#0f3448" strokeWidth="1.6" />
+      <circle cx={props.targetX} cy={props.targetY} r={active ? "4.8" : "4.2"} fill="#67e8f9" stroke="#0f3448" strokeWidth="1.6" />
     </>
   );
 }
