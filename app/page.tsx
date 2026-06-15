@@ -773,6 +773,13 @@ function inferOfficeActivityFromUserMessage(text: string, activeAgent: OfficeSet
   const isChief = activeAgent.isChief || activeAgent.profileName === "default";
   const routeTargetNames: string[] = [];
 
+  if (isChief) {
+    return {
+      agentNames: ["Chief"],
+      routeTargetNames: []
+    };
+  }
+
   if (/\b(builder|engineer|developer|dev|ray)\b|构建|开发|修复|代码|工程/.test(normalized)) {
     routeTargetNames.push("Builder");
   }
@@ -783,11 +790,11 @@ function inferOfficeActivityFromUserMessage(text: string, activeAgent: OfficeSet
     routeTargetNames.push("Operator");
   }
 
-  if (!isChief && !routeTargetNames.length) {
+  if (!routeTargetNames.length) {
     routeTargetNames.push(activeName);
   }
 
-  const agentNames = isChief ? uniqueOfficeAgentNames(["Chief", ...routeTargetNames]) : uniqueOfficeAgentNames([activeName, ...routeTargetNames]);
+  const agentNames = uniqueOfficeAgentNames([activeName, ...routeTargetNames]);
 
   return {
     agentNames,
