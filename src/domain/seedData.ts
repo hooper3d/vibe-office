@@ -1,4 +1,4 @@
-import type { ProjectArtifact, ProjectScope, ProjectTask } from "./projectScope";
+import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectScope, ProjectTask } from "./projectScope";
 import type { AgentInstance, Project } from "./types";
 
 export const initialAgents: AgentInstance[] = [];
@@ -19,6 +19,12 @@ export const projects: Project[] = [
 ];
 
 export const projectScopes: ProjectScope[] = [];
+
+export const conversations: Conversation[] = [];
+
+export const conversationMessages: ConversationMessage[] = [];
+
+export const projectRuns: ProjectRun[] = [];
 
 export const projectTasks: ProjectTask[] = [];
 

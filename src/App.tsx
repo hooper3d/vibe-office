@@ -12,34 +12,73 @@ import {
   Loader2,
   MessageSquare,
   Moon,
+  Pencil,
   Plus,
   RefreshCw,
   Sparkles,
   Sun,
+  Trash2,
   UserRoundCog,
   XCircle,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
-import type { A2ATask } from "./domain/a2a";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { A2APart, A2ATask, A2ATaskState } from "./domain/a2a";
 import { createAgentFromHermesSetup } from "./domain/hermesSetup";
-import { projectArtifacts, projectTasks, projects, setupSteps } from "./domain/seedData";
-import type { ProjectArtifact, ProjectTask } from "./domain/projectScope";
-import type { AgentInstance, AgentStatus } from "./domain/types";
+import {
+  conversationMessages,
+  conversations as seedConversations,
+  projectArtifacts,
+  projectRuns,
+  projectTasks,
+  projects as seedProjects,
+  setupSteps,
+} from "./domain/seedData";
+import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "./domain/projectScope";
+import type { AgentInstance, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { HermesA2AAdapter } from "./services/hermesA2AAdapter";
+import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 
 type OutputMode = "browser" | "outputs" | "artifacts";
 type ConversationMode = "single" | "task-room";
 type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 type ThemeMode = "dark" | "light";
+type ConfirmAction =
+  | {
+      kind: "delete-project";
+      projectId: string;
+    }
+  | {
+      kind: "delete-agent";
+      agentId: string;
+    };
 
 const THEME_STORAGE_KEY = "vibe-office.theme";
 
 export function App() {
+  const [initialWorkspace] = useState(() => loadWorkspaceState());
   const [agents, setAgents] = useState<AgentInstance[]>(() => loadConfiguredAgents());
-  const [tasks, setTasks] = useState<ProjectTask[]>(projectTasks);
-  const [artifacts, setArtifacts] = useState<ProjectArtifact[]>(projectArtifacts);
+  const [projects, setProjects] = useState<Project[]>(() =>
+    initialWorkspace.projects.length > 0 ? initialWorkspace.projects : seedProjects,
+  );
+  const [conversations, setConversations] = useState<Conversation[]>(() =>
+    initialWorkspace.conversations.length > 0 ? initialWorkspace.conversations : seedConversations,
+  );
+  const [messages, setMessages] = useState<ConversationMessage[]>(() =>
+    initialWorkspace.messages.length > 0 ? initialWorkspace.messages : conversationMessages,
+  );
+  const [runs, setRuns] = useState<ProjectRun[]>(() =>
+    initialWorkspace.runs.length > 0 ? initialWorkspace.runs : projectRuns,
+  );
+  const [tasks, setTasks] = useState<ProjectTask[]>(() =>
+    initialWorkspace.tasks.length > 0 ? initialWorkspace.tasks : projectTasks,
+  );
+  const [artifacts, setArtifacts] = useState<ProjectArtifact[]>(() =>
+    initialWorkspace.artifacts.length > 0 ? initialWorkspace.artifacts : projectArtifacts,
+  );
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("default");
   const [conversationMode, setConversationMode] = useState<ConversationMode>("single");
@@ -48,6 +87,11 @@ export function App() {
   const [browserUrl, setBrowserUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [showSetup, setShowSetup] = useState(false);
+  const [showProjectDialog, setShowProjectDialog] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [projectFormError, setProjectFormError] = useState("");
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [retestingAgentIds, setRetestingAgentIds] = useState<string[]>([]);
   const [testState, setTestState] = useState<ConnectionTestState>("idle");
   const [testMessage, setTestMessage] = useState("");
   const [splitPercent, setSplitPercent] = useState(54);
@@ -65,10 +109,27 @@ export function App() {
     () => tasks.filter((task) => task.projectId === selectedProject.id),
     [selectedProject.id, tasks],
   );
+  const scopedRuns = useMemo(
+    () => runs.filter((run) => run.projectId === selectedProject.id),
+    [selectedProject.id, runs],
+  );
   const scopedArtifacts = useMemo(
     () => artifacts.filter((artifact) => artifact.projectId === selectedProject.id),
     [selectedProject.id, artifacts],
   );
+  const currentConversation = useMemo(() => {
+    if (!selectedAgent) return undefined;
+    return conversations.find(
+      (conversation) =>
+        conversation.projectId === selectedProject.id &&
+        conversation.mode === "direct" &&
+        conversation.primaryAgentId === selectedAgent.id,
+    );
+  }, [conversations, selectedAgent, selectedProject.id]);
+  const currentMessages = useMemo(() => {
+    if (!currentConversation) return [];
+    return messages.filter((message) => message.conversationId === currentConversation.id);
+  }, [currentConversation, messages]);
 
   useEffect(() => {
     if (selectedAgent && selectedAgent.id !== selectedAgentId) {
@@ -79,6 +140,17 @@ export function App() {
   useEffect(() => {
     saveConfiguredAgents(agents);
   }, [agents]);
+
+  useEffect(() => {
+    saveWorkspaceState({
+      projects,
+      conversations,
+      messages,
+      runs,
+      tasks,
+      artifacts,
+    });
+  }, [artifacts, conversations, messages, projects, runs, tasks]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -123,6 +195,16 @@ export function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const newAgent = createAgentFromHermesSetup(form);
+    const normalizedEndpoint = newAgent.endpoint.replace(/\/$/, "");
+    const duplicate = agents.some(
+      (agent) => agent.endpoint.replace(/\/$/, "") === normalizedEndpoint && agent.model === newAgent.model,
+    );
+
+    if (duplicate) {
+      setTestState("failed");
+      setTestMessage("This provider and model are already connected.");
+      return;
+    }
 
     setAgents((current) => {
       const shouldBecomeChief = current.length === 0 || !current.some((agent) => agent.isChief);
@@ -141,49 +223,200 @@ export function App() {
     );
   }
 
+  function normalizeChief(agentsToNormalize: AgentInstance[]) {
+    if (agentsToNormalize.length === 0) return agentsToNormalize;
+    if (agentsToNormalize.some((agent) => agent.isChief)) {
+      return agentsToNormalize.map((agent) => ({
+        ...agent,
+        isChief: agent.isChief === true,
+      }));
+    }
+    return agentsToNormalize.map((agent, index) => ({
+      ...agent,
+      isChief: index === 0,
+    }));
+  }
+
+  async function retestAgent(agentId: string) {
+    const agent = agents.find((item) => item.id === agentId);
+    if (!agent || retestingAgentIds.includes(agentId)) return;
+
+    setRetestingAgentIds((current) => [...current, agentId]);
+    setAgents((current) => current.map((item) => (item.id === agentId ? { ...item, status: "checking" } : item)));
+
+    try {
+      await new HermesA2AAdapter({ agent }).testConnection();
+      setAgents((current) => current.map((item) => (item.id === agentId ? { ...item, status: "online" } : item)));
+    } catch {
+      setAgents((current) => current.map((item) => (item.id === agentId ? { ...item, status: "offline" } : item)));
+    } finally {
+      setRetestingAgentIds((current) => current.filter((id) => id !== agentId));
+    }
+  }
+
+  function requestDeleteAgent(agentId: string) {
+    setConfirmAction({ kind: "delete-agent", agentId });
+  }
+
+  function deleteAgent(agentId: string) {
+    const remainingAgents = normalizeChief(agents.filter((agent) => agent.id !== agentId));
+    const fallbackAgent = remainingAgents.find((agent) => agent.isChief) ?? remainingAgents[0];
+    setAgents(remainingAgents);
+    if (selectedAgentId === agentId) {
+      setSelectedAgentId(fallbackAgent?.id ?? "");
+    }
+    setConfirmAction(null);
+  }
+
+  function openProjectDialog() {
+    setEditingProjectId(null);
+    setProjectFormError("");
+    setShowProjectDialog(true);
+  }
+
+  function openProjectEditor(projectId: string) {
+    setEditingProjectId(projectId);
+    setProjectFormError("");
+    setShowProjectDialog(true);
+  }
+
+  function closeProjectDialog() {
+    setProjectFormError("");
+    setEditingProjectId(null);
+    setShowProjectDialog(false);
+  }
+
+  function saveProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name") || "").trim();
+    const description = String(form.get("description") || "").trim();
+    const editingProject = editingProjectId ? projects.find((project) => project.id === editingProjectId) : undefined;
+
+    if (!name) {
+      setProjectFormError("Project name is required.");
+      return;
+    }
+
+    const namespace = editingProject?.namespace ?? `project.${slugifyProjectName(name)}`;
+    if (
+      projects.some(
+        (project) =>
+          project.id !== editingProject?.id &&
+          (project.namespace === namespace || project.name.toLowerCase() === name.toLowerCase()),
+      )
+    ) {
+      setProjectFormError("A project with this name already exists.");
+      return;
+    }
+
+    if (editingProject) {
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === editingProject.id
+            ? {
+                ...project,
+                name,
+                description: description || "Project-scoped workspace.",
+              }
+            : project,
+        ),
+      );
+      closeProjectDialog();
+      return;
+    }
+
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name,
+      namespace,
+      description: description || "Project-scoped workspace.",
+    };
+
+    setProjects((current) => [...current, project]);
+    setSelectedProjectId(project.id);
+    closeProjectDialog();
+  }
+
+  function requestDeleteProject(projectId: string) {
+    if (projects.length <= 1) return;
+    setConfirmAction({ kind: "delete-project", projectId });
+  }
+
+  function deleteProject(projectId: string) {
+    if (projects.length <= 1) return;
+    const remainingProjects = projects.filter((project) => project.id !== projectId);
+    const fallbackProject = remainingProjects[0];
+    setProjects(remainingProjects);
+    setConversations((current) => current.filter((conversation) => conversation.projectId !== projectId));
+    setMessages((current) => current.filter((message) => message.projectId !== projectId));
+    setRuns((current) => current.filter((run) => run.projectId !== projectId));
+    setTasks((current) => current.filter((task) => task.projectId !== projectId));
+    setArtifacts((current) => current.filter((artifact) => artifact.projectId !== projectId));
+    if (selectedProjectId === projectId && fallbackProject) {
+      setSelectedProjectId(fallbackProject.id);
+    }
+    setConfirmAction(null);
+  }
+
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = messageText.trim();
-    if (!text || !selectedAgent) return;
+    if (!text || !selectedAgent || conversationMode === "task-room") return;
 
-    const targetAgent =
-      conversationMode === "task-room"
-        ? agents.find((agent) => agent.isChief) ?? selectedAgent
-        : selectedAgent;
-    const taskId = `task-${Date.now()}`;
+    const targetAgent = selectedAgent;
     const now = new Date().toISOString();
-    const participantAgentIds =
-      conversationMode === "task-room"
-        ? agents.filter((agent) => agent.status === "online").map((agent) => agent.id)
-        : [targetAgent.id];
+    const activeConversationMode = "direct";
+    const existingConversation = conversations.find(
+      (item) =>
+        item.projectId === selectedProject.id &&
+        item.mode === activeConversationMode &&
+        item.primaryAgentId === targetAgent.id,
+    );
+    const conversation =
+      existingConversation ??
+      createConversation({
+        projectId: selectedProject.id,
+        namespace: selectedProject.namespace,
+        mode: activeConversationMode,
+        title: targetAgent.name,
+        primaryAgentId: targetAgent.id,
+        participantAgentIds: [targetAgent.id],
+        createdAt: now,
+      });
+    const runId = crypto.randomUUID();
+    const userMessageId = crypto.randomUUID();
+    const participantAgentIds = [targetAgent.id];
 
-    const optimisticTask: ProjectTask = {
-      id: taskId,
+    const userMessage: ConversationMessage = {
+      id: userMessageId,
+      conversationId: conversation.id,
       projectId: selectedProject.id,
-      contextId: selectedProject.namespace,
-      title: text.length > 56 ? `${text.slice(0, 56)}...` : text,
+      role: "user",
+      contentParts: createTextParts(text),
+      runId,
+      status: "sending",
+      createdAt: now,
+    };
+    const optimisticRun: ProjectRun = {
+      id: runId,
+      projectId: selectedProject.id,
+      conversationId: conversation.id,
+      type: "direct_message",
       ownerAgentId: targetAgent.id,
       participantAgentIds,
-      state: "submitted",
-      summary:
-        conversationMode === "task-room"
-          ? "Chief will coordinate this as a project-scoped A2A task."
-          : `${targetAgent.name} received this as a direct A2A task.`,
-      events: [
-        {
-          id: `${taskId}-submitted`,
-          taskId,
-          agentId: targetAgent.id,
-          label: `Submitted through ${selectedProject.namespace}.`,
-          state: "submitted",
-          timestamp: now,
-        },
-      ],
+      state: "submitting",
+      eventIds: [`${runId}-submitted`],
       artifactIds: [],
+      createdAt: now,
       updatedAt: now,
     };
 
-    setTasks((current) => [optimisticTask, ...current]);
+    if (!existingConversation) {
+      setConversations((current) => [conversation, ...current]);
+    }
+    setMessages((current) => [...current, userMessage]);
+    setRuns((current) => [optimisticRun, ...current]);
     setMessageText("");
     setOutputMode("outputs");
 
@@ -191,61 +424,132 @@ export function App() {
       const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, text);
       const returnedArtifacts = mapA2AArtifacts(remoteTask, selectedProject.id, targetAgent.id);
       const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
-      const responseSummary = extractA2ATaskText(remoteTask) ?? "Hermes returned an A2A task state.";
+      const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned an A2A task state.`;
+      const mappedState = mapA2AState(remoteTask.status.state);
+      const shouldCreateTask = !isDirectMessageResponse(remoteTask);
+      const taskId = shouldCreateTask ? remoteTask.id || crypto.randomUUID() : undefined;
+      const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
+            ? {
+                ...message,
+                status: "sent",
+              }
+            : message,
+        ),
+      );
+
+      if (responseSummary) {
+        const agentMessage: ConversationMessage = {
+          id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: selectedProject.id,
+          role: "agent",
+          agentId: targetAgent.id,
+          contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
+          a2aMessageId: remoteTask.status.message?.messageId,
+          taskId,
+          runId,
+          status: "sent",
+          createdAt: completedAt,
+        };
+        setMessages((current) => [...current, agentMessage]);
+      }
 
       if (returnedArtifacts.length > 0) {
         setArtifacts((current) => [...returnedArtifacts, ...current]);
       }
 
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === taskId
+      if (shouldCreateTask && taskId) {
+        const projectTask: ProjectTask = {
+          id: taskId,
+          projectId: selectedProject.id,
+          contextId: remoteTask.contextId || selectedProject.namespace,
+          title: text.length > 56 ? `${text.slice(0, 56)}...` : text,
+          ownerAgentId: targetAgent.id,
+          participantAgentIds,
+          state: mappedState,
+          summary: responseSummary,
+          events: [
+            {
+              id: `${taskId}-accepted`,
+              taskId,
+              agentId: targetAgent.id,
+              label: "Agent returned an A2A task.",
+              state: mappedState,
+              timestamp: completedAt,
+            },
+          ],
+          artifactIds: returnedArtifactIds,
+          updatedAt: completedAt,
+        };
+        setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
+      }
+
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === runId
             ? {
-                ...task,
-                id: remoteTask.id || task.id,
-                state: remoteTask.status.state,
-                summary: responseSummary,
-                events: [
-                  ...task.events,
-                  {
-                    id: `${taskId}-accepted`,
-                    taskId,
-                    agentId: targetAgent.id,
-                    label: "Hermes returned an A2A task state.",
-                    state: remoteTask.status.state,
-                    timestamp: remoteTask.status.timestamp ?? new Date().toISOString(),
-                  },
-                ],
-                artifactIds: [...returnedArtifactIds, ...task.artifactIds],
-                updatedAt: remoteTask.status.timestamp ?? new Date().toISOString(),
+                ...run,
+                taskId,
+                state: mappedState,
+                eventIds: [...run.eventIds, `${runId}-completed`],
+                artifactIds: returnedArtifactIds,
+                updatedAt: completedAt,
               }
-            : task,
+            : run,
+        ),
+      );
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === conversation.id
+            ? {
+                ...item,
+                updatedAt: completedAt,
+              }
+            : item,
         ),
       );
     } catch (error) {
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === taskId
+      const failedAt = new Date().toISOString();
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
             ? {
-                ...task,
-                state: "failed",
-                summary: error instanceof Error ? error.message : "A2A message/send failed.",
-                events: [
-                  ...task.events,
-                  {
-                    id: `${taskId}-failed`,
-                    taskId,
-                    agentId: targetAgent.id,
-                    label: "A2A message/send failed.",
-                    state: "failed",
-                    timestamp: new Date().toISOString(),
-                  },
-                ],
-                updatedAt: new Date().toISOString(),
+                ...message,
+                status: "failed",
               }
-            : task,
+            : message,
         ),
       );
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                state: "failed",
+                eventIds: [...run.eventIds, `${runId}-failed`],
+                updatedAt: failedAt,
+              }
+            : run,
+        ),
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: selectedProject.id,
+          role: "system",
+          agentId: targetAgent.id,
+          contentParts: createTextParts(error instanceof Error ? error.message : "A2A message/send failed."),
+          runId,
+          status: "sent",
+          createdAt: failedAt,
+        },
+      ]);
     }
   }
 
@@ -327,9 +631,7 @@ export function App() {
                   setConversationMode("single");
                 }}
               >
-                <span className="avatar" aria-hidden="true">
-                  {agent.name.slice(0, 1)}
-                </span>
+                <AgentAvatar agent={agent} />
                 <span className="nav-item-content">
                   <span className="nav-item-title">
                     {agent.name}
@@ -350,20 +652,48 @@ export function App() {
         </section>
 
         <section className="nav-section">
-          <div className="section-label">Projects</div>
+          <div className="section-label">
+            <span>Projects</span>
+            <button className="section-icon-button" type="button" onClick={openProjectDialog} aria-label="Create project" title="Create project">
+              <Plus size={14} />
+            </button>
+          </div>
           <div className="nav-list">
-            {projects.map((project) => (
-              <button
-                className={`project-item ${selectedProjectId === project.id ? "active" : ""}`}
-                key={project.id}
-                onClick={() => setSelectedProjectId(project.id)}
-              >
-                <Folder size={16} />
-                <span>
-                  <span className="project-name">{project.name}</span>
-                </span>
-              </button>
-            ))}
+            {projects.map((project) => {
+              const isActive = selectedProjectId === project.id;
+              return (
+                <div className={`project-row ${isActive ? "active" : ""}`} key={project.id}>
+                  <button className="project-item" onClick={() => setSelectedProjectId(project.id)}>
+                    <Folder size={16} />
+                    <span>
+                      <span className="project-name">{project.name}</span>
+                      <span className="project-namespace">{project.namespace}</span>
+                    </span>
+                  </button>
+                  <div className="row-actions" aria-label={`${project.name} project actions`}>
+                    <button
+                      className="icon-button mini-button"
+                      type="button"
+                      onClick={() => openProjectEditor(project.id)}
+                      aria-label={`Rename ${project.name}`}
+                      title="Rename project"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      className="icon-button mini-button danger-button"
+                      type="button"
+                      onClick={() => requestDeleteProject(project.id)}
+                      aria-label={`Delete ${project.name}`}
+                      title="Delete project"
+                      disabled={projects.length <= 1}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -393,14 +723,14 @@ export function App() {
                 <button className="secondary-button compact-button" onClick={() => setConversationMode("single")}>
                   Direct chat
                 </button>
-                <button className="primary-button compact-button" onClick={() => setConversationMode("task-room")} disabled={agents.length === 0}>
+                <button className="secondary-button compact-button" onClick={() => setConversationMode("task-room")} disabled={agents.length === 0}>
                   Task room
                 </button>
               </div>
             </div>
 
             {conversationMode === "single" && selectedAgent ? (
-              <DirectChat agent={selectedAgent} />
+              <DirectChat messages={currentMessages} />
             ) : conversationMode === "single" ? (
               <NoAgentState onAddAgent={() => setShowSetup(true)} />
             ) : (
@@ -427,14 +757,15 @@ export function App() {
                       ? selectedAgent
                         ? `Ask ${selectedAgent.name} in ${selectedProject.name}`
                         : "Add an agent provider first"
-                      : "Describe the task for Chief to split and dispatch"
+                      : "Chief-led task room is planned for the next milestone"
                   }
+                  disabled={conversationMode === "task-room"}
                 />
                 <button
                   className="primary-icon-button composer-send-button"
                   type="submit"
                   aria-label="Send message"
-                  disabled={!selectedAgent || messageText.trim().length === 0}
+                  disabled={!selectedAgent || conversationMode === "task-room" || messageText.trim().length === 0}
                 >
                   <ArrowUp size={18} />
                 </button>
@@ -482,7 +813,7 @@ export function App() {
               />
             ) : null}
             {outputMode === "outputs" ? (
-              <ProjectTasks agents={agents} tasks={scopedTasks} artifacts={scopedArtifacts} />
+              <ProjectTasks agents={agents} runs={scopedRuns} tasks={scopedTasks} artifacts={scopedArtifacts} />
             ) : null}
             {outputMode === "artifacts" ? (
               <ProjectArtifacts agents={agents} artifacts={scopedArtifacts} />
@@ -501,6 +832,32 @@ export function App() {
           onSaveAgent={saveDemoAgent}
           agents={agents}
           onSetChief={setChiefAgent}
+          onRetestAgent={retestAgent}
+          onDeleteAgent={requestDeleteAgent}
+          retestingAgentIds={retestingAgentIds}
+        />
+      ) : null}
+      {showProjectDialog ? (
+        <ProjectDialog
+          error={projectFormError}
+          project={editingProjectId ? projects.find((project) => project.id === editingProjectId) : undefined}
+          onClose={closeProjectDialog}
+          onSaveProject={saveProject}
+        />
+      ) : null}
+      {confirmAction ? (
+        <ConfirmDialog
+          action={confirmAction}
+          agents={agents}
+          projects={projects}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            if (confirmAction.kind === "delete-project") {
+              deleteProject(confirmAction.projectId);
+            } else {
+              deleteAgent(confirmAction.agentId);
+            }
+          }}
         />
       ) : null}
     </div>
@@ -522,21 +879,126 @@ function extractA2ATaskText(task: A2ATask) {
 function mapA2AArtifacts(task: A2ATask, projectId: string, agentId: string): ProjectArtifact[] {
   return (task.artifacts ?? []).map((artifact, index) => {
     const text = artifact.parts.find((part) => part.kind === "text")?.text;
+    const hasFile = artifact.parts.some((part) => part.kind === "file");
     return {
       id: artifact.artifactId ?? `${task.id}-artifact-${index}`,
       projectId,
       taskId: task.id,
       agentId,
       name: artifact.name ?? `Artifact ${index + 1}`,
-      kind: text ? "text" : "json",
+      kind: text ? "text" : hasFile ? "file" : "json",
       summary: artifact.description ?? text ?? "A2A artifact returned by the agent.",
+      contentParts: artifact.parts,
       createdAt: task.status.timestamp ?? new Date().toISOString(),
     };
   });
 }
 
+function createConversation({
+  projectId,
+  namespace,
+  mode,
+  title,
+  primaryAgentId,
+  chiefAgentId,
+  participantAgentIds,
+  createdAt,
+}: {
+  projectId: string;
+  namespace: string;
+  mode: Conversation["mode"];
+  title: string;
+  primaryAgentId?: string;
+  chiefAgentId?: string;
+  participantAgentIds: string[];
+  createdAt: string;
+}): Conversation {
+  return {
+    id: crypto.randomUUID(),
+    projectId,
+    mode,
+    title,
+    primaryAgentId,
+    chiefAgentId,
+    participantAgentIds,
+    a2aContextId: namespace,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+function createTextParts(text: string): A2APart[] {
+  return [
+    {
+      kind: "text",
+      text,
+    },
+  ];
+}
+
+function getPartText(parts: A2APart[]) {
+  return parts
+    .map((part) => {
+      if (part.kind === "text") return part.text;
+      if (part.kind === "data") return JSON.stringify(part.data, null, 2);
+      return part.file.name ?? part.file.uri ?? "File";
+    })
+    .join("\n");
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <div className="markdown-content">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
+function getImageFileParts(parts: A2APart[]) {
+  return parts.filter(
+    (part) =>
+      part.kind === "file" &&
+      Boolean(part.file.uri) &&
+      (part.file.mimeType?.startsWith("image/") || isImageUrl(part.file.uri ?? "")),
+  );
+}
+
+function isImageUrl(uri: string) {
+  return /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?.*)?$/i.test(uri) || uri.startsWith("data:image/");
+}
+
+function mapA2AState(state: A2ATaskState): WorkState {
+  if (state === "input-required") return "input_required";
+  if (state === "rejected" || state === "auth-required" || state === "unknown") return "failed";
+  return state;
+}
+
+function isDirectMessageResponse(task: A2ATask) {
+  return task.metadata?.responseKind === "direct-message";
+}
+
+function slugifyProjectName(name: string) {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || `project-${Date.now()}`;
+}
+
 function StatusDot({ status }: { status: AgentStatus }) {
   return <span className={`status-dot ${status}`} aria-label={`Status: ${status}`} />;
+}
+
+function AgentAvatar({ agent, size = "regular" }: { agent: AgentInstance; size?: "regular" | "small" }) {
+  const fallback = agent.name.slice(0, 1).toUpperCase();
+
+  return (
+    <span className={`avatar ${size === "small" ? "small" : ""}`} aria-hidden="true">
+      {agent.avatarUrl ? <img alt="" src={agent.avatarUrl} /> : fallback}
+    </span>
+  );
 }
 
 function TabButton({
@@ -555,16 +1017,28 @@ function TabButton({
   );
 }
 
-function DirectChat({ agent }: { agent: AgentInstance }) {
+function DirectChat({ messages }: { messages: ConversationMessage[] }) {
   return (
     <div className="conversation-body">
-      <div className="message-row agent-message">
-        <span className="avatar small">{agent.name.slice(0, 1)}</span>
-        <div className="session-line">
-          <strong>{agent.name}</strong>
-          <span>{agent.location} / A2A</span>
+      {messages.length === 0 ? (
+        <div className="empty-state compact-empty">
+          <MessageSquare size={32} />
+          <h3>No messages yet</h3>
+          <p>Start a project-scoped direct chat with this connected agent.</p>
         </div>
-      </div>
+      ) : (
+        messages.map((message) => {
+          const isUser = message.role === "user";
+          const isSystem = message.role === "system";
+          return (
+            <div className={`message-row ${isUser ? "user-message" : "agent-message"}`} key={message.id}>
+              <div className={`${isUser ? "message-bubble" : "agent-output"} ${message.status} ${isSystem ? "system" : ""}`}>
+                {isUser ? <p>{getPartText(message.contentParts)}</p> : <MarkdownContent content={getPartText(message.contentParts)} />}
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -594,15 +1068,15 @@ function TaskRoom({ agents, projectTask }: { agents: AgentInstance[]; projectTas
     <div className="conversation-body">
       <div className="task-summary">
         <div>
-          <h3>{projectTask?.title ?? `${chief?.name ?? "Chief"} coordinates A2A task`}</h3>
-          <p>{projectTask?.summary ?? "Chief opens project-scoped A2A tasks and routes work to connected agents."}</p>
+          <h3>{projectTask?.title ?? `${chief?.name ?? "Chief"} task room pending`}</h3>
+          <p>{projectTask?.summary ?? "Direct chat is active now. Chief-led one-round delegation is the next milestone."}</p>
         </div>
-        <span className="mode-badge">{projectTask?.state ?? "submitted"}</span>
+        <span className="mode-badge">{projectTask?.state ?? "unsupported"}</span>
       </div>
       <div className="assignment-list">
         {participants.map((agent) => (
           <div className="assignment-row" key={agent.id}>
-            <span className="avatar small">{agent.name.slice(0, 1)}</span>
+            <AgentAvatar agent={agent} size="small" />
             <div>
               <strong>{agent.name}</strong>
               <span>{agent.tags.join(" / ")}</span>
@@ -681,25 +1155,55 @@ function BrowserPreview({
 
 function ProjectTasks({
   agents,
+  runs,
   tasks,
   artifacts,
 }: {
   agents: AgentInstance[];
+  runs: ProjectRun[];
   tasks: ProjectTask[];
   artifacts: ProjectArtifact[];
 }) {
-  if (tasks.length === 0) {
+  if (runs.length === 0 && tasks.length === 0) {
     return (
       <div className="empty-state tall">
         <MessageSquare size={32} />
-        <h3>No tasks in this project</h3>
-        <p>Chief-led A2A tasks will appear here.</p>
+        <h3>No runs in this project</h3>
+        <p>Direct messages and Chief-led tasks will appear here.</p>
       </div>
     );
   }
 
   return (
     <div className="output-list">
+      {runs.map((run) => {
+        const owner = agents.find((item) => item.id === run.ownerAgentId);
+        const runArtifacts = artifacts.filter((artifact) => run.artifactIds.includes(artifact.id));
+        const linkedTask = tasks.find((task) => task.id === run.taskId);
+        return (
+          <article className="output-item run-item" key={run.id}>
+            <div className="output-title-row">
+              <div>
+                <h3>{linkedTask?.title ?? (run.type === "direct_message" ? "Direct message" : "Chief delegation")}</h3>
+                <span>{owner?.name ?? "Agent"} / {run.type.replace("_", " ")}</span>
+              </div>
+              <span className={`status-badge ${run.state}`}>{run.state}</span>
+            </div>
+            <p>{linkedTask?.summary ?? "Project-scoped run record."}</p>
+            <div className="artifact-strip">
+              {runArtifacts.length > 0 ? (
+                runArtifacts.map((artifact) => (
+                  <span className="artifact-chip" key={artifact.id}>
+                    {artifact.name}
+                  </span>
+                ))
+              ) : (
+                <span className="artifact-chip muted">No artifact</span>
+              )}
+            </div>
+          </article>
+        );
+      })}
       {tasks.map((task) => {
         const owner = agents.find((item) => item.id === task.ownerAgentId);
         const taskArtifacts = artifacts.filter((artifact) => task.artifactIds.includes(artifact.id));
@@ -754,19 +1258,142 @@ function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[]; arti
     <div className="output-list">
       {artifacts.map((artifact) => {
         const agent = agents.find((item) => item.id === artifact.agentId);
-        return (
-          <article className="output-item" key={artifact.id}>
-            <div className="output-title-row">
-              <div>
-                <h3>{artifact.name}</h3>
+      return (
+        <article className="output-item" key={artifact.id}>
+          <div className="output-title-row">
+            <div>
+              <h3>{artifact.name}</h3>
                 <span>{agent?.name ?? "Agent"} / {artifact.kind}</span>
-              </div>
-              <span className="status-badge completed">artifact</span>
             </div>
-            <p>{artifact.summary}</p>
-          </article>
-        );
-      })}
+            <span className="status-badge completed">artifact</span>
+          </div>
+          <ArtifactPreview artifact={artifact} />
+        </article>
+      );
+    })}
+  </div>
+  );
+}
+
+function ArtifactPreview({ artifact }: { artifact: ProjectArtifact }) {
+  const parts = artifact.contentParts ?? createTextParts(artifact.summary);
+  const imageParts = getImageFileParts(parts);
+  const text = getPartText(parts);
+
+  return (
+    <div className="artifact-preview">
+      {imageParts.map((part, index) =>
+        part.kind === "file" && part.file.uri ? (
+          <img
+            alt={part.file.name ?? `${artifact.name} image ${index + 1}`}
+            className="artifact-image"
+            key={`${artifact.id}-image-${index}`}
+            src={part.file.uri}
+          />
+        ) : null,
+      )}
+      {text ? <MarkdownContent content={text} /> : null}
+    </div>
+  );
+}
+
+function ProjectDialog({
+  error,
+  project,
+  onClose,
+  onSaveProject,
+}: {
+  error: string;
+  project?: Project;
+  onClose: () => void;
+  onSaveProject: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const isEditing = Boolean(project);
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="project-dialog" role="dialog" aria-modal="true" aria-labelledby="project-title">
+        <div className="setup-header">
+          <div>
+            <div className="eyebrow">Project Scope</div>
+            <h2 id="project-title">{isEditing ? "Rename project" : "Create project"}</h2>
+            <p>{isEditing ? "Keep the namespace stable while changing the label." : "Keep conversations, runs, tasks, and artifacts isolated."}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close project dialog">
+            <XCircle size={18} />
+          </button>
+        </div>
+
+        <form className="setup-form" onSubmit={onSaveProject}>
+          <label>
+            Project name
+            <input name="name" defaultValue={project?.name ?? ""} required autoFocus />
+            <span>{isEditing ? `Namespace stays ${project?.namespace}.` : "Used in the sidebar and project namespace."}</span>
+          </label>
+          <label>
+            Description
+            <input name="description" defaultValue={project?.description ?? ""} />
+            <span>Optional short context for this workspace.</span>
+          </label>
+          {error ? <div className="form-error">{error}</div> : null}
+          <div className="setup-actions">
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="primary-button">
+              {isEditing ? "Save changes" : "Create project"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  action,
+  agents,
+  projects,
+  onCancel,
+  onConfirm,
+}: {
+  action: ConfirmAction;
+  agents: AgentInstance[];
+  projects: Project[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const project = action.kind === "delete-project" ? projects.find((item) => item.id === action.projectId) : undefined;
+  const agent = action.kind === "delete-agent" ? agents.find((item) => item.id === action.agentId) : undefined;
+  const title = action.kind === "delete-project" ? "Delete project" : "Delete agent";
+  const targetName = project?.name ?? agent?.name ?? "this item";
+  const body =
+    action.kind === "delete-project"
+      ? "This removes the project and its conversations, messages, runs, tasks, and artifacts from local storage."
+      : "This removes the agent from the registry. Existing project history stays in place.";
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div className="setup-header">
+          <div>
+            <div className="eyebrow">Confirm</div>
+            <h2 id="confirm-title">{title}</h2>
+            <p>{targetName}</p>
+          </div>
+          <button className="icon-button" onClick={onCancel} aria-label="Close confirmation">
+            <XCircle size={18} />
+          </button>
+        </div>
+        <p className="confirm-copy">{body}</p>
+        <div className="setup-actions">
+          <button type="button" className="secondary-button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="danger-action-button" onClick={onConfirm}>
+            Delete
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -780,6 +1407,9 @@ function SetupWizard({
   onSaveAgent,
   agents,
   onSetChief,
+  onRetestAgent,
+  onDeleteAgent,
+  retestingAgentIds,
 }: {
   testState: ConnectionTestState;
   testMessage: string;
@@ -789,6 +1419,9 @@ function SetupWizard({
   onSaveAgent: (event: FormEvent<HTMLFormElement>) => void;
   agents: AgentInstance[];
   onSetChief: (agentId: string) => void;
+  onRetestAgent: (agentId: string) => void;
+  onDeleteAgent: (agentId: string) => void;
+  retestingAgentIds: string[];
 }) {
   return (
     <div className="modal-backdrop" role="presentation">
@@ -824,18 +1457,39 @@ function SetupWizard({
             <div className="management-list">
               {agents.map((agent) => (
                 <div className="management-row" key={agent.id}>
-                  <span className="avatar small">{agent.name.slice(0, 1)}</span>
-                  <div>
+                  <AgentAvatar agent={agent} size="small" />
+                  <div className="management-content">
                     <strong>{agent.name}</strong>
                     <span>{agent.location} / {agent.tags.slice(0, 2).join(" / ")}</span>
                   </div>
-                  {agent.isChief ? (
-                    <span className="chief-dot">Chief</span>
-                  ) : (
-                    <button className="secondary-button compact-button" type="button" onClick={() => onSetChief(agent.id)}>
-                      Set Chief
+                  <div className="management-actions">
+                    {agent.isChief ? (
+                      <span className="chief-dot">Chief</span>
+                    ) : (
+                      <button className="secondary-button compact-button" type="button" onClick={() => onSetChief(agent.id)}>
+                        Set Chief
+                      </button>
+                    )}
+                    <button
+                      className="icon-button mini-button"
+                      type="button"
+                      onClick={() => onRetestAgent(agent.id)}
+                      aria-label={`Retest ${agent.name}`}
+                      title="Retest agent"
+                      disabled={retestingAgentIds.includes(agent.id)}
+                    >
+                      {retestingAgentIds.includes(agent.id) ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
                     </button>
-                  )}
+                    <button
+                      className="icon-button mini-button danger-button"
+                      type="button"
+                      onClick={() => onDeleteAgent(agent.id)}
+                      aria-label={`Delete ${agent.name}`}
+                      title="Delete agent"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -848,6 +1502,11 @@ function SetupWizard({
               Agent name
               <input name="name" defaultValue="Local Hermes" required />
               <span>Shown in the left Agent list.</span>
+            </label>
+            <label>
+              Avatar URL
+              <input name="avatarUrl" placeholder="https://..." />
+              <span>Optional image used in the registry and setup views.</span>
             </label>
             <label>
               Base URL

@@ -222,6 +222,27 @@ Create your first project to start organizing your workflow.
 [Create project]
 ```
 
+## Conversation
+
+This is a private-use workspace, not a customer support product.
+
+Rules:
+
+- Do not show speaker labels like `You`, `User`, `Assistant`, or agent names inside message bubbles.
+- User messages align right and keep a subtle bordered bubble.
+- Agent messages align left as direct text output without a surrounding bubble.
+- Agent output should render Markdown, including lists, code blocks, links, tables, and Markdown images.
+- System/error messages may use restrained inline styling, but should not look like another speaker.
+- Keep conversation chrome minimal; avoid chat-app decoration.
+
+## Artifacts
+
+Rules:
+
+- Render text artifacts as Markdown when the content is text.
+- Render image artifacts directly inline when an artifact file part is an image.
+- Constrain images to the output panel width and avoid decorative frames beyond the standard border/radius.
+
 ## Loading States
 
 Prefer skeleton loading for main content.

@@ -147,6 +147,7 @@ Agent:
 - a2aEndpoint
 - agentCardUrl
 - apiKey
+- avatarUrl
 - model
 - tags
 - status

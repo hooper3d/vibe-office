@@ -157,21 +157,9 @@ export class HermesA2AAdapter {
           ],
         },
       },
-      artifacts: [
-        {
-          artifactId: crypto.randomUUID(),
-          name: `${this.agent.name} response`,
-          description: "Hermes response adapted into an A2A artifact.",
-          parts: [
-            {
-              kind: "text",
-              text: content,
-            },
-          ],
-        },
-      ],
       metadata: {
         adapter: "hermes-openai-compatible",
+        responseKind: "direct-message",
         projectId: project.id,
       },
     };

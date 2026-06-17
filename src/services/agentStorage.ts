@@ -79,5 +79,6 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     a2aEndpoint,
     agentCardUrl,
     apiKey: typeof safeAgent.apiKey === "string" ? safeAgent.apiKey : undefined,
+    avatarUrl: typeof safeAgent.avatarUrl === "string" ? safeAgent.avatarUrl : undefined,
   };
 }

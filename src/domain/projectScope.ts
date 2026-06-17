@@ -1,11 +1,68 @@
-import type { A2ATaskState } from "./a2a";
+import type { A2APart } from "./a2a";
+
+export type WorkState =
+  | "idle"
+  | "submitting"
+  | "submitted"
+  | "working"
+  | "input_required"
+  | "completed"
+  | "failed"
+  | "canceled"
+  | "unsupported";
+
+export type ConversationMode = "direct" | "task_room";
+
+export type Conversation = {
+  id: string;
+  projectId: string;
+  mode: ConversationMode;
+  title: string;
+  primaryAgentId?: string;
+  chiefAgentId?: string;
+  participantAgentIds: string[];
+  a2aContextId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ConversationMessage = {
+  id: string;
+  conversationId: string;
+  projectId: string;
+  role: "user" | "agent" | "system";
+  agentId?: string;
+  contentParts: A2APart[];
+  a2aMessageId?: string;
+  taskId?: string;
+  runId?: string;
+  status: "sending" | "sent" | "failed";
+  createdAt: string;
+};
+
+export type ProjectRunType = "direct_message" | "a2a_task" | "chief_delegation";
+
+export type ProjectRun = {
+  id: string;
+  projectId: string;
+  conversationId: string;
+  taskId?: string;
+  type: ProjectRunType;
+  ownerAgentId: string;
+  participantAgentIds: string[];
+  state: WorkState;
+  eventIds: string[];
+  artifactIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type ProjectTaskEvent = {
   id: string;
   taskId: string;
   agentId: string;
   label: string;
-  state: A2ATaskState;
+  state: WorkState;
   timestamp: string;
 };
 
@@ -16,7 +73,7 @@ export type ProjectTask = {
   title: string;
   ownerAgentId: string;
   participantAgentIds: string[];
-  state: A2ATaskState;
+  state: WorkState;
   summary: string;
   events: ProjectTaskEvent[];
   artifactIds: string[];
@@ -33,13 +90,15 @@ export type ProjectArtifact = {
   name: string;
   kind: ProjectArtifactKind;
   summary: string;
+  contentParts: A2APart[];
   createdAt: string;
 };
 
 export type ProjectScope = {
   projectId: string;
   namespace: string;
+  conversationIds: string[];
+  runIds: string[];
   taskIds: string[];
   artifactIds: string[];
 };
-

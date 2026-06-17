@@ -14,6 +14,7 @@ export function createAgentFromHermesSetup(form: FormData): AgentInstance {
     a2aEndpoint: readFormValue(form, "a2aEndpoint", "http://127.0.0.1:8642/a2a"),
     agentCardUrl: readFormValue(form, "agentCardUrl", "http://127.0.0.1:8642/.well-known/agent-card.json"),
     apiKey: readOptionalFormValue(form, "apiKey"),
+    avatarUrl: readOptionalFormValue(form, "avatarUrl"),
     model,
     tags: normalizeTags(readFormValue(form, "tags", "general")),
     status: "online",

@@ -9,6 +9,7 @@ export type AgentInstance = {
   a2aEndpoint: string;
   agentCardUrl: string;
   apiKey?: string;
+  avatarUrl?: string;
   model: string;
   tags: string[];
   status: AgentStatus;
