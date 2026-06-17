@@ -1,0 +1,234 @@
+import type { A2AAgentCard, A2AMessage, A2ATask } from "../domain/a2a";
+import type { AgentInstance, Project } from "../domain/types";
+import { A2AClient } from "./a2aClient";
+
+export type HermesA2AAdapterOptions = {
+  agent: AgentInstance;
+  apiKey?: string;
+};
+
+export type HermesConnectionTestResult = {
+  card: A2AAgentCard;
+  mode: "native-a2a" | "hermes-adapter";
+};
+
+export class HermesA2AAdapter {
+  private agent: AgentInstance;
+  private client: A2AClient;
+
+  constructor(options: HermesA2AAdapterOptions) {
+    this.agent = options.agent;
+    this.client = new A2AClient({
+      endpoint: options.agent.a2aEndpoint,
+      apiKey: options.apiKey,
+    });
+  }
+
+  async getAgentCard() {
+    try {
+      return await this.client.getAgentCard(this.agent.agentCardUrl);
+    } catch {
+      return this.getHermesBackedAgentCard();
+    }
+  }
+
+  async testConnection(): Promise<HermesConnectionTestResult> {
+    try {
+      return {
+        card: await this.client.getAgentCard(this.agent.agentCardUrl),
+        mode: "native-a2a",
+      };
+    } catch {
+      const card = await this.getHermesBackedAgentCard();
+      await this.validateHermesChat();
+      return {
+        card,
+        mode: "hermes-adapter",
+      };
+    }
+  }
+
+  async sendProjectMessage(project: Project, text: string) {
+    const message: A2AMessage = {
+      messageId: crypto.randomUUID(),
+      role: "user",
+      contextId: project.namespace,
+      parts: [
+        {
+          kind: "text",
+          text,
+        },
+      ],
+      metadata: {
+        projectId: project.id,
+        namespace: project.namespace,
+        routedBy: "vibe-office",
+      },
+    };
+
+    try {
+      return await this.client.sendMessage(message, {
+        projectId: project.id,
+        namespace: project.namespace,
+        targetAgentId: this.agent.id,
+      });
+    } catch {
+      return this.sendHermesChatAsA2ATask(project, text);
+    }
+  }
+
+  private async getHermesBackedAgentCard(): Promise<A2AAgentCard> {
+    const healthUrl = `${this.hermesOrigin()}/health`;
+    const response = await fetch(toHermesProxyUrl(healthUrl), {
+      headers: this.buildHermesHeaders(false),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Hermes health check failed: ${response.status}`);
+    }
+
+    return {
+      name: this.agent.name,
+      description: this.agent.role,
+      url: this.agent.a2aEndpoint,
+      version: "0.1.0",
+      protocolVersion: "1.0",
+      capabilities: {
+        streaming: false,
+        pushNotifications: false,
+        stateTransitionHistory: true,
+      },
+      skills: this.agent.tags.map((tag) => ({
+        id: tag,
+        name: tag,
+        tags: [tag],
+      })),
+    };
+  }
+
+  private async sendHermesChatAsA2ATask(project: Project, text: string): Promise<A2ATask> {
+    const response = await fetch(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
+      method: "POST",
+      headers: this.buildHermesHeaders(true),
+      body: JSON.stringify({
+        model: this.agent.model,
+        messages: [
+          {
+            role: "system",
+            content: `Vibe Office project namespace: ${project.namespace}. Keep this task scoped to this project.`,
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Hermes chat completion failed: ${response.status}`);
+    }
+
+    const payload = (await response.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: string;
+        };
+      }>;
+    };
+    const content = payload.choices?.[0]?.message?.content ?? "Hermes returned an empty response.";
+    const now = new Date().toISOString();
+
+    return {
+      id: crypto.randomUUID(),
+      contextId: project.namespace,
+      status: {
+        state: "completed",
+        timestamp: now,
+        message: {
+          messageId: crypto.randomUUID(),
+          role: "agent",
+          contextId: project.namespace,
+          parts: [
+            {
+              kind: "text",
+              text: content,
+            },
+          ],
+        },
+      },
+      artifacts: [
+        {
+          artifactId: crypto.randomUUID(),
+          name: `${this.agent.name} response`,
+          description: "Hermes response adapted into an A2A artifact.",
+          parts: [
+            {
+              kind: "text",
+              text: content,
+            },
+          ],
+        },
+      ],
+      metadata: {
+        adapter: "hermes-openai-compatible",
+        projectId: project.id,
+      },
+    };
+  }
+
+  private async validateHermesChat() {
+    const response = await fetch(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
+      method: "POST",
+      headers: this.buildHermesHeaders(true),
+      body: JSON.stringify({
+        model: this.agent.model,
+        messages: [
+          {
+            role: "user",
+            content: "Reply with exactly: ok",
+          },
+        ],
+        max_tokens: 8,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Hermes chat completion auth failed: ${response.status}`);
+    }
+  }
+
+  private hermesOrigin() {
+    const endpoint = new URL(this.agent.endpoint);
+    return `${endpoint.protocol}//${endpoint.host}`;
+  }
+
+  private buildHermesHeaders(isJson: boolean) {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+
+    if (isJson) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    if (this.agent.apiKey) {
+      headers.Authorization = `Bearer ${this.agent.apiKey}`;
+    }
+
+    return headers;
+  }
+}
+
+function toHermesProxyUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "127.0.0.1" && parsed.port === "8642") {
+      return `/hermes-local${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    return url;
+  }
+
+  return url;
+}
