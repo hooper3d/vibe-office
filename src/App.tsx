@@ -133,6 +133,7 @@ export function App() {
   const [browserUrl, setBrowserUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [attachedWorkspaceFiles, setAttachedWorkspaceFiles] = useState<WorkspaceFileAttachment[]>([]);
+  const [taskParticipantIds, setTaskParticipantIds] = useState<string[]>([]);
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
@@ -151,6 +152,15 @@ export function App() {
     () => agents.find((agent) => agent.id === selectedAgentId) ?? agents.find((agent) => agent.isChief) ?? agents[0],
     [agents, selectedAgentId],
   );
+  const chiefAgent = useMemo(() => agents.find((agent) => agent.isChief), [agents]);
+  const availableTaskParticipants = useMemo(
+    () => agents.filter((agent) => agent.id !== chiefAgent?.id && agent.status === "online"),
+    [agents, chiefAgent?.id],
+  );
+  const selectedTaskParticipants = useMemo(
+    () => availableTaskParticipants.filter((agent) => taskParticipantIds.includes(agent.id)),
+    [availableTaskParticipants, taskParticipantIds],
+  );
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0];
   const scopedTasks = useMemo(
     () => tasks.filter((task) => task.projectId === selectedProject.id),
@@ -160,6 +170,10 @@ export function App() {
     () => runs.filter((run) => run.projectId === selectedProject.id),
     [selectedProject.id, runs],
   );
+  const latestChiefTask = useMemo(() => {
+    const latestChiefRun = scopedRuns.find((run) => run.type === "chief_delegation" && run.taskId);
+    return scopedTasks.find((task) => task.id === latestChiefRun?.taskId);
+  }, [scopedRuns, scopedTasks]);
   const scopedArtifacts = useMemo(
     () => artifacts.filter((artifact) => artifact.projectId === selectedProject.id),
     [selectedProject.id, artifacts],
@@ -177,10 +191,27 @@ export function App() {
     if (!currentConversation) return [];
     return messages.filter((message) => message.conversationId === currentConversation.id);
   }, [currentConversation, messages]);
+  const taskRoomConversation = useMemo(() => {
+    if (!chiefAgent) return undefined;
+    return conversations.find(
+      (conversation) =>
+        conversation.projectId === selectedProject.id &&
+        conversation.mode === "task_room" &&
+        conversation.chiefAgentId === chiefAgent.id,
+    );
+  }, [chiefAgent, conversations, selectedProject.id]);
+  const taskRoomMessages = useMemo(() => {
+    if (!taskRoomConversation) return [];
+    return messages.filter((message) => message.conversationId === taskRoomConversation.id);
+  }, [messages, taskRoomConversation]);
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
   }, [selectedProject.id]);
+
+  useEffect(() => {
+    setTaskParticipantIds(availableTaskParticipants.map((agent) => agent.id));
+  }, [availableTaskParticipants, chiefAgent?.id, selectedProject.id]);
 
   useEffect(() => {
     if (selectedAgent && selectedAgent.id !== selectedAgentId) {
@@ -490,10 +521,21 @@ export function App() {
     setAttachedWorkspaceFiles((current) => current.filter((item) => item.path !== path));
   }
 
+  function toggleTaskParticipant(agentId: string, checked: boolean) {
+    setTaskParticipantIds((current) =>
+      checked ? Array.from(new Set([...current, agentId])) : current.filter((id) => id !== agentId),
+    );
+  }
+
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = messageText.trim();
-    if (!text || !selectedAgent || conversationMode === "task-room") return;
+    if (!text) return;
+    if (conversationMode === "task-room") {
+      await submitTaskRoomMessage(text);
+      return;
+    }
+    if (!selectedAgent) return;
 
     const targetAgent = selectedAgent;
     const now = new Date().toISOString();
@@ -685,6 +727,254 @@ export function App() {
           role: "system",
           agentId: targetAgent.id,
           contentParts: createTextParts(error instanceof Error ? error.message : "A2A message/send failed."),
+          runId,
+          status: "sent",
+          createdAt: failedAt,
+        },
+      ]);
+      setOutputMode("runs");
+    }
+  }
+
+  async function submitTaskRoomMessage(text: string) {
+    if (!chiefAgent) return;
+
+    const targetAgent = chiefAgent;
+    const participants = selectedTaskParticipants;
+    const participantAgentIds = participants.map((agent) => agent.id);
+    const now = new Date().toISOString();
+    const existingConversation = conversations.find(
+      (item) =>
+        item.projectId === selectedProject.id &&
+        item.mode === "task_room" &&
+        item.chiefAgentId === targetAgent.id,
+    );
+    const conversation =
+      existingConversation ??
+      createConversation({
+        projectId: selectedProject.id,
+        namespace: selectedProject.namespace,
+        mode: "task_room",
+        title: `${selectedProject.name} task room`,
+        chiefAgentId: targetAgent.id,
+        participantAgentIds,
+        createdAt: now,
+      });
+    const taskId = crypto.randomUUID();
+    const runId = crypto.randomUUID();
+    const userMessageId = crypto.randomUUID();
+    const workspaceContext = attachedWorkspaceFiles.map((file) => ({
+      path: file.path,
+      size: file.size,
+      attachedAt: file.attachedAt,
+    }));
+    const chiefRequestText = buildChiefTaskRequestText(text, selectedProject, targetAgent, participants, attachedWorkspaceFiles);
+    const taskTitle = text.length > 56 ? `${text.slice(0, 56)}...` : text;
+
+    const userMessage: ConversationMessage = {
+      id: userMessageId,
+      conversationId: conversation.id,
+      projectId: selectedProject.id,
+      role: "user",
+      contentParts: createTextParts(text),
+      workspaceContext,
+      taskId,
+      runId,
+      status: "sending",
+      createdAt: now,
+    };
+    const projectTask: ProjectTask = {
+      id: taskId,
+      projectId: selectedProject.id,
+      contextId: conversation.a2aContextId,
+      title: taskTitle,
+      ownerAgentId: targetAgent.id,
+      participantAgentIds,
+      state: "submitting",
+      summary: "Task submitted to Chief.",
+      events: [
+        {
+          id: `${taskId}-submitted`,
+          taskId,
+          agentId: targetAgent.id,
+          label: "Task submitted to Chief.",
+          state: "submitting",
+          timestamp: now,
+        },
+      ],
+      artifactIds: [],
+      updatedAt: now,
+    };
+    const projectRun: ProjectRun = {
+      id: runId,
+      projectId: selectedProject.id,
+      conversationId: conversation.id,
+      taskId,
+      type: "chief_delegation",
+      ownerAgentId: targetAgent.id,
+      participantAgentIds: [targetAgent.id, ...participantAgentIds],
+      state: "submitting",
+      eventIds: [`${runId}-submitted`],
+      artifactIds: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (!existingConversation) {
+      setConversations((current) => [conversation, ...current]);
+    }
+    setMessages((current) => [...current, userMessage]);
+    setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
+    setRuns((current) => [projectRun, ...current]);
+    setMessageText("");
+    setAttachedWorkspaceFiles([]);
+    setOutputMode("runs");
+
+    try {
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, chiefRequestText);
+      const returnedArtifacts = mapA2AArtifacts(remoteTask, selectedProject.id, targetAgent.id);
+      const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
+      const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a Chief task response.`;
+      const mappedState = mapA2AState(remoteTask.status.state);
+      const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
+            ? {
+                ...message,
+                status: "sent",
+              }
+            : message,
+        ),
+      );
+
+      const agentMessage: ConversationMessage = {
+        id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
+        conversationId: conversation.id,
+        projectId: selectedProject.id,
+        role: "agent",
+        agentId: targetAgent.id,
+        contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
+        a2aMessageId: remoteTask.status.message?.messageId,
+        taskId,
+        runId,
+        status: "sent",
+        createdAt: completedAt,
+      };
+      setMessages((current) => [...current, agentMessage]);
+
+      if (returnedArtifacts.length > 0) {
+        setArtifacts((current) => [...returnedArtifacts, ...current]);
+        setOutputMode("artifacts");
+      }
+
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                state: mappedState,
+                summary: responseSummary,
+                events: [
+                  ...task.events,
+                  {
+                    id: `${taskId}-chief-response`,
+                    taskId,
+                    agentId: targetAgent.id,
+                    label: "Chief returned the first task-room response.",
+                    state: mappedState,
+                    timestamp: completedAt,
+                  },
+                ],
+                artifactIds: returnedArtifactIds,
+                updatedAt: completedAt,
+              }
+            : task,
+        ),
+      );
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                state: mappedState,
+                eventIds: [...run.eventIds, `${runId}-chief-response`],
+                artifactIds: returnedArtifactIds,
+                updatedAt: completedAt,
+              }
+            : run,
+        ),
+      );
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === conversation.id
+            ? {
+                ...item,
+                participantAgentIds,
+                updatedAt: completedAt,
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      const errorMessage = error instanceof Error ? error.message : "Chief task request failed.";
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
+            ? {
+                ...message,
+                status: "failed",
+              }
+            : message,
+        ),
+      );
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                state: "failed",
+                summary: errorMessage,
+                events: [
+                  ...task.events,
+                  {
+                    id: `${taskId}-failed`,
+                    taskId,
+                    agentId: targetAgent.id,
+                    label: "Chief task request failed.",
+                    state: "failed",
+                    timestamp: failedAt,
+                  },
+                ],
+                updatedAt: failedAt,
+              }
+            : task,
+        ),
+      );
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                state: "failed",
+                eventIds: [...run.eventIds, `${runId}-failed`],
+                updatedAt: failedAt,
+              }
+            : run,
+        ),
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: selectedProject.id,
+          role: "system",
+          agentId: targetAgent.id,
+          contentParts: createTextParts(errorMessage),
+          taskId,
           runId,
           status: "sent",
           createdAt: failedAt,
@@ -898,7 +1188,14 @@ export function App() {
             ) : conversationMode === "single" ? (
               <NoAgentState onAddAgent={() => setShowSetup(true)} />
             ) : (
-              <TaskRoom agents={agents} projectTask={scopedTasks[0]} />
+              <TaskRoom
+                agents={agents}
+                chief={chiefAgent}
+                messages={taskRoomMessages}
+                participantIds={taskParticipantIds}
+                projectTask={latestChiefTask}
+                onToggleParticipant={toggleTaskParticipant}
+              />
             )}
 
             <form className="composer" onSubmit={submitMessage}>
@@ -934,15 +1231,16 @@ export function App() {
                       ? selectedAgent
                         ? `Ask ${selectedAgent.name} in ${selectedProject.name}`
                         : "Add an agent provider first"
-                      : "Chief-led task room is planned for the next milestone"
+                      : chiefAgent
+                        ? `Start a Chief-led task in ${selectedProject.name}`
+                        : "Assign one connected agent as Chief first"
                   }
-                  disabled={conversationMode === "task-room"}
                 />
                 <button
                   className="primary-icon-button composer-send-button"
                   type="submit"
                   aria-label="Send message"
-                  disabled={!selectedAgent || conversationMode === "task-room" || messageText.trim().length === 0}
+                  disabled={(conversationMode === "single" ? !selectedAgent : !chiefAgent) || messageText.trim().length === 0}
                 >
                   <ArrowUp size={18} />
                 </button>
@@ -1138,6 +1436,34 @@ function buildAgentRequestText(text: string, project: Project, files: WorkspaceF
   return `${text}\n\nWorkspace context explicitly attached by the user for ${project.name} (${project.namespace}). The remote agent cannot access the local filesystem. Use only the file excerpts below when they are relevant.\n\n${fileContext}`;
 }
 
+function buildChiefTaskRequestText(
+  text: string,
+  project: Project,
+  chief: AgentInstance,
+  participants: AgentInstance[],
+  files: WorkspaceFileAttachment[],
+) {
+  const participantList =
+    participants.length > 0
+      ? participants
+          .map((agent) => `- ${agent.name}: ${agent.tags.length > 0 ? agent.tags.join(", ") : "no capability tags"}`)
+          .join("\n")
+      : "- No participant agents selected. Treat this as a Chief-only task.";
+  const taskRequest = [
+    `You are the Chief agent for Vibe Office project "${project.name}" (${project.namespace}).`,
+    "Handle this as a project-scoped Task Room request.",
+    "Use one planning/coordination round only. Do not assume direct access to local files or other agents.",
+    `Chief: ${chief.name}`,
+    "Selected participant agents:",
+    participantList,
+    "",
+    "Task:",
+    text,
+  ].join("\n");
+
+  return buildAgentRequestText(taskRequest, project, files);
+}
+
 function getPartText(parts: A2APart[]) {
   return parts
     .map((part) => {
@@ -1289,30 +1615,34 @@ function DirectChat({ messages }: { messages: ConversationMessage[] }) {
           <p>Start a project-scoped direct chat with this connected agent.</p>
         </div>
       ) : (
-        messages.map((message) => {
-          const isUser = message.role === "user";
-          const isSystem = message.role === "system";
-          return (
-            <div className={`message-row ${isUser ? "user-message" : "agent-message"}`} key={message.id}>
-              <div className={`${isUser ? "message-bubble" : "agent-output"} ${message.status} ${isSystem ? "system" : ""}`}>
-                {isUser ? <p>{getPartText(message.contentParts)}</p> : <MarkdownContent content={getPartText(message.contentParts)} />}
-                {message.workspaceContext && message.workspaceContext.length > 0 ? (
-                  <div className="message-context-strip" aria-label="Workspace files sent with this message">
-                    {message.workspaceContext.map((file) => (
-                      <span className="message-context-chip" key={`${message.id}-${file.path}`}>
-                        <FileText size={12} />
-                        {file.path}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })
+        <MessageRows messages={messages} />
       )}
     </div>
   );
+}
+
+function MessageRows({ messages }: { messages: ConversationMessage[] }) {
+  return messages.map((message) => {
+    const isUser = message.role === "user";
+    const isSystem = message.role === "system";
+    return (
+      <div className={`message-row ${isUser ? "user-message" : "agent-message"}`} key={message.id}>
+        <div className={`${isUser ? "message-bubble" : "agent-output"} ${message.status} ${isSystem ? "system" : ""}`}>
+          {isUser ? <p>{getPartText(message.contentParts)}</p> : <MarkdownContent content={getPartText(message.contentParts)} />}
+          {message.workspaceContext && message.workspaceContext.length > 0 ? (
+            <div className="message-context-strip" aria-label="Workspace files sent with this message">
+              {message.workspaceContext.map((file) => (
+                <span className="message-context-chip" key={`${message.id}-${file.path}`}>
+                  <FileText size={12} />
+                  {file.path}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  });
 }
 
 function NoAgentState({ onAddAgent }: { onAddAgent: () => void }) {
@@ -1330,34 +1660,64 @@ function NoAgentState({ onAddAgent }: { onAddAgent: () => void }) {
   );
 }
 
-function TaskRoom({ agents, projectTask }: { agents: AgentInstance[]; projectTask?: ProjectTask }) {
-  const chief = agents.find((agent) => agent.isChief);
-  const participants = projectTask
-    ? agents.filter((agent) => projectTask.participantAgentIds.includes(agent.id))
-    : agents.filter((agent) => agent.status === "online");
+function TaskRoom({
+  agents,
+  chief,
+  messages,
+  participantIds,
+  projectTask,
+  onToggleParticipant,
+}: {
+  agents: AgentInstance[];
+  chief?: AgentInstance;
+  messages: ConversationMessage[];
+  participantIds: string[];
+  projectTask?: ProjectTask;
+  onToggleParticipant: (agentId: string, checked: boolean) => void;
+}) {
+  const participants = agents.filter((agent) => agent.id !== chief?.id && agent.status === "online");
 
   return (
     <div className="conversation-body">
       <div className="task-summary">
         <div>
-          <h3>{projectTask?.title ?? `${chief?.name ?? "Chief"} task room pending`}</h3>
-          <p>{projectTask?.summary ?? "Direct chat is active now. Chief-led one-round delegation is the next milestone."}</p>
+          <h3>{projectTask?.title ?? `${chief?.name ?? "Chief"} task room`}</h3>
+          <p>
+            {projectTask?.summary ??
+              (chief ? "Submit a project-scoped task to Chief and choose the participant agents for the first round." : "Assign one connected agent as Chief before starting a task room.")}
+          </p>
         </div>
-        <span className="mode-badge">{projectTask?.state ?? "unsupported"}</span>
+        <span className="mode-badge">{projectTask?.state ?? (chief ? "idle" : "unsupported")}</span>
       </div>
+      {chief ? (
+        <div className="assignment-row chief-assignment">
+          <AgentAvatar agent={chief} size="small" />
+          <div>
+            <strong>{chief.name}</strong>
+            <span>Chief owner</span>
+          </div>
+          <span className={chief.status === "online" ? "status-badge success" : "status-badge danger"}>{chief.status}</span>
+        </div>
+      ) : null}
       <div className="assignment-list">
         {participants.map((agent) => (
-          <div className="assignment-row" key={agent.id}>
+          <label className="assignment-row selectable-assignment" key={agent.id}>
             <AgentAvatar agent={agent} size="small" />
             <div>
               <strong>{agent.name}</strong>
               <span>{agent.tags.join(" / ")}</span>
             </div>
-            <span className={agent.status === "online" ? "status-badge success" : "status-badge danger"}>
-              {agent.status}
-            </span>
-          </div>
+            <input
+              type="checkbox"
+              checked={participantIds.includes(agent.id)}
+              onChange={(event) => onToggleParticipant(agent.id, event.currentTarget.checked)}
+              aria-label={`Select ${agent.name} for task room`}
+            />
+          </label>
         ))}
+      </div>
+      <div className="task-room-transcript">
+        {messages.length > 0 ? <MessageRows messages={messages} /> : <div className="inline-empty">Task Room messages will appear here after you submit a Chief-led task.</div>}
       </div>
     </div>
   );

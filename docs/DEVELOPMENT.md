@@ -433,6 +433,14 @@ Goal:
 
 Task Room becomes real multi-agent coordination.
 
+M4 foundation progress:
+
+- Task Room composer can submit a project-scoped task request to the selected Chief agent.
+- Users can choose online participant agents before dispatch.
+- Vibe Office creates parent `chief_delegation` runs and ProjectTask records before the remote Chief response returns.
+- Chief responses are stored in a project-scoped task-room conversation.
+- Workspace file context still follows the explicit preview-and-attach boundary from M2.5.
+
 Scope:
 
 - Chief receives the user's task.

@@ -982,11 +982,31 @@ label > span:not(.field-label):not(.field-help),
   padding: 12px;
 }
 
+.chief-assignment {
+  border-style: dashed;
+}
+
+.selectable-assignment {
+  cursor: pointer;
+}
+
+.selectable-assignment input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 .assignment-row span:not(.avatar):not(.status-badge) {
   display: block;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 18px;
+}
+
+.task-room-transcript {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
 }
 
 .status-badge.success,
