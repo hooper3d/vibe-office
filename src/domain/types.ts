@@ -1,15 +1,18 @@
 export type AgentStatus = "online" | "checking" | "offline";
+export type AgentOfficeRole = "chief" | "builder" | "writer" | "operator";
 
 export type AgentInstance = {
   id: string;
   name: string;
   role: string;
+  officeRole?: AgentOfficeRole;
   location: string;
   endpoint: string;
   a2aEndpoint: string;
   agentCardUrl: string;
   apiKey?: string;
   avatarUrl?: string;
+  ipAddress?: string;
   model: string;
   tags: string[];
   status: AgentStatus;
@@ -21,6 +24,7 @@ export type Project = {
   name: string;
   namespace: string;
   description: string;
+  directory?: string;
 };
 
 export type AgentOutputStatus = "completed" | "running" | "failed";

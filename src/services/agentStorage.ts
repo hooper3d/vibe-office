@@ -1,4 +1,4 @@
-import type { AgentInstance } from "../domain/types";
+import type { AgentInstance, AgentOfficeRole } from "../domain/types";
 
 const STORAGE_KEY = "vibe-office.configured-agents";
 
@@ -25,6 +25,12 @@ export function loadConfiguredAgents() {
 
 function ensureOneChief(agents: AgentInstance[]) {
   if (agents.length === 0) return agents;
+  if (agents.some((agent) => agent.officeRole)) {
+    return agents.map((agent) => ({
+      ...agent,
+      isChief: agent.officeRole === "chief",
+    }));
+  }
   if (agents.some((agent) => agent.isChief)) {
     return agents.map((agent) => ({
       ...agent,
@@ -80,5 +86,12 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     agentCardUrl,
     apiKey: typeof safeAgent.apiKey === "string" ? safeAgent.apiKey : undefined,
     avatarUrl: typeof safeAgent.avatarUrl === "string" ? safeAgent.avatarUrl : undefined,
+    ipAddress: typeof safeAgent.ipAddress === "string" ? safeAgent.ipAddress : undefined,
+    officeRole: normalizeOfficeRole(safeAgent.officeRole, safeAgent.isChief),
   };
+}
+
+function normalizeOfficeRole(value: unknown, isChief?: boolean): AgentOfficeRole {
+  if (value === "chief" || value === "builder" || value === "writer" || value === "operator") return value;
+  return isChief ? "chief" : "operator";
 }

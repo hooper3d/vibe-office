@@ -1,24 +1,32 @@
-import type { AgentInstance } from "./types";
+import type { AgentInstance, AgentOfficeRole } from "./types";
 
 export function createAgentFromHermesSetup(form: FormData): AgentInstance {
-  const name = readFormValue(form, "name", "New Hermes Agent");
-  const role = readFormValue(form, "role", "General Hermes instance");
-  const model = readFormValue(form, "model", "hermes-agent");
+  const name = readFormValue(form, "name", "New Agent");
+  const role = readFormValue(form, "role", "");
+  const model = readFormValue(form, "model", "");
 
   return {
     id: `agent-${Date.now()}`,
     name,
     role,
-    location: readFormValue(form, "location", "Configured instance"),
-    endpoint: readFormValue(form, "endpoint", "http://127.0.0.1:8642/v1"),
-    a2aEndpoint: readFormValue(form, "a2aEndpoint", "http://127.0.0.1:8642/a2a"),
-    agentCardUrl: readFormValue(form, "agentCardUrl", "http://127.0.0.1:8642/.well-known/agent-card.json"),
+    officeRole: readOfficeRole(form),
+    location: readFormValue(form, "location", ""),
+    endpoint: readFormValue(form, "endpoint", ""),
+    a2aEndpoint: readFormValue(form, "a2aEndpoint", ""),
+    agentCardUrl: readFormValue(form, "agentCardUrl", ""),
     apiKey: readOptionalFormValue(form, "apiKey"),
     avatarUrl: readOptionalFormValue(form, "avatarUrl"),
+    ipAddress: readOptionalFormValue(form, "ipAddress"),
     model,
-    tags: normalizeTags(readFormValue(form, "tags", "general")),
+    tags: normalizeTags(readFormValues(form, "tags")),
     status: "online",
   };
+}
+
+function readOfficeRole(form: FormData): AgentOfficeRole {
+  const value = readFormValue(form, "officeRole", "operator");
+  if (value === "chief" || value === "builder" || value === "writer") return value;
+  return "operator";
 }
 
 function readFormValue(form: FormData, key: string, fallback: string) {
@@ -33,11 +41,16 @@ function readOptionalFormValue(form: FormData, key: string) {
   return value.trim() || undefined;
 }
 
-function normalizeTags(value: string) {
-  const tags = value
-    .split(",")
+function readFormValues(form: FormData, key: string) {
+  return form
+    .getAll(key)
+    .flatMap((value) => (typeof value === "string" ? value.split(",") : []));
+}
+
+function normalizeTags(values: string[]) {
+  const tags = values
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-  return tags.length > 0 ? tags : ["general"];
+  return tags;
 }

@@ -5,19 +5,25 @@ import {
   Bot,
   CheckCircle2,
   ChevronDown,
+  CircleHelp,
   ExternalLink,
   Folder,
   Globe2,
   KeyRound,
   Loader2,
+  MapPin,
   MessageSquare,
   Moon,
   Pencil,
   Plus,
   RefreshCw,
+  Server,
+  Settings,
   Sparkles,
   Sun,
+  Tags,
   Trash2,
+  UserRound,
   UserRoundCog,
   XCircle,
 } from "lucide-react";
@@ -34,10 +40,9 @@ import {
   projectRuns,
   projectTasks,
   projects as seedProjects,
-  setupSteps,
 } from "./domain/seedData";
 import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "./domain/projectScope";
-import type { AgentInstance, AgentStatus, Project } from "./domain/types";
+import type { AgentInstance, AgentOfficeRole, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { HermesA2AAdapter } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -46,6 +51,9 @@ type OutputMode = "browser" | "outputs" | "artifacts";
 type ConversationMode = "single" | "task-room";
 type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 type ThemeMode = "dark" | "light";
+type DirectoryPickerHandle = {
+  name: string;
+};
 type ConfirmAction =
   | {
       kind: "delete-project";
@@ -57,6 +65,30 @@ type ConfirmAction =
     };
 
 const THEME_STORAGE_KEY = "vibe-office.theme";
+const MAX_AVATAR_BYTES = 512 * 1024;
+const NON_CAPABILITY_TAGS = ["local", "hermes", "runtime"];
+const CAPABILITY_TAG_OPTIONS = [
+  "drafts",
+  "releases",
+  "summaries",
+  "editing",
+  "artifacts",
+  "browser",
+  "code",
+  "planning",
+];
+const OFFICE_ROLE_OPTIONS: Array<{ label: string; value: AgentOfficeRole }> = [
+  { label: "Chief", value: "chief" },
+  { label: "Builder", value: "builder" },
+  { label: "Writer", value: "writer" },
+  { label: "Operator", value: "operator" },
+];
+
+declare global {
+  interface Window {
+    showDirectoryPicker?: () => Promise<DirectoryPickerHandle>;
+  }
+}
 
 export function App() {
   const [initialWorkspace] = useState(() => loadWorkspaceState());
@@ -87,11 +119,11 @@ export function App() {
   const [browserUrl, setBrowserUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [showSetup, setShowSetup] = useState(false);
+  const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [projectFormError, setProjectFormError] = useState("");
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const [retestingAgentIds, setRetestingAgentIds] = useState<string[]>([]);
   const [testState, setTestState] = useState<ConnectionTestState>("idle");
   const [testMessage, setTestMessage] = useState("");
   const [splitPercent, setSplitPercent] = useState(54);
@@ -187,44 +219,97 @@ export function App() {
 
   function closeSetup() {
     setShowSetup(false);
+    setSetupAgentId(null);
     setTestState("idle");
     setTestMessage("");
   }
 
-  function saveDemoAgent(event: FormEvent<HTMLFormElement>) {
+  function openAddAgentDialog() {
+    setSetupAgentId(null);
+    setTestState("idle");
+    setTestMessage("");
+    setShowSetup(true);
+  }
+
+  function openAgentEditor(agentId: string) {
+    setSetupAgentId(agentId);
+    setTestState("idle");
+    setTestMessage("");
+    setShowSetup(true);
+  }
+
+  async function saveDemoAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const newAgent = createAgentFromHermesSetup(form);
+
+    if (setupAgentId) {
+      setAgents((current) =>
+        current.map((agent) =>
+          agent.id === setupAgentId
+            ? {
+                ...agent,
+                ...newAgent,
+                id: agent.id,
+                apiKey: newAgent.apiKey ?? agent.apiKey,
+                avatarUrl: agent.avatarUrl,
+                isChief: newAgent.officeRole === "chief",
+                status: agent.status,
+              }
+            : newAgent.officeRole === "chief"
+              ? { ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole }
+              : agent,
+        ),
+      );
+      setSelectedAgentId(setupAgentId);
+      closeSetup();
+      return;
+    }
+
     const normalizedEndpoint = newAgent.endpoint.replace(/\/$/, "");
-    const duplicate = agents.some(
+    const duplicateAgent = agents.find(
       (agent) => agent.endpoint.replace(/\/$/, "") === normalizedEndpoint && agent.model === newAgent.model,
     );
 
-    if (duplicate) {
-      setTestState("failed");
-      setTestMessage("This provider and model are already connected.");
+    if (duplicateAgent) {
+      setAgents((current) =>
+        current.map((agent) =>
+          agent.id === duplicateAgent.id
+            ? {
+                ...agent,
+                ...newAgent,
+                id: agent.id,
+                apiKey: newAgent.apiKey ?? agent.apiKey,
+                avatarUrl: agent.avatarUrl,
+                isChief: newAgent.officeRole === "chief",
+                status: agent.status,
+              }
+            : newAgent.officeRole === "chief"
+              ? { ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole }
+              : agent,
+        ),
+      );
+      closeSetup();
       return;
     }
 
     setAgents((current) => {
-      const shouldBecomeChief = current.length === 0 || !current.some((agent) => agent.isChief);
-      return [...current, { ...newAgent, isChief: shouldBecomeChief }];
+      const addedAgent = { ...newAgent, isChief: newAgent.officeRole === "chief" };
+      if (newAgent.officeRole !== "chief") return [...current, addedAgent];
+      return [...current.map((agent) => ({ ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole })), addedAgent];
     });
     setSelectedAgentId(newAgent.id);
     closeSetup();
   }
 
-  function setChiefAgent(agentId: string) {
-    setAgents((current) =>
-      current.map((agent) => ({
-        ...agent,
-        isChief: agent.id === agentId,
-      })),
-    );
-  }
-
   function normalizeChief(agentsToNormalize: AgentInstance[]) {
     if (agentsToNormalize.length === 0) return agentsToNormalize;
+    if (agentsToNormalize.some((agent) => agent.officeRole)) {
+      return agentsToNormalize.map((agent) => ({
+        ...agent,
+        isChief: agent.officeRole === "chief",
+      }));
+    }
     if (agentsToNormalize.some((agent) => agent.isChief)) {
       return agentsToNormalize.map((agent) => ({
         ...agent,
@@ -235,23 +320,6 @@ export function App() {
       ...agent,
       isChief: index === 0,
     }));
-  }
-
-  async function retestAgent(agentId: string) {
-    const agent = agents.find((item) => item.id === agentId);
-    if (!agent || retestingAgentIds.includes(agentId)) return;
-
-    setRetestingAgentIds((current) => [...current, agentId]);
-    setAgents((current) => current.map((item) => (item.id === agentId ? { ...item, status: "checking" } : item)));
-
-    try {
-      await new HermesA2AAdapter({ agent }).testConnection();
-      setAgents((current) => current.map((item) => (item.id === agentId ? { ...item, status: "online" } : item)));
-    } catch {
-      setAgents((current) => current.map((item) => (item.id === agentId ? { ...item, status: "offline" } : item)));
-    } finally {
-      setRetestingAgentIds((current) => current.filter((id) => id !== agentId));
-    }
   }
 
   function requestDeleteAgent(agentId: string) {
@@ -266,6 +334,20 @@ export function App() {
       setSelectedAgentId(fallbackAgent?.id ?? "");
     }
     setConfirmAction(null);
+  }
+
+  function updateAgentAvatar(agentId: string, avatarUrl?: string) {
+    setAgents((current) => current.map((agent) => (agent.id === agentId ? { ...agent, avatarUrl } : agent)));
+  }
+
+  async function handleExistingAgentAvatar(agentId: string, file?: File) {
+    const result = await readAvatarFile(file);
+    if (result.error) {
+      setTestState("failed");
+      setTestMessage(result.error);
+      return;
+    }
+    updateAgentAvatar(agentId, result.dataUrl);
   }
 
   function openProjectDialog() {
@@ -289,9 +371,16 @@ export function App() {
   function saveProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const name = String(form.get("name") || "").trim();
+    const rawName = String(form.get("name") || "").trim();
     const description = String(form.get("description") || "").trim();
+    const directory = String(form.get("directory") || "").trim();
     const editingProject = editingProjectId ? projects.find((project) => project.id === editingProjectId) : undefined;
+    const name = rawName || deriveProjectNameFromDirectory(directory);
+
+    if (!editingProject && !directory) {
+      setProjectFormError("Choose a project folder or paste a local path.");
+      return;
+    }
 
     if (!name) {
       setProjectFormError("Project name is required.");
@@ -317,6 +406,7 @@ export function App() {
             ? {
                 ...project,
                 name,
+                directory: directory || undefined,
                 description: description || "Project-scoped workspace.",
               }
             : project,
@@ -331,6 +421,7 @@ export function App() {
       name,
       namespace,
       description: description || "Project-scoped workspace.",
+      directory: directory || undefined,
     };
 
     setProjects((current) => [...current, project]);
@@ -615,37 +706,55 @@ export function App() {
 
         <section className="nav-section">
           <div className="section-label">
-                  <span>Agents</span>
-                  <span className="count-badge">{agents.length}</span>
-                </div>
-                <div className="nav-list">
+            <span className="section-title">
+              <Bot size={14} />
+              Agents
+            </span>
+            <span className="count-badge">{agents.length}</span>
+          </div>
+          <div className="nav-list">
             {agents.length === 0 ? (
               <div className="inline-empty">Add an agent provider to start.</div>
             ) : null}
-            {agents.map((agent) => (
-              <button
-                className={`nav-item ${selectedAgentId === agent.id ? "active" : ""}`}
-                key={agent.id}
-                onClick={() => {
-                  setSelectedAgentId(agent.id);
-                  setConversationMode("single");
-                }}
-              >
-                <AgentAvatar agent={agent} />
-                <span className="nav-item-content">
-                  <span className="nav-item-title">
-                    {agent.name}
-                    {agent.isChief ? <span className="chief-dot">Chief</span> : null}
-                  </span>
-                  <span className="nav-item-meta">
-                    <StatusDot status={agent.status} />
-                    {agent.tags.slice(0, 2).join(" / ")}
-                  </span>
-                </span>
-              </button>
-            ))}
+            {agents.map((agent) => {
+              const isActive = selectedAgentId === agent.id;
+              return (
+                <div className={`agent-row ${isActive ? "active" : ""}`} key={agent.id}>
+                  <button
+                    className="nav-item agent-item"
+                    onClick={() => {
+                      setSelectedAgentId(agent.id);
+                      setConversationMode("single");
+                    }}
+                  >
+                    <AgentAvatar agent={agent} />
+                    <span className="nav-item-content">
+                      <span className="nav-item-title">
+                        <span className="nav-item-name">{agent.name}</span>
+                        <span className="chief-dot">{getOfficeRoleLabel(agent.officeRole, agent.isChief)}</span>
+                      </span>
+                      <span className="nav-item-meta">
+                        <StatusDot status={agent.status} />
+                        {agent.tags.slice(0, 2).join(" / ")}
+                      </span>
+                    </span>
+                  </button>
+                  <div className="row-actions agent-row-actions" aria-label={`${agent.name} agent actions`}>
+                    <button
+                      className="icon-button mini-button"
+                      type="button"
+                      onClick={() => openAgentEditor(agent.id)}
+                      aria-label={`Edit ${agent.name}`}
+                      title="Edit agent"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <button className="secondary-action" onClick={() => setShowSetup(true)}>
+          <button className="secondary-action" onClick={openAddAgentDialog}>
             <Plus size={16} />
             Add agent
           </button>
@@ -653,7 +762,10 @@ export function App() {
 
         <section className="nav-section">
           <div className="section-label">
-            <span>Projects</span>
+            <span className="section-title">
+              <Folder size={14} />
+              Projects
+            </span>
             <button className="section-icon-button" type="button" onClick={openProjectDialog} aria-label="Create project" title="Create project">
               <Plus size={14} />
             </button>
@@ -664,12 +776,14 @@ export function App() {
               return (
                 <div className={`project-row ${isActive ? "active" : ""}`} key={project.id}>
                   <button className="project-item" onClick={() => setSelectedProjectId(project.id)}>
-                    <Folder size={16} />
-                    <span>
-                      <span className="project-name">{project.name}</span>
-                      <span className="project-namespace">{project.namespace}</span>
-                    </span>
-                  </button>
+                      <span className="project-icon" aria-hidden="true">
+                        <Folder size={15} />
+                      </span>
+                      <span>
+                        <span className="project-name">{project.name}</span>
+                        <span className="project-namespace">{project.directory ?? project.namespace}</span>
+                      </span>
+                    </button>
                   <div className="row-actions" aria-label={`${project.name} project actions`}>
                     <button
                       className="icon-button mini-button"
@@ -697,10 +811,10 @@ export function App() {
           </div>
         </section>
 
-        <button className="setup-card" onClick={() => setShowSetup(true)}>
-          <UserRoundCog size={18} />
+        <button className="setup-card" onClick={openAddAgentDialog}>
+          <Settings size={18} />
           <span>
-            <strong>Office Setup</strong>
+            <strong>Settings</strong>
           </span>
         </button>
       </aside>
@@ -830,11 +944,9 @@ export function App() {
           onRunTest={runConnectionTest}
           onResetTest={resetConnectionTest}
           onSaveAgent={saveDemoAgent}
-          agents={agents}
-          onSetChief={setChiefAgent}
-          onRetestAgent={retestAgent}
+          agent={setupAgentId ? agents.find((agent) => agent.id === setupAgentId) : undefined}
           onDeleteAgent={requestDeleteAgent}
-          retestingAgentIds={retestingAgentIds}
+          onAgentAvatarFile={handleExistingAgentAvatar}
         />
       ) : null}
       {showProjectDialog ? (
@@ -977,6 +1089,40 @@ function isDirectMessageResponse(task: A2ATask) {
   return task.metadata?.responseKind === "direct-message";
 }
 
+async function readAvatarFile(file?: File): Promise<{ dataUrl?: string; error?: string }> {
+  if (!file || file.size === 0) return {};
+
+  if (!file.type.startsWith("image/")) {
+    return { error: "Avatar must be an image file." };
+  }
+
+  if (file.size > MAX_AVATAR_BYTES) {
+    return { error: "Avatar image must be 512 KB or smaller." };
+  }
+
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    return { dataUrl };
+  } catch {
+    return { error: "Unable to read avatar image." };
+  }
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Avatar reader returned a non-text result."));
+      }
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Avatar reader failed.")));
+    reader.readAsDataURL(file);
+  });
+}
+
 function slugifyProjectName(name: string) {
   const slug = name
     .trim()
@@ -987,15 +1133,29 @@ function slugifyProjectName(name: string) {
   return slug || `project-${Date.now()}`;
 }
 
+function deriveProjectNameFromDirectory(directory: string) {
+  return directory
+    .trim()
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop() ?? "";
+}
+
 function StatusDot({ status }: { status: AgentStatus }) {
   return <span className={`status-dot ${status}`} aria-label={`Status: ${status}`} />;
 }
 
-function AgentAvatar({ agent, size = "regular" }: { agent: AgentInstance; size?: "regular" | "small" }) {
+function getOfficeRoleLabel(role?: AgentOfficeRole, isChief?: boolean) {
+  const value = role ?? (isChief ? "chief" : "operator");
+  return OFFICE_ROLE_OPTIONS.find((option) => option.value === value)?.label ?? "Operator";
+}
+
+function AgentAvatar({ agent, size = "regular" }: { agent: AgentInstance; size?: "regular" | "small" | "large" }) {
   const fallback = agent.name.slice(0, 1).toUpperCase();
 
   return (
-    <span className={`avatar ${size === "small" ? "small" : ""}`} aria-hidden="true">
+    <span className={`avatar ${size === "small" ? "small" : size === "large" ? "large" : ""}`} aria-hidden="true">
       {agent.avatarUrl ? <img alt="" src={agent.avatarUrl} /> : fallback}
     </span>
   );
@@ -1309,6 +1469,34 @@ function ProjectDialog({
   onSaveProject: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const isEditing = Boolean(project);
+  const [projectName, setProjectName] = useState(project?.name ?? "");
+  const [directory, setDirectory] = useState(project?.directory ?? "");
+  const [folderError, setFolderError] = useState("");
+
+  function updateDirectory(value: string) {
+    setDirectory(value);
+    setFolderError("");
+    if (!projectName.trim()) {
+      setProjectName(deriveProjectNameFromDirectory(value));
+    }
+  }
+
+  async function chooseProjectFolder() {
+    if (!window.showDirectoryPicker) {
+      setFolderError("Folder picker is not available here. Paste the local path instead.");
+      return;
+    }
+
+    try {
+      const handle = await window.showDirectoryPicker();
+      updateDirectory(handle.name);
+      setFolderError("");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setFolderError("Unable to select folder.");
+    }
+  }
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="project-dialog" role="dialog" aria-modal="true" aria-labelledby="project-title">
@@ -1325,8 +1513,30 @@ function ProjectDialog({
 
         <form className="setup-form" onSubmit={onSaveProject}>
           <label>
+            Project directory
+            <div className="folder-picker-row">
+              <input
+                name="directory"
+                value={directory}
+                placeholder="Paste a local path or browse"
+                onChange={(event) => updateDirectory(event.currentTarget.value)}
+              />
+              <button type="button" className="secondary-button folder-picker-button" onClick={chooseProjectFolder}>
+                <Folder size={16} />
+                Browse
+              </button>
+            </div>
+            <span>{folderError || "Used as the local workspace reference for this project."}</span>
+          </label>
+          <label>
             Project name
-            <input name="name" defaultValue={project?.name ?? ""} required autoFocus />
+            <input
+              name="name"
+              value={projectName}
+              placeholder="Auto from folder if empty"
+              onChange={(event) => setProjectName(event.currentTarget.value)}
+              autoFocus={!isEditing}
+            />
             <span>{isEditing ? `Namespace stays ${project?.namespace}.` : "Used in the sidebar and project namespace."}</span>
           </label>
           <label>
@@ -1398,6 +1608,111 @@ function ConfirmDialog({
   );
 }
 
+function FieldLabel({ help, label }: { help: string; label: string }) {
+  return (
+    <span className="field-label">
+      {label}
+      <span className="field-help" tabIndex={0} title={help} aria-label={help}>
+        <CircleHelp size={13} />
+      </span>
+    </span>
+  );
+}
+
+function CapabilityTagSelector({ options, selectedTags }: { options: string[]; selectedTags: string[] }) {
+  const [currentTags, setCurrentTags] = useState(selectedTags);
+  const selectedSummary = currentTags.length > 0 ? currentTags.join(", ") : "Select capabilities";
+
+  function toggleTag(tag: string, checked: boolean) {
+    setCurrentTags((current) => (checked ? Array.from(new Set([...current, tag])) : current.filter((item) => item !== tag)));
+  }
+
+  return (
+    <div className="capability-selector" role="group" aria-label="Capability tags">
+      <FieldLabel help="For filtering and your own reference only." label="Capability tags" />
+      <details className="capability-select">
+        <summary>
+          <span className="selected-capabilities">{selectedSummary}</span>
+          <ChevronDown size={16} />
+        </summary>
+        <div className="capability-options">
+          {options.map((tag) => (
+            <label className="capability-option" key={tag}>
+              <input
+                checked={currentTags.includes(tag)}
+                name="tags"
+                type="checkbox"
+                value={tag}
+                onChange={(event) => toggleTag(tag, event.currentTarget.checked)}
+              />
+              <span>{tag}</span>
+            </label>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function OfficeRoleSelector({ selectedRole }: { selectedRole?: AgentOfficeRole }) {
+  const [currentRole, setCurrentRole] = useState<AgentOfficeRole | "">(selectedRole ?? "");
+  const selectedLabel = currentRole ? getOfficeRoleLabel(currentRole) : "Select role";
+
+  useEffect(() => {
+    setCurrentRole(selectedRole ?? "");
+  }, [selectedRole]);
+
+  function selectRole(role: AgentOfficeRole, details: HTMLElement | null) {
+    setCurrentRole(role);
+    details?.removeAttribute("open");
+  }
+
+  return (
+    <div className="office-role-selector">
+      <FieldLabel help="Office identity for routing and your own organization." label="Office role" />
+      <details className="capability-select single-select">
+        <summary>
+          <span className="selected-capabilities">{selectedLabel}</span>
+          <ChevronDown size={16} />
+        </summary>
+        <div className="capability-options role-options">
+          {OFFICE_ROLE_OPTIONS.map((option) => (
+            <label className="capability-option role-option" key={option.value}>
+              <input
+                checked={currentRole === option.value}
+                name="officeRole"
+                required
+                type="radio"
+                value={option.value}
+                onChange={(event) => selectRole(option.value, event.currentTarget.closest("details"))}
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function getRuntimeRoot(endpoint: string) {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  return trimmed
+    .replace(/\/v1\/chat\/completions$/i, "")
+    .replace(/\/chat\/completions$/i, "")
+    .replace(/\/v1$/i, "");
+}
+
+function getGeneratedA2AEndpoint(endpoint: string) {
+  const root = getRuntimeRoot(endpoint);
+  return root ? `${root}/a2a` : "";
+}
+
+function getGeneratedAgentCardUrl(endpoint: string) {
+  const root = getRuntimeRoot(endpoint);
+  return root ? `${root}/.well-known/agent-card.json` : "";
+}
+
 function SetupWizard({
   testState,
   testMessage,
@@ -1405,11 +1720,9 @@ function SetupWizard({
   onRunTest,
   onResetTest,
   onSaveAgent,
-  agents,
-  onSetChief,
-  onRetestAgent,
+  agent,
   onDeleteAgent,
-  retestingAgentIds,
+  onAgentAvatarFile,
 }: {
   testState: ConnectionTestState;
   testMessage: string;
@@ -1417,194 +1730,234 @@ function SetupWizard({
   onRunTest: (form: FormData) => void;
   onResetTest: () => void;
   onSaveAgent: (event: FormEvent<HTMLFormElement>) => void;
-  agents: AgentInstance[];
-  onSetChief: (agentId: string) => void;
-  onRetestAgent: (agentId: string) => void;
+  agent?: AgentInstance;
   onDeleteAgent: (agentId: string) => void;
-  retestingAgentIds: string[];
+  onAgentAvatarFile: (agentId: string, file?: File) => void;
 }) {
+  const profileAgent = agent;
+  const profileName = profileAgent?.name ?? "New Agent";
+  const profileNote = profileAgent?.role ?? "";
+  const profileOfficeRole = profileAgent?.officeRole ?? (profileAgent ? (profileAgent.isChief ? "chief" : "operator") : undefined);
+  const profileTags = (profileAgent?.tags ?? []).filter((tag) => !NON_CAPABILITY_TAGS.includes(tag));
+  const capabilityOptions = Array.from(new Set([...CAPABILITY_TAG_OPTIONS, ...profileTags]));
+  const defaultRuntimeBaseUrl = profileAgent?.endpoint ?? "";
+  const [runtimeBaseUrl, setRuntimeBaseUrl] = useState(defaultRuntimeBaseUrl);
+  const generatedA2AEndpoint = getGeneratedA2AEndpoint(runtimeBaseUrl);
+  const generatedAgentCardUrl = getGeneratedAgentCardUrl(runtimeBaseUrl);
+
+  useEffect(() => {
+    setRuntimeBaseUrl(defaultRuntimeBaseUrl);
+  }, [defaultRuntimeBaseUrl, profileAgent?.id]);
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="setup-dialog" role="dialog" aria-modal="true" aria-labelledby="setup-title">
-        <div className="setup-header">
+        <div className="setup-header agent-dialog-header">
           <div>
-            <div className="eyebrow">Office Setup</div>
-            <h2 id="setup-title">Connect an agent provider</h2>
-            <p>Map an existing agent into Vibe Office without copying its memory or personality.</p>
+            <h2 id="setup-title">{profileAgent ? "Edit Agent" : "Add Agent"}</h2>
+            <p>{profileAgent ? "Update this agent profile and runtime connection." : "Create a new agent profile and runtime connection."}</p>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="Close setup">
+          <button className="icon-button" onClick={onClose} aria-label={profileAgent ? "Close Edit Agent" : "Close Add Agent"}>
             <XCircle size={18} />
           </button>
         </div>
 
-        <div className="stepper" aria-label="Setup steps">
-          {setupSteps.map((step, index) => (
-            <div className="step" key={step}>
-              <span>{index + 1}</span>
-              {step}
-            </div>
-          ))}
-        </div>
-
-        <section className="agent-management" aria-label="Connected agents">
-          <div className="management-heading">
-            <h3>Connected agents</h3>
-            <span>{agents.length}</span>
-          </div>
-          {agents.length === 0 ? (
-            <p>No real agents connected yet.</p>
-          ) : (
-            <div className="management-list">
-              {agents.map((agent) => (
-                <div className="management-row" key={agent.id}>
-                  <AgentAvatar agent={agent} size="small" />
-                  <div className="management-content">
-                    <strong>{agent.name}</strong>
-                    <span>{agent.location} / {agent.tags.slice(0, 2).join(" / ")}</span>
-                  </div>
-                  <div className="management-actions">
-                    {agent.isChief ? (
-                      <span className="chief-dot">Chief</span>
+        <form className="setup-form" onSubmit={onSaveAgent} onChange={onResetTest}>
+          <section className="profile-section" aria-label="Agent profile">
+            <div className="profile-panel">
+              <section className="profile-block identity-block" aria-label="Identity">
+                <div className="profile-block-title">
+                  <span className="profile-title-line">
+                    <span className="profile-block-icon">
+                      <UserRound size={18} />
+                    </span>
+                    <span>Identity</span>
+                  </span>
+                  <span className="avatar-stack">
+                    {profileAgent ? (
+                      <label className="avatar-edit" aria-label={`Change avatar for ${profileAgent.name}`} title="Change avatar">
+                        <AgentAvatar agent={profileAgent} size="large" />
+                        <input
+                          accept="image/*"
+                          className="file-input"
+                          name={`avatarFile-${profileAgent.id}`}
+                          type="file"
+                          onChange={(event) => {
+                            onAgentAvatarFile(profileAgent.id, event.currentTarget.files?.[0]);
+                            event.currentTarget.value = "";
+                          }}
+                        />
+                      </label>
                     ) : (
-                      <button className="secondary-button compact-button" type="button" onClick={() => onSetChief(agent.id)}>
-                        Set Chief
-                      </button>
+                      <span className="avatar large empty-avatar" aria-hidden="true">
+                        <UserRound size={24} />
+                      </span>
                     )}
-                    <button
-                      className="icon-button mini-button"
-                      type="button"
-                      onClick={() => onRetestAgent(agent.id)}
-                      aria-label={`Retest ${agent.name}`}
-                      title="Retest agent"
-                      disabled={retestingAgentIds.includes(agent.id)}
-                    >
-                      {retestingAgentIds.includes(agent.id) ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
-                    </button>
-                    <button
-                      className="icon-button mini-button danger-button"
-                      type="button"
-                      onClick={() => onDeleteAgent(agent.id)}
-                      aria-label={`Delete ${agent.name}`}
-                      title="Delete agent"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <span className="avatar-status">
+                      <StatusDot status={profileAgent?.status ?? "offline"} />
+                      {profileAgent?.status ?? "offline"}
+                    </span>
+                  </span>
+                </div>
+                <div className="profile-block-content identity-content">
+                  <div className="identity-fields">
+                    <label>
+                      <FieldLabel help="Shown in the left Agent list." label="Agent name" />
+                      <input name="name" defaultValue={profileName} placeholder="New Agent" required />
+                    </label>
+                    <OfficeRoleSelector selectedRole={profileOfficeRole} />
+                    <CapabilityTagSelector options={capabilityOptions} selectedTags={profileTags} />
+                    <p className="profile-note">Local registry identity used for organizing and routing your own agents.</p>
                   </div>
                 </div>
-              ))}
+              </section>
+
+              <section className="profile-block" aria-label="Instance location">
+                <div className="profile-block-title">
+                  <span className="profile-title-line">
+                    <span className="profile-block-icon">
+                      <MapPin size={18} />
+                    </span>
+                    <span>Instance location</span>
+                  </span>
+                </div>
+                <div className="profile-block-content form-grid compact-grid">
+                  <label>
+                    Instance location
+                    <input name="location" defaultValue={profileAgent?.location ?? ""} placeholder="Remote site, office, or region" />
+                  </label>
+                  <label>
+                    Host / IP
+                    <input name="ipAddress" defaultValue={profileAgent?.ipAddress ?? ""} placeholder="Public or private IP, optional" />
+                  </label>
+                </div>
+              </section>
+
+              <section className="profile-block" aria-label="Notes">
+                <div className="profile-block-title">
+                  <span className="profile-title-line">
+                    <span className="profile-block-icon">
+                      <Tags size={18} />
+                    </span>
+                    <span>Notes</span>
+                  </span>
+                </div>
+                <div className="profile-block-content">
+                  <label className="notes-field">
+                    <FieldLabel help="Private note for your own reference. It is not added to chat prompts." label="Notes" />
+                    <textarea name="role" defaultValue={profileNote} placeholder="Private note about this agent, optional" />
+                  </label>
+                </div>
+              </section>
+
+              <section className="profile-block runtime-block" aria-label="Runtime instance">
+                <div className="profile-block-title">
+                  <span className="profile-title-line">
+                    <span className="profile-block-icon">
+                      <Server size={18} />
+                    </span>
+                    <span>Runtime instance</span>
+                  </span>
+                </div>
+                <div className="profile-block-content runtime-content">
+                  <div className="runtime-group">
+                    <span className="runtime-group-title">User-provided</span>
+                    <div className="form-grid runtime-user-fields">
+                      <label>
+                        Runtime type
+                        <select defaultValue="hermes" aria-label="Runtime type">
+                          <option value="hermes">Hermes</option>
+                        </select>
+                      </label>
+                      <label>
+                        Model or Agent ID
+                        <input name="model" defaultValue={profileAgent?.model ?? ""} placeholder="Remote model or agent id" required />
+                      </label>
+                      <label>
+                        API base URL
+                        <input
+                          name="endpoint"
+                          value={runtimeBaseUrl}
+                          onChange={(event) => setRuntimeBaseUrl(event.currentTarget.value)}
+                          placeholder="https://agent.example.com/v1"
+                          required
+                        />
+                      </label>
+                      <label>
+                        API key
+                        <input name="apiKey" type="password" defaultValue={profileAgent?.apiKey ?? ""} placeholder="Optional API key" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="runtime-group">
+                    <span className="runtime-group-title">Generated from API base URL</span>
+                    <div className="form-grid technical-fields">
+                      <label>
+                        A2A endpoint
+                        <input name="a2aEndpoint" value={generatedA2AEndpoint} placeholder="Generated after API base URL" readOnly required />
+                      </label>
+                      <label>
+                        Agent Card URL
+                        <input name="agentCardUrl" value={generatedAgentCardUrl} placeholder="Generated after API base URL" readOnly required />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="runtime-group">
+                    <span className="runtime-group-title">Optional local settings</span>
+                    <div className="form-grid technical-fields">
+                      <label>
+                        Namespace prefix
+                        <input name="namespace" defaultValue={profileAgent ? "vibe-office" : ""} placeholder="Optional namespace prefix" />
+                      </label>
+                      <label>
+                        Timeout
+                        <input name="timeout" defaultValue={profileAgent ? "60s" : ""} placeholder="60s" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="runtime-status-row">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={(event) => {
+                        const form = event.currentTarget.form;
+                        if (!form || !form.reportValidity()) return;
+                        onRunTest(new FormData(form));
+                      }}
+                      disabled={testState === "running"}
+                    >
+                      {testState === "running" ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
+                      Load Agent Card
+                    </button>
+                  </div>
+
+                  <div className="diagnostics">
+                    <DiagnosticRow label="Agent Card reachable" state={testState} />
+                    <DiagnosticRow label="A2A endpoint configured" state={testState} />
+                    <DiagnosticRow label="Capability discovery ready" state={testState} />
+                    {testMessage ? <div className={`test-message ${testState}`}>{testMessage}</div> : null}
+                  </div>
+                </div>
+              </section>
             </div>
-          )}
-        </section>
-
-        <form className="setup-form" onSubmit={onSaveAgent} onChange={onResetTest}>
-          <div className="form-grid">
-            <label>
-              Agent name
-              <input name="name" defaultValue="Local Hermes" required />
-              <span>Shown in the left Agent list.</span>
-            </label>
-            <label>
-              Avatar URL
-              <input name="avatarUrl" placeholder="https://..." />
-              <span>Optional image used in the registry and setup views.</span>
-            </label>
-            <label>
-              Base URL
-              <input name="endpoint" defaultValue="http://127.0.0.1:8642/v1" required />
-              <span>Provider API endpoint if available.</span>
-            </label>
-            <label>
-              A2A endpoint
-              <input name="a2aEndpoint" defaultValue="http://127.0.0.1:8642/a2a" required />
-              <span>JSON-RPC A2A service endpoint.</span>
-            </label>
-            <label>
-              Agent Card URL
-              <input name="agentCardUrl" defaultValue="http://127.0.0.1:8642/.well-known/agent-card.json" required />
-              <span>Discovery contract for skills and capabilities.</span>
-            </label>
-            <label>
-              API key
-              <input name="apiKey" type="password" required />
-              <span>Stored locally and never used as UI copy.</span>
-            </label>
-            <label>
-              Model or Agent ID
-              <input name="model" defaultValue="hermes-agent" required />
-              <span>The target identity inside this provider.</span>
-            </label>
-            <label>
-              Instance location
-              <input name="location" defaultValue="WSL local" required />
-              <span>Used to distinguish local and remote instances.</span>
-            </label>
-          </div>
-
-          <details className="advanced-settings">
-            <summary>
-              <ChevronDown size={16} />
-              Advanced settings
-            </summary>
-            <div className="form-grid">
-              <label>
-                Namespace prefix
-                <input name="namespace" defaultValue="vibe-office" />
-                <span>Projects append their own memory namespace.</span>
-              </label>
-              <label>
-                Timeout
-                <input name="timeout" defaultValue="60s" />
-                <span>Used for remote cloud instances.</span>
-              </label>
-            </div>
-          </details>
-
-          <div className="test-panel">
-            <div>
-              <h3>A2A connection test</h3>
-              <p>Vibe Office loads the Agent Card before saving this provider.</p>
-            </div>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={(event) => {
-                const form = event.currentTarget.form;
-                if (!form || !form.reportValidity()) return;
-                onRunTest(new FormData(form));
-              }}
-              disabled={testState === "running"}
-            >
-              {testState === "running" ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
-              Load Agent Card
-            </button>
-          </div>
-
-          <div className="diagnostics">
-            <DiagnosticRow label="Agent Card reachable" state={testState} />
-            <DiagnosticRow label="A2A endpoint configured" state={testState} />
-            <DiagnosticRow label="Capability discovery ready" state={testState} />
-            {testMessage ? <div className={`test-message ${testState}`}>{testMessage}</div> : null}
-          </div>
-
-          <div className="form-grid">
-            <label>
-              Responsibility
-              <input name="role" defaultValue="Local Hermes agent runtime" required />
-              <span>Required so Chief can dispatch the right work.</span>
-            </label>
-            <label>
-              Capability tags
-              <input name="tags" defaultValue="local, hermes, runtime" required />
-              <span>Separate tags with commas.</span>
-            </label>
-          </div>
+          </section>
 
           <div className="setup-actions">
+            {profileAgent ? (
+              <button type="button" className="danger-action-button" onClick={() => onDeleteAgent(profileAgent.id)}>
+                <Trash2 size={16} />
+                Delete agent
+              </button>
+            ) : null}
+            <span className="setup-action-spacer" />
             <button type="button" className="secondary-button" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="primary-button" disabled={testState !== "passed"}>
-              Save agent
+            <button type="submit" className="primary-button" disabled={!profileAgent && testState !== "passed"}>
+              {profileAgent ? "Save changes" : "Add agent"}
             </button>
           </div>
         </form>

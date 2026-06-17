@@ -15,6 +15,17 @@ export default defineConfig({
           });
         },
       },
+      "/hermes-hooper": {
+        target: "https://hooper.ink",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/hermes-hooper/, ""),
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.removeHeader("origin");
+          });
+        },
+      },
     },
   },
 });

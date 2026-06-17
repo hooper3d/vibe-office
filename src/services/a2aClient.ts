@@ -105,6 +105,9 @@ function toHermesProxyUrl(url: string) {
     if (parsed.hostname === "127.0.0.1" && parsed.port === "8642") {
       return `/hermes-local${parsed.pathname}${parsed.search}`;
     }
+    if (parsed.hostname === "hooper.ink") {
+      return `/hermes-hooper${parsed.pathname}${parsed.search}`;
+    }
   } catch {
     return url;
   }

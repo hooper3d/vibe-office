@@ -30,4 +30,4 @@ export const projectTasks: ProjectTask[] = [];
 
 export const projectArtifacts: ProjectArtifact[] = [];
 
-export const setupSteps = ["Connect", "Test", "Profile", "Save"];
+export const setupSteps = ["Connect", "Test", "Profile", "Add"];

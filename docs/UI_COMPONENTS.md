@@ -159,6 +159,10 @@ Rules:
 - Keep forms breathable.
 - Show clear errors below the field.
 
+Agent avatar fields should use image upload with a preview and remove action for private/local use. Do not require users to host avatars at a URL or expose the browser's raw file input as the main UI.
+
+Agent capability tags should use a compact multi-select chip control when the options are known. Agent IP address, instance location, and profile notes are local registry notes for the user; do not present them as prompt memory or chat context.
+
 ## Badges
 
 Use badges for status or short metadata.

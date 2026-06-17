@@ -141,13 +141,15 @@ Agent:
 
 - id
 - name
+- officeRole: chief | builder | writer | operator
 - role
 - location
 - endpoint
 - a2aEndpoint
 - agentCardUrl
 - apiKey
-- avatarUrl
+- avatarUrl generated from uploaded avatar image in prototype local storage
+- ipAddress optional local registry note, not injected into agent memory or chat
 - model
 - tags
 - status
@@ -293,6 +295,33 @@ Agent discovery priority:
 Health fallback is not discovery. It may only confirm whether a manually configured provider endpoint is reachable.
 
 ## Milestones
+
+### Current Recorded Milestone: M1.5 Real Agent Workspace Prototype
+
+Status: recorded on 2026-06-18.
+
+The prototype has reached a usable real-agent workspace baseline. It is no longer only a static shell: two real Hermes-compatible agents can be registered, edited, persisted, selected by Project, and used through Direct Chat. Project-scoped conversations, runs, tasks, and artifacts persist through refresh in browser localStorage.
+
+Validated in browser:
+
+- Local Hermes and one remote Hermes-compatible provider can be connected as real agents.
+- Direct Chat can send to a selected real agent and render the user message plus agent reply in the center conversation.
+- The right Output Workspace records completed direct-message runs.
+- Switching Project hides conversation and output records from other Projects.
+- Refresh restores configured agents, projects, conversations, runs, tasks, and artifacts.
+- Agent profile management supports avatar upload, role selection, capability tags, notes, host/IP, runtime settings, delete, and edit-from-sidebar.
+- Project creation records a local project directory reference and can derive Project name from the directory path.
+
+Important boundary:
+
+- Project directory is currently a local registry reference only. Agents cannot read files from that folder yet.
+- API keys are still prototype-only browser localStorage secrets.
+- Remote agents never receive local files automatically.
+- True Codex-like workspace file access requires a local backend or desktop bridge with explicit list/read/search tools and user-controlled context injection.
+
+Next milestone:
+
+- M2.5 Workspace File Layer: bind Project to a real local workspace path, expose controlled file list/read/search actions, and keep remote agents behind explicit Vibe Office mediation.
 
 ### Milestone 0: Real Agent Onboarding
 

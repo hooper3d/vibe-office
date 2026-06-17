@@ -39,10 +39,9 @@ export class HermesA2AAdapter {
         mode: "native-a2a",
       };
     } catch {
-      const card = await this.getHermesBackedAgentCard();
       await this.validateHermesChat();
       return {
-        card,
+        card: await this.getHermesBackedAgentCard(),
         mode: "hermes-adapter",
       };
     }
@@ -78,15 +77,6 @@ export class HermesA2AAdapter {
   }
 
   private async getHermesBackedAgentCard(): Promise<A2AAgentCard> {
-    const healthUrl = `${this.hermesOrigin()}/health`;
-    const response = await fetch(toHermesProxyUrl(healthUrl), {
-      headers: this.buildHermesHeaders(false),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Hermes health check failed: ${response.status}`);
-    }
-
     return {
       name: this.agent.name,
       description: this.agent.role,
@@ -126,7 +116,7 @@ export class HermesA2AAdapter {
     });
 
     if (!response.ok) {
-      throw new Error(`Hermes chat completion failed: ${response.status}`);
+      throw new Error(`Hermes chat completion failed: ${response.status}${await readErrorSuffix(response)}`);
     }
 
     const payload = (await response.json()) as {
@@ -182,7 +172,7 @@ export class HermesA2AAdapter {
     });
 
     if (!response.ok) {
-      throw new Error(`Hermes chat completion auth failed: ${response.status}`);
+      throw new Error(`Hermes chat completion auth failed: ${response.status}${await readErrorSuffix(response)}`);
     }
   }
 
@@ -214,9 +204,21 @@ function toHermesProxyUrl(url: string) {
     if (parsed.hostname === "127.0.0.1" && parsed.port === "8642") {
       return `/hermes-local${parsed.pathname}${parsed.search}`;
     }
+    if (parsed.hostname === "hooper.ink") {
+      return `/hermes-hooper${parsed.pathname}${parsed.search}`;
+    }
   } catch {
     return url;
   }
 
   return url;
+}
+
+async function readErrorSuffix(response: Response) {
+  try {
+    const payload = (await response.json()) as { error?: { message?: string } };
+    return payload.error?.message ? `: ${payload.error.message}` : "";
+  } catch {
+    return "";
+  }
 }
