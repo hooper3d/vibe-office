@@ -407,9 +407,20 @@ Acceptance:
 
 ### Milestone 3: Agent Management
 
+Status: completed on 2026-06-18.
+
 Goal:
 
 Office Setup becomes a usable provider management surface.
+
+Completed through the Real Agent Workspace Prototype work:
+
+- Connected agents can be edited from the sidebar.
+- Connected agents can be deleted with confirmation.
+- Connection can be retested without rebuilding the agent from scratch.
+- Chief is assigned through the Office role field.
+- Duplicate local provider entries are merged by endpoint/model/name.
+- The disabled/enabled agent state was removed from scope.
 
 Scope:
 
@@ -417,7 +428,6 @@ Scope:
 - Delete connected agent.
 - Retest connection.
 - Set Chief.
-- Disable/enable agent.
 - Avoid duplicate local provider entries.
 
 Acceptance:
