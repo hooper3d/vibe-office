@@ -33,11 +33,18 @@ export type ConversationMessage = {
   role: "user" | "agent" | "system";
   agentId?: string;
   contentParts: A2APart[];
+  workspaceContext?: WorkspaceContextReference[];
   a2aMessageId?: string;
   taskId?: string;
   runId?: string;
   status: "sending" | "sent" | "failed";
   createdAt: string;
+};
+
+export type WorkspaceContextReference = {
+  path: string;
+  size: number;
+  attachedAt: string;
 };
 
 export type ProjectRunType = "direct_message" | "a2a_task" | "chief_delegation";

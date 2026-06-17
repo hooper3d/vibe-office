@@ -296,17 +296,19 @@ Health fallback is not discovery. It may only confirm whether a manually configu
 
 ## Milestones
 
-### Current Recorded Milestone: M1.5 Real Agent Workspace Prototype
+### Current Recorded Milestone: M2.5 Workspace File Layer Prototype
 
 Status: recorded on 2026-06-18.
 
-The prototype has reached a usable real-agent workspace baseline. It is no longer only a static shell: two real Hermes-compatible agents can be registered, edited, persisted, selected by Project, and used through Direct Chat. Project-scoped conversations, runs, tasks, and artifacts persist through refresh in browser localStorage.
+The prototype has reached a usable local workspace file baseline. A Project directory is no longer only a registry reference: Vibe Office can list, search, and preview files through a local trusted layer, then attach explicitly selected file content to Direct Chat.
 
 Validated in browser:
 
 - Local Hermes and one remote Hermes-compatible provider can be connected as real agents.
 - Direct Chat can send to a selected real agent and render the user message plus agent reply in the center conversation.
-- The right Output Workspace records completed direct-message runs.
+- The Workspace tab can list real project files, navigate folders, search text, preview files, and attach selected file context.
+- The Browser surface is separated into its own right-panel tab.
+- The Tasks tab focuses on real task/activity records instead of completed direct-message noise.
 - Switching Project hides conversation and output records from other Projects.
 - Refresh restores configured agents, projects, conversations, runs, tasks, and artifacts.
 - Agent profile management supports avatar upload, role selection, capability tags, notes, host/IP, runtime settings, delete, and edit-from-sidebar.
@@ -314,14 +316,15 @@ Validated in browser:
 
 Important boundary:
 
-- Project directory is currently a local registry reference only. Agents cannot read files from that folder yet.
+- Remote agents still cannot read local files directly.
+- File content is sent only when the user previews and attaches it.
+- Full file bodies are not persisted in localStorage; conversation history stores lightweight file references.
 - API keys are still prototype-only browser localStorage secrets.
-- Remote agents never receive local files automatically.
-- True Codex-like workspace file access requires a local backend or desktop bridge with explicit list/read/search tools and user-controlled context injection.
+- A packaged release still needs native folder permission handling and secure local credential storage.
 
 Next milestone:
 
-- M2.5 Workspace File Layer: bind Project to a real local workspace path, expose controlled file list/read/search actions, and keep remote agents behind explicit Vibe Office mediation.
+- M4 Chief-led Task Room foundation: make Task Room a real project-scoped workflow surface with Chief selection, participant selection, parent task/run records, and explicit context boundaries.
 
 ### Milestone 0: Real Agent Onboarding
 

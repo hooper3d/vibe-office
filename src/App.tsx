@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleHelp,
   ExternalLink,
+  FileText,
   Folder,
   Globe2,
   KeyRound,
@@ -15,8 +16,10 @@ import {
   MessageSquare,
   Moon,
   Pencil,
+  Paperclip,
   Plus,
   RefreshCw,
+  Search,
   Server,
   Settings,
   Sparkles,
@@ -25,6 +28,7 @@ import {
   Trash2,
   UserRound,
   UserRoundCog,
+  X,
   XCircle,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -46,8 +50,18 @@ import type { AgentInstance, AgentOfficeRole, AgentStatus, Project } from "./dom
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { HermesA2AAdapter } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
+import {
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  searchWorkspaceFiles,
+  type WorkspaceFileAttachment,
+  type WorkspaceFileEntry,
+  type WorkspaceFileListResult,
+  type WorkspaceFileReadResult,
+  type WorkspaceFileSearchMatch,
+} from "./services/workspaceFileClient";
 
-type OutputMode = "browser" | "outputs" | "artifacts";
+type OutputMode = "workspace" | "browser" | "runs" | "artifacts";
 type ConversationMode = "single" | "task-room";
 type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 type ThemeMode = "dark" | "light";
@@ -114,10 +128,11 @@ export function App() {
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("default");
   const [conversationMode, setConversationMode] = useState<ConversationMode>("single");
-  const [outputMode, setOutputMode] = useState<OutputMode>("browser");
+  const [outputMode, setOutputMode] = useState<OutputMode>("workspace");
   const [messageText, setMessageText] = useState("");
   const [browserUrl, setBrowserUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
+  const [attachedWorkspaceFiles, setAttachedWorkspaceFiles] = useState<WorkspaceFileAttachment[]>([]);
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
@@ -162,6 +177,10 @@ export function App() {
     if (!currentConversation) return [];
     return messages.filter((message) => message.conversationId === currentConversation.id);
   }, [currentConversation, messages]);
+
+  useEffect(() => {
+    setAttachedWorkspaceFiles([]);
+  }, [selectedProject.id]);
 
   useEffect(() => {
     if (selectedAgent && selectedAgent.id !== selectedAgentId) {
@@ -450,6 +469,27 @@ export function App() {
     setConfirmAction(null);
   }
 
+  function attachWorkspaceFile(file: WorkspaceFileReadResult) {
+    setAttachedWorkspaceFiles((current) => {
+      if (current.some((item) => item.path === file.path)) return current;
+
+      return [
+        ...current,
+        {
+          path: file.path,
+          content: file.content,
+          size: file.size,
+          updatedAt: file.updatedAt,
+          attachedAt: new Date().toISOString(),
+        },
+      ].slice(-4);
+    });
+  }
+
+  function detachWorkspaceFile(path: string) {
+    setAttachedWorkspaceFiles((current) => current.filter((item) => item.path !== path));
+  }
+
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = messageText.trim();
@@ -478,6 +518,12 @@ export function App() {
     const runId = crypto.randomUUID();
     const userMessageId = crypto.randomUUID();
     const participantAgentIds = [targetAgent.id];
+    const workspaceContext = attachedWorkspaceFiles.map((file) => ({
+      path: file.path,
+      size: file.size,
+      attachedAt: file.attachedAt,
+    }));
+    const agentRequestText = buildAgentRequestText(text, selectedProject, attachedWorkspaceFiles);
 
     const userMessage: ConversationMessage = {
       id: userMessageId,
@@ -485,6 +531,7 @@ export function App() {
       projectId: selectedProject.id,
       role: "user",
       contentParts: createTextParts(text),
+      workspaceContext,
       runId,
       status: "sending",
       createdAt: now,
@@ -509,10 +556,10 @@ export function App() {
     setMessages((current) => [...current, userMessage]);
     setRuns((current) => [optimisticRun, ...current]);
     setMessageText("");
-    setOutputMode("outputs");
+    setAttachedWorkspaceFiles([]);
 
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, text);
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, agentRequestText);
       const returnedArtifacts = mapA2AArtifacts(remoteTask, selectedProject.id, targetAgent.id);
       const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned an A2A task state.`;
@@ -551,6 +598,7 @@ export function App() {
 
       if (returnedArtifacts.length > 0) {
         setArtifacts((current) => [...returnedArtifacts, ...current]);
+        setOutputMode("artifacts");
       }
 
       if (shouldCreateTask && taskId) {
@@ -577,6 +625,7 @@ export function App() {
           updatedAt: completedAt,
         };
         setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
+        setOutputMode("runs");
       }
 
       setRuns((current) =>
@@ -641,6 +690,7 @@ export function App() {
           createdAt: failedAt,
         },
       ]);
+      setOutputMode("runs");
     }
   }
 
@@ -855,6 +905,19 @@ export function App() {
               <label className="sr-only" htmlFor="message">
                 Message
               </label>
+              {attachedWorkspaceFiles.length > 0 ? (
+                <div className="attached-context-row" aria-label="Attached workspace context">
+                  {attachedWorkspaceFiles.map((file) => (
+                    <span className="attached-context-chip" key={file.path}>
+                      <Paperclip size={13} />
+                      <span>{file.path}</span>
+                      <button type="button" onClick={() => detachWorkspaceFile(file.path)} aria-label={`Remove ${file.path}`}>
+                        <X size={13} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="composer-row">
                 <textarea
                   id="message"
@@ -907,17 +970,31 @@ export function App() {
 
           <aside className="output-panel" aria-label="Output Workspace">
             <div className="tabs" role="tablist" aria-label="Output modes">
+              <TabButton active={outputMode === "workspace"} onClick={() => setOutputMode("workspace")}>
+                Workspace
+              </TabButton>
               <TabButton active={outputMode === "browser"} onClick={() => setOutputMode("browser")}>
                 Browser
               </TabButton>
-              <TabButton active={outputMode === "outputs"} onClick={() => setOutputMode("outputs")}>
-                Outputs
+              <TabButton active={outputMode === "runs"} onClick={() => setOutputMode("runs")}>
+                Tasks
               </TabButton>
               <TabButton active={outputMode === "artifacts"} onClick={() => setOutputMode("artifacts")}>
                 Artifacts
               </TabButton>
             </div>
 
+            {outputMode === "workspace" ? (
+              <div className="workspace-mode">
+                <WorkspaceFiles
+                  project={selectedProject}
+                  attachedFiles={attachedWorkspaceFiles}
+                  onAttachFile={attachWorkspaceFile}
+                  onDetachFile={detachWorkspaceFile}
+                  onEditProject={() => openProjectEditor(selectedProject.id)}
+                />
+              </div>
+            ) : null}
             {outputMode === "browser" ? (
               <BrowserPreview
                 browserUrl={browserUrl}
@@ -926,7 +1003,7 @@ export function App() {
                 onOpenPreview={openPreview}
               />
             ) : null}
-            {outputMode === "outputs" ? (
+            {outputMode === "runs" ? (
               <ProjectTasks agents={agents} runs={scopedRuns} tasks={scopedTasks} artifacts={scopedArtifacts} />
             ) : null}
             {outputMode === "artifacts" ? (
@@ -1048,6 +1125,19 @@ function createTextParts(text: string): A2APart[] {
   ];
 }
 
+function buildAgentRequestText(text: string, project: Project, files: WorkspaceFileAttachment[]) {
+  if (files.length === 0) return text;
+
+  const fileContext = files
+    .map(
+      (file) =>
+        `--- file: ${file.path} (${formatBytes(file.size)}) ---\n${file.content}`,
+    )
+    .join("\n\n");
+
+  return `${text}\n\nWorkspace context explicitly attached by the user for ${project.name} (${project.namespace}). The remote agent cannot access the local filesystem. Use only the file excerpts below when they are relevant.\n\n${fileContext}`;
+}
+
 function getPartText(parts: A2APart[]) {
   return parts
     .map((part) => {
@@ -1142,6 +1232,18 @@ function deriveProjectNameFromDirectory(directory: string) {
     .pop() ?? "";
 }
 
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatWorkspacePath(result: WorkspaceFileListResult | null) {
+  if (!result) return "Root";
+  if (!result.path) return result.rootName || "Root";
+  return `/ ${result.path}`;
+}
+
 function StatusDot({ status }: { status: AgentStatus }) {
   return <span className={`status-dot ${status}`} aria-label={`Status: ${status}`} />;
 }
@@ -1194,6 +1296,16 @@ function DirectChat({ messages }: { messages: ConversationMessage[] }) {
             <div className={`message-row ${isUser ? "user-message" : "agent-message"}`} key={message.id}>
               <div className={`${isUser ? "message-bubble" : "agent-output"} ${message.status} ${isSystem ? "system" : ""}`}>
                 {isUser ? <p>{getPartText(message.contentParts)}</p> : <MarkdownContent content={getPartText(message.contentParts)} />}
+                {message.workspaceContext && message.workspaceContext.length > 0 ? (
+                  <div className="message-context-strip" aria-label="Workspace files sent with this message">
+                    {message.workspaceContext.map((file) => (
+                      <span className="message-context-chip" key={`${message.id}-${file.path}`}>
+                        <FileText size={12} />
+                        {file.path}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           );
@@ -1248,6 +1360,254 @@ function TaskRoom({ agents, projectTask }: { agents: AgentInstance[]; projectTas
         ))}
       </div>
     </div>
+  );
+}
+
+function WorkspaceFiles({
+  project,
+  attachedFiles,
+  onAttachFile,
+  onDetachFile,
+  onEditProject,
+}: {
+  project: Project;
+  attachedFiles: WorkspaceFileAttachment[];
+  onAttachFile: (file: WorkspaceFileReadResult) => void;
+  onDetachFile: (path: string) => void;
+  onEditProject: () => void;
+}) {
+  const [currentPath, setCurrentPath] = useState("");
+  const [listResult, setListResult] = useState<WorkspaceFileListResult | null>(null);
+  const [selectedFile, setSelectedFile] = useState<WorkspaceFileReadResult | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatches, setSearchMatches] = useState<WorkspaceFileSearchMatch[]>([]);
+  const [searchTruncated, setSearchTruncated] = useState(false);
+  const [loadingState, setLoadingState] = useState<"idle" | "listing" | "reading" | "searching">("idle");
+  const [error, setError] = useState("");
+  const projectDirectory = project.directory?.trim() ?? "";
+  const hasDirectory = projectDirectory.length > 0;
+  const selectedFileIsAttached = selectedFile ? attachedFiles.some((file) => file.path === selectedFile.path) : false;
+
+  useEffect(() => {
+    setCurrentPath("");
+    setListResult(null);
+    setSelectedFile(null);
+    setSearchQuery("");
+    setSearchMatches([]);
+    setSearchTruncated(false);
+    setError("");
+  }, [project.id]);
+
+  useEffect(() => {
+    if (!hasDirectory) return;
+    void loadDirectory(currentPath);
+    // Directory loading is intentionally driven by project/path changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectDirectory, currentPath]);
+
+  async function loadDirectory(path: string) {
+    if (!hasDirectory) return;
+    setLoadingState("listing");
+    setError("");
+
+    try {
+      const result = await listWorkspaceFiles(projectDirectory, path);
+      setListResult(result);
+      setSelectedFile(null);
+    } catch (error) {
+      setListResult(null);
+      setError(error instanceof Error ? error.message : "Unable to list workspace files.");
+    } finally {
+      setLoadingState("idle");
+    }
+  }
+
+  function openDirectory(path: string) {
+    setSearchMatches([]);
+    setSearchTruncated(false);
+    setCurrentPath(path);
+  }
+
+  async function openEntry(entry: WorkspaceFileEntry) {
+    if (entry.type === "directory") {
+      openDirectory(entry.path);
+      return;
+    }
+
+    setLoadingState("reading");
+    setError("");
+    try {
+      setSelectedFile(await readWorkspaceFile(projectDirectory, entry.path));
+    } catch (error) {
+      setSelectedFile(null);
+      setError(error instanceof Error ? error.message : "Unable to read file.");
+    } finally {
+      setLoadingState("idle");
+    }
+  }
+
+  async function openSearchMatch(match: WorkspaceFileSearchMatch) {
+    await openEntry({
+      name: match.path.split("/").pop() ?? match.path,
+      path: match.path,
+      type: "file",
+    });
+  }
+
+  async function runSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!hasDirectory || searchQuery.trim().length < 2) return;
+
+    setLoadingState("searching");
+    setError("");
+    try {
+      const result = await searchWorkspaceFiles(projectDirectory, searchQuery);
+      setSearchMatches(result.matches);
+      setSearchTruncated(result.truncated);
+    } catch (error) {
+      setSearchMatches([]);
+      setSearchTruncated(false);
+      setError(error instanceof Error ? error.message : "Unable to search workspace files.");
+    } finally {
+      setLoadingState("idle");
+    }
+  }
+
+  if (!hasDirectory) {
+    return (
+      <section className="workspace-files-panel" aria-label="Project files">
+        <div className="workspace-files-header">
+          <div>
+            <div className="eyebrow">Project files</div>
+            <h3>Bind a local folder</h3>
+            <p>Files are listed by the local trusted layer before anything is sent to an agent.</p>
+          </div>
+          <button className="secondary-button compact-button" type="button" onClick={onEditProject}>
+            <Folder size={16} />
+            Bind folder
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="workspace-files-panel" aria-label="Project files">
+      <div className="workspace-files-header">
+        <div>
+          <div className="eyebrow">Project files</div>
+          <h3>{project.name}</h3>
+          <p>{projectDirectory}</p>
+        </div>
+        <button className="secondary-button compact-button" type="button" onClick={() => void loadDirectory(currentPath)}>
+          {loadingState === "listing" ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+          Refresh
+        </button>
+      </div>
+
+      <form className="workspace-search" onSubmit={runSearch}>
+        <label className="sr-only" htmlFor="workspace-search">
+          Search files
+        </label>
+        <input
+          id="workspace-search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.currentTarget.value)}
+          placeholder="Search files"
+        />
+        <button className="secondary-button compact-button" type="submit" disabled={loadingState === "searching" || searchQuery.trim().length < 2}>
+          {loadingState === "searching" ? <Loader2 className="spin" size={16} /> : <Search size={16} />}
+          Search
+        </button>
+      </form>
+
+      {error ? <div className="form-error">{error}</div> : null}
+
+      <div className="workspace-file-grid">
+        <div className="workspace-file-list" aria-label="Workspace file list">
+          <div className="workspace-path-row">
+            <button
+              className="icon-button mini-button"
+              data-testid="workspace-parent-folder"
+              type="button"
+              disabled={listResult?.parentPath === undefined}
+              onClick={() => {
+                if (listResult?.parentPath !== undefined) openDirectory(listResult.parentPath);
+              }}
+              aria-label="Go to parent folder"
+              title="Go to parent folder"
+            >
+              <ArrowLeft size={14} />
+            </button>
+            {listResult?.path ? (
+              <button className="breadcrumb-root" type="button" onClick={() => openDirectory("")}>
+                {listResult.rootName}
+              </button>
+            ) : null}
+            <span>{formatWorkspacePath(listResult)}</span>
+          </div>
+          {loadingState === "listing" && !listResult ? (
+            <div className="inline-empty">Loading workspace files.</div>
+          ) : listResult?.entries.length ? (
+            listResult.entries.map((entry) => (
+              <button className="workspace-file-row" key={entry.path} type="button" onClick={() => void openEntry(entry)}>
+                {entry.type === "directory" ? <Folder size={15} /> : <FileText size={15} />}
+                <span>
+                  <strong>{entry.name}</strong>
+                  <small>{entry.type === "file" && entry.size !== undefined ? formatBytes(entry.size) : "Folder"}</small>
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="inline-empty">No files in this folder.</div>
+          )}
+        </div>
+
+        <div className="workspace-preview" aria-label="Workspace file preview">
+          {selectedFile ? (
+            <>
+              <div className="workspace-preview-header">
+                <div>
+                  <strong>{selectedFile.path}</strong>
+                  <span>{formatBytes(selectedFile.size)}</span>
+                </div>
+                {selectedFileIsAttached ? (
+                  <button className="secondary-button compact-button" type="button" onClick={() => onDetachFile(selectedFile.path)}>
+                    <X size={16} />
+                    Remove
+                  </button>
+                ) : (
+                  <button className="primary-button compact-button" type="button" onClick={() => onAttachFile(selectedFile)}>
+                    <Paperclip size={16} />
+                    Attach
+                  </button>
+                )}
+              </div>
+              <pre className="workspace-file-preview">{selectedFile.content}</pre>
+            </>
+          ) : (
+            <div className="inline-empty">Select a file to preview it before attaching context.</div>
+          )}
+        </div>
+      </div>
+
+      {searchMatches.length > 0 || searchTruncated ? (
+        <div className="workspace-search-results" aria-label="Search results">
+          {searchMatches.map((match) => (
+            <button className="workspace-search-result" key={`${match.path}-${match.lineNumber}`} type="button" onClick={() => void openSearchMatch(match)}>
+              <FileText size={14} />
+              <span>
+                <strong>{match.path}:{match.lineNumber}</strong>
+                <small>{match.preview}</small>
+              </span>
+            </button>
+          ))}
+          {searchTruncated ? <div className="inline-empty">Showing the first matches. Narrow the query for more precision.</div> : null}
+        </div>
+      ) : searchQuery.trim().length >= 2 && loadingState !== "searching" ? (
+        <div className="inline-empty">No matches yet.</div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1324,19 +1684,23 @@ function ProjectTasks({
   tasks: ProjectTask[];
   artifacts: ProjectArtifact[];
 }) {
-  if (runs.length === 0 && tasks.length === 0) {
+  const visibleRuns = runs.filter(
+    (run) => run.type !== "direct_message" || run.state !== "completed" || run.artifactIds.length > 0 || Boolean(run.taskId),
+  );
+
+  if (visibleRuns.length === 0 && tasks.length === 0) {
     return (
       <div className="empty-state tall">
         <MessageSquare size={32} />
-        <h3>No runs in this project</h3>
-        <p>Direct messages and Chief-led tasks will appear here.</p>
+        <h3>No tasks yet</h3>
+        <p>Direct chat stays in the conversation. Tasks appear here when work needs tracking.</p>
       </div>
     );
   }
 
   return (
     <div className="output-list">
-      {runs.map((run) => {
+      {visibleRuns.map((run) => {
         const owner = agents.find((item) => item.id === run.ownerAgentId);
         const runArtifacts = artifacts.filter((artifact) => run.artifactIds.includes(artifact.id));
         const linkedTask = tasks.find((task) => task.id === run.taskId);
