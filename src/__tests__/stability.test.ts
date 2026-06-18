@@ -1658,6 +1658,15 @@ test("local trusted workspace commands list, read, search, and reject path escap
   }
 });
 
+test("local trusted workspace middleware exposes only the command route for file operations", async () => {
+  const source = await readFile(path.join(process.cwd(), "localTrusted", "vitePlugin.ts"), "utf8");
+
+  assert.match(source, /workspace-local\/command/);
+  assert.doesNotMatch(source, /workspace-local\/list/);
+  assert.doesNotMatch(source, /workspace-local\/read/);
+  assert.doesNotMatch(source, /workspace-local\/search/);
+});
+
 test("provider setup detects obvious runtime endpoint mismatches", () => {
   assert.match(
     getProviderSetupIssue({

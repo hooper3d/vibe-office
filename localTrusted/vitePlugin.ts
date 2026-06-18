@@ -21,9 +21,6 @@ import {
 } from "./http";
 import {
   executeWorkspaceCommand,
-  listWorkspaceDirectory,
-  readWorkspaceTextFile,
-  searchWorkspaceFiles,
 } from "./workspaceFiles";
 
 export function localTrustedLayerPlugin(): Plugin {
@@ -110,48 +107,12 @@ export function localTrustedLayerPlugin(): Plugin {
         }
       });
 
-      server.middlewares.use("/workspace-local/list", async (req, res) => {
-        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for workspace file requests." });
-
-        try {
-          const body = await readJsonBody(req);
-          const result = await listWorkspaceDirectory(String(body.root || ""), String(body.path || ""));
-          sendJson(res, result.status, result.body);
-        } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
-        }
-      });
-
       server.middlewares.use("/workspace-local/command", async (req, res) => {
         if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for workspace file commands." });
 
         try {
           const body = await readJsonBody(req);
           const result = await executeWorkspaceCommand(body);
-          sendJson(res, result.status, result.body);
-        } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
-        }
-      });
-
-      server.middlewares.use("/workspace-local/read", async (req, res) => {
-        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for workspace file requests." });
-
-        try {
-          const body = await readJsonBody(req);
-          const result = await readWorkspaceTextFile(String(body.root || ""), String(body.path || ""));
-          sendJson(res, result.status, result.body);
-        } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
-        }
-      });
-
-      server.middlewares.use("/workspace-local/search", async (req, res) => {
-        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for workspace file requests." });
-
-        try {
-          const body = await readJsonBody(req);
-          const result = await searchWorkspaceFiles(String(body.root || ""), String(body.query || ""));
           sendJson(res, result.status, result.body);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });

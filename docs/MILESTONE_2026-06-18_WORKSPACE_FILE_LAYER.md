@@ -29,12 +29,18 @@ This milestone keeps the core boundary intact: remote agents still cannot read t
 
 ## Local Trusted Layer
 
-The Vite dev server exposes local-only workspace endpoints:
+The Vite dev server exposes one local-only workspace command endpoint:
 
 ```txt
-POST /workspace-local/list
-POST /workspace-local/read
-POST /workspace-local/search
+POST /workspace-local/command
+```
+
+Supported commands:
+
+```txt
+workspace.list
+workspace.read
+workspace.search
 ```
 
 Access rules:

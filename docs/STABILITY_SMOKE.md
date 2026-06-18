@@ -176,7 +176,7 @@ Latest check:
 
 Notes:
 
-- The success path performs a real local trusted-layer read through `/workspace-local/read`.
+- The success path performs a real local trusted-layer read through `/workspace-local/command` with `workspace.read`.
 - The failure path verifies the user-facing behavior when the local folder can no longer be read.
 
 ## Still Needed
