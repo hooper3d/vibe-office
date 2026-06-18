@@ -1,6 +1,7 @@
 import type { Conversation, ConversationMessage } from "../domain/projectScope";
 import type { AgentInstance, Project } from "../domain/types";
 import { getMessageTextContent } from "./messageContent";
+import { getTrackedRequestId } from "./requestTracker";
 
 export type PendingRequestRecovery =
   | {
@@ -65,12 +66,8 @@ export function getPendingRequestMessages(
     (message) =>
       message.role === "user" &&
       message.status === "sending" &&
-      !activeRequestIds.has(getMessageRequestKey(message)),
+      !activeRequestIds.has(getTrackedRequestId(message)),
   );
-}
-
-export function getMessageRequestKey(message: ConversationMessage) {
-  return message.requestId ?? message.id;
 }
 
 export function getRespondingAgentIds(conversations: Conversation[], messages: ConversationMessage[]) {
