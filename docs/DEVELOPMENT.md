@@ -296,11 +296,11 @@ Health fallback is not discovery. It may only confirm whether a manually configu
 
 ## Milestones
 
-### Current Recorded Milestone: M4 Chief-led Task Room Prototype
+### Current Recorded Milestone: M5 Artifact Viewer Prototype
 
 Status: completed on 2026-06-18.
 
-The prototype now has a real Chief-led Task Room workflow. A selected Chief can receive a project-scoped task, Vibe Office can delegate one round of work to user-selected participant agents, participant results are collected as artifacts, and the Chief returns a final aggregation.
+The prototype now has a project-scoped Artifact Viewer. Generated outputs can be selected, inspected, copied, opened when they expose a supported URL, and downloaded where the browser permits downloads.
 
 Validated in browser:
 
@@ -314,6 +314,12 @@ Validated in browser:
 - Vibe Office delegates one A2A task to each selected participant.
 - Participant results and Chief summary are stored as project-scoped text artifacts.
 - The Tasks tab shows per-agent task-room events inside the run card.
+- The Artifacts tab has a selectable viewer with a list and detail pane.
+- Text artifacts render as Markdown.
+- JSON/data artifact parts render as formatted JSON.
+- Image file artifacts render inline.
+- Generated `MEDIA:/...` image references can become project-scoped artifacts through the local trusted layer.
+- Copy, open URL, and download controls are available from the artifact detail view.
 - Switching Project hides conversation and output records from other Projects.
 - Refresh restores configured agents, projects, conversations, runs, tasks, and artifacts.
 - Agent profile management supports avatar upload, role selection, capability tags, notes, host/IP, runtime settings, delete, and edit-from-sidebar.
@@ -327,10 +333,11 @@ Important boundary:
 - API keys are still prototype-only browser localStorage secrets.
 - A packaged release still needs native folder permission handling and secure local credential storage.
 - Chief-led Task Room is intentionally one-round in v0.1: one Chief plan, one delegated task per selected participant, and one Chief aggregation.
+- Generated media is served only through the local trusted layer and currently allows known image files from controlled generated-media temp roots.
 
 Next milestone:
 
-- M5 Artifact Viewer: make generated artifacts inspectable, copyable, and exportable while preserving Project Scope and credential safety.
+- M6 A2A Task Lifecycle: support longer-running tasks with polling, retry/cancel affordances, and clearer state transitions.
 
 ### Milestone 0: Real Agent Onboarding
 
@@ -494,11 +501,13 @@ Acceptance:
 
 ### Milestone 5: Artifact Viewer
 
+Status: completed on 2026-06-18.
+
 Goal:
 
 Artifacts become inspectable output, not just summaries.
 
-Scope:
+Completed:
 
 - Click artifact to view content.
 - Text artifact preview.
@@ -506,6 +515,8 @@ Scope:
 - URL artifact opening.
 - Copy content.
 - Download where applicable.
+- Generated media image preview through the local trusted layer.
+- Manual copy fallback when browser clipboard access is denied.
 
 Acceptance:
 

@@ -1520,6 +1520,143 @@ textarea::placeholder {
   color: var(--text-muted);
 }
 
+.artifact-viewer {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.42fr) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.artifact-browser,
+.artifact-detail {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.artifact-browser {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 8px;
+}
+
+.artifact-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 10px;
+  text-align: left;
+}
+
+.artifact-list-item:hover,
+.artifact-list-item.selected {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.artifact-list-item h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-list-item span,
+.artifact-detail-header span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.artifact-detail {
+  padding: 14px;
+}
+
+.artifact-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.artifact-detail-header h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.artifact-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.copy-status {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 10px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.copy-status.copied {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--success);
+}
+
+.copy-status.failed {
+  background: rgba(251, 113, 133, 0.12);
+  color: var(--danger);
+}
+
+.copy-status.manual {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--warning);
+}
+
+.copy-fallback {
+  width: 100%;
+  min-height: 96px;
+  margin-top: 10px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-primary);
+  padding: 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.artifact-json {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
