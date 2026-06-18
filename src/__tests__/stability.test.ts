@@ -59,7 +59,7 @@ import {
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { A2AClient } from "../services/a2aClient";
-import { applyAgentDelete, applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
+import { applyAgentDelete, applyAgentSetupSave, normalizeChief, resolveSelectedAgent } from "../services/agentSetupState";
 import {
   applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
@@ -78,7 +78,14 @@ import {
   shouldReuseEmptyFreeChat,
 } from "../services/conversationSelectionState";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
-import { applyProjectDelete, applyProjectDeleteSelection, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
+import {
+  applyMissingProjectSelection,
+  applyProjectDelete,
+  applyProjectDeleteSelection,
+  applyProjectSave,
+  canDeleteProject,
+  normalizeConversationModeForScope,
+} from "../services/projectSetupState";
 import {
   clearConfirmActionState,
   closeProjectDialogState,
@@ -856,6 +863,24 @@ test("agent delete state removes agents and falls back to the remaining chief", 
   assert.equal(selectedKept.selectedAgentId, operator.id);
 });
 
+test("agent selection resolves selected agent with chief and first-agent fallback", () => {
+  const chief: AgentInstance = {
+    ...agent,
+    id: "agent-chief-selected",
+    isChief: true,
+  };
+  const operator: AgentInstance = {
+    ...participant,
+    id: "agent-operator-selected",
+    isChief: false,
+  };
+
+  assert.equal(resolveSelectedAgent({ agents: [chief, operator], selectedAgentId: operator.id })?.id, operator.id);
+  assert.equal(resolveSelectedAgent({ agents: [chief, operator], selectedAgentId: "missing-agent" })?.id, chief.id);
+  assert.equal(resolveSelectedAgent({ agents: [operator], selectedAgentId: "missing-agent" })?.id, operator.id);
+  assert.equal(resolveSelectedAgent({ agents: [], selectedAgentId: "missing-agent" }), undefined);
+});
+
 test("agent readiness state merges local trusted and static setup issues", () => {
   const minimaxAgent: AgentInstance = {
     ...agent,
@@ -1058,6 +1083,47 @@ test("project delete selection returns to free chat only when the selected proje
       selection: currentSelection,
     }),
     currentSelection,
+  );
+});
+
+test("project selection recovery returns missing projects and invalid free chat modes to free chat", () => {
+  const projectSelection = {
+    selectedProjectId: project.id,
+    chatScope: "project" as const,
+    conversationMode: "task-room" as const,
+  };
+
+  assert.deepEqual(
+    applyMissingProjectSelection({
+      projects: [project],
+      freeChatEntryProjectId: freeChatProjectId,
+      selection: projectSelection,
+    }),
+    projectSelection,
+  );
+  assert.deepEqual(
+    applyMissingProjectSelection({
+      projects: [],
+      freeChatEntryProjectId: freeChatProjectId,
+      selection: projectSelection,
+    }),
+    {
+      selectedProjectId: freeChatProjectId,
+      chatScope: "free",
+      conversationMode: "single",
+    },
+  );
+  assert.deepEqual(
+    normalizeConversationModeForScope({
+      selectedProjectId: freeChatProjectId,
+      chatScope: "free",
+      conversationMode: "task-room",
+    }),
+    {
+      selectedProjectId: freeChatProjectId,
+      chatScope: "free",
+      conversationMode: "single",
+    },
   );
 });
 

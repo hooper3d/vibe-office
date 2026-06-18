@@ -139,6 +139,32 @@ export function applyProjectDeleteSelection({
   };
 }
 
+export function applyMissingProjectSelection({
+  projects,
+  freeChatEntryProjectId,
+  selection,
+}: {
+  projects: Project[];
+  freeChatEntryProjectId: string;
+  selection: ProjectSelectionState;
+}): ProjectSelectionState {
+  if (selection.selectedProjectId === freeChatEntryProjectId) return selection;
+  if (projects.some((project) => project.id === selection.selectedProjectId)) return selection;
+  return {
+    selectedProjectId: freeChatEntryProjectId,
+    chatScope: "free",
+    conversationMode: "single",
+  };
+}
+
+export function normalizeConversationModeForScope(selection: ProjectSelectionState): ProjectSelectionState {
+  if (selection.chatScope !== "free" || selection.conversationMode !== "task-room") return selection;
+  return {
+    ...selection,
+    conversationMode: "single",
+  };
+}
+
 function hasDuplicateProject(projects: Project[], editingProjectId: string | undefined, name: string, namespace: string) {
   return projects.some(
     (project) =>

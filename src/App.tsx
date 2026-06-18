@@ -29,7 +29,7 @@ import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { readAvatarFile } from "./services/avatarFile";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
-import { applyAgentDelete, applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
+import { applyAgentDelete, applyAgentSetupSave, normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import {
   applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
@@ -63,7 +63,14 @@ import {
   upsertLocalTrustedAgent,
 } from "./services/localTrustedAgentRegistry";
 import { useProjectDialogState } from "./services/projectDialogState";
-import { applyProjectDelete, applyProjectDeleteSelection, applyProjectSave, canDeleteProject } from "./services/projectSetupState";
+import {
+  applyMissingProjectSelection,
+  applyProjectDelete,
+  applyProjectDeleteSelection,
+  applyProjectSave,
+  canDeleteProject,
+  normalizeConversationModeForScope,
+} from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
 import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
 import {
@@ -186,7 +193,7 @@ export function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
 
   const selectedAgent = useMemo(
-    () => agents.find((agent) => agent.id === selectedAgentId) ?? agents.find((agent) => agent.isChief) ?? agents[0],
+    () => resolveSelectedAgent({ agents, selectedAgentId }),
     [agents, selectedAgentId],
   );
   const chiefAgent = useMemo(() => agents.find((agent) => agent.isChief), [agents]);
@@ -279,10 +286,9 @@ export function App() {
   }, [chatScope, selectedWorkspaceProject?.id]);
 
   useEffect(() => {
-    if (chatScope === "free" && conversationMode === "task-room") {
-      setConversationMode("single");
-    }
-  }, [chatScope, conversationMode]);
+    const nextSelection = normalizeConversationModeForScope({ selectedProjectId, chatScope, conversationMode });
+    if (nextSelection.conversationMode !== conversationMode) setConversationMode(nextSelection.conversationMode);
+  }, [chatScope, conversationMode, selectedProjectId]);
 
   useEffect(() => {
     setTaskParticipantIds(availableTaskParticipants.map((agent) => agent.id));
@@ -295,13 +301,15 @@ export function App() {
   }, [selectedAgent, selectedAgentId]);
 
   useEffect(() => {
-    if (selectedProjectId === FREE_CHAT_ENTRY_PROJECT_ID) return;
-    if (projects.some((project) => project.id === selectedProjectId)) return;
-
-    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
-    setChatScope("free");
-    setConversationMode("single");
-  }, [projects, selectedProjectId]);
+    const nextSelection = applyMissingProjectSelection({
+      projects,
+      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+      selection: { selectedProjectId, chatScope, conversationMode },
+    });
+    if (nextSelection.selectedProjectId !== selectedProjectId) setSelectedProjectId(nextSelection.selectedProjectId);
+    if (nextSelection.chatScope !== chatScope) setChatScope(nextSelection.chatScope);
+    if (nextSelection.conversationMode !== conversationMode) setConversationMode(nextSelection.conversationMode);
+  }, [chatScope, conversationMode, projects, selectedProjectId]);
 
   useEffect(() => {
     if (chatScope !== "free" || !selectedAgent || !currentConversation) return;

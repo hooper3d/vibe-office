@@ -78,6 +78,16 @@ export function applyAgentDelete({
   };
 }
 
+export function resolveSelectedAgent({
+  agents,
+  selectedAgentId,
+}: {
+  agents: AgentInstance[];
+  selectedAgentId: string;
+}) {
+  return agents.find((agent) => agent.id === selectedAgentId) ?? agents.find((agent) => agent.isChief) ?? agents[0];
+}
+
 export function normalizeChief(agents: AgentInstance[]) {
   if (agents.length === 0) return agents;
   if (agents.some((agent) => agent.officeRole)) {
