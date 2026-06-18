@@ -68,10 +68,11 @@ import {
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agentErrorText";
-import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
+import { executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
+import { executeFreeChatTurn, executeProjectDirectTurn } from "./services/directChatRequest";
 import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
-import { buildChatCompletionHistory, getTextPartContent } from "./services/messageContent";
+import { getTextPartContent } from "./services/messageContent";
 import {
   getPendingRequestMessages,
   getRespondingAgentIds,
@@ -1093,15 +1094,12 @@ export function App() {
     text: string;
   }) {
     try {
-      const chatHistory = buildChatCompletionHistory({
-        messages: messagesRef.current,
-        conversationId: conversation.id,
-        pendingMessageId: userMessageId,
-      });
-      const result = await executeFreeChatRequest({
+      const result = await executeFreeChatTurn({
         agent: targetAgent,
         text,
-        history: chatHistory,
+        messages: messagesRef.current,
+        conversationId: conversation.id,
+        userMessageId,
       });
 
       setMessages((current) => markConversationMessageSent(current, userMessageId));
@@ -1353,17 +1351,13 @@ export function App() {
     agentRequestText: string;
   }) {
     try {
-      const chatHistory = buildChatCompletionHistory({
-        messages: messagesRef.current,
-        conversationId: conversation.id,
-        pendingMessageId: userMessageId,
-      });
-      const result = await executeProjectAgentRequest({
+      const result = await executeProjectDirectTurn({
         agent: targetAgent,
         project,
-        text: agentRequestText,
-        history: chatHistory,
-        fallbackSummary: `${targetAgent.name} returned a task update.`,
+        agentRequestText,
+        messages: messagesRef.current,
+        conversationId: conversation.id,
+        userMessageId,
       });
       const remoteTask = result.task;
       const responseSummary = result.summary;
