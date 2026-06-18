@@ -52,18 +52,27 @@ if (cliOptions.list) {
 }
 
 const registeredAgents = await readLocalTrustedRegistry();
-const providers = selectedM9Targets
-  .map((target) => createProviderConfigForTarget(target, registeredAgents))
-  .filter(Boolean);
+const providerEntries = selectedM9Targets.map((target) => ({
+  target,
+  provider: createProviderConfigForTarget(target, registeredAgents),
+}));
+const providers = providerEntries.map((entry) => entry.provider).filter(Boolean);
 
 if (providers.length === 0) {
   const targetLabel = selectedM9Targets.map((target) => target.key).join(", ");
-  console.log(`No M9 provider configs found for target(s): ${targetLabel}. Set existing VIBE_M9_*_AGENT_ID vars or endpoint/model VIBE_M9_* vars.`);
-  process.exit(2);
+  console.log(`No ready M9 provider configs found for target(s): ${targetLabel}. Set existing VIBE_M9_*_AGENT_ID vars or endpoint/model VIBE_M9_* vars.`);
 }
 
 const results = [];
-for (const provider of providers) {
+for (const { target, provider } of providerEntries) {
+  if (!provider) {
+    const readiness = getTargetReadiness(target, getRegisteredAgentSummaries(registeredAgents));
+    results.push({ provider: target.label, check: "setup", ok: false, detail: `not ready: ${readiness}` });
+    console.log(`\n[M9] ${target.label}`);
+    console.log(`  setup: FAIL not ready: ${readiness}`);
+    continue;
+  }
+
   console.log(`\n[M9] ${provider.label}`);
   try {
     await assertExistingProviderReady(provider);
@@ -253,10 +262,17 @@ async function assertExistingProviderReady(provider) {
     throw new Error(`registered agent not found: ${provider.id}`);
   }
   const runtimeProvider = getAgentRuntimeProvider(agent, "hermes");
-  if (runtimeProvider !== provider.runtimeProvider) {
-    throw new Error(`registered agent provider mismatch: expected ${provider.runtimeProvider}, got ${runtimeProvider}`);
+  if (!isRuntimeProviderAllowed(provider.target, runtimeProvider)) {
+    throw new Error(
+      `registered agent provider mismatch: expected ${getRuntimeProviderLabel(provider.target)}, got ${runtimeProvider}`,
+    );
   }
-  if (provider.runtimeProvider !== "hermes" && !(typeof agent.apiKey === "string" && agent.apiKey.length > 0)) {
+  if (
+    !hasRequiredCredentials(provider.target, {
+      runtimeProvider,
+      hasKey: typeof agent.apiKey === "string" && agent.apiKey.length > 0,
+    })
+  ) {
     throw new Error("registered provider is missing an API key in the local trusted registry");
   }
 }
@@ -291,6 +307,7 @@ function createProviderConfigForTarget(target, registry) {
 
   const envPrefix = target.envName.replace(/^VIBE_M9_/, "").replace(/_AGENT_ID$/, "");
   return createProviderConfig({
+    target,
     id: `m9-${envPrefix.toLowerCase()}`,
     label: target.label,
     runtimeProvider: target.runtimeProvider,
@@ -305,6 +322,7 @@ function createExistingProviderConfigForTarget(target, registry) {
   if (configuredId) {
     const agent = registry[configuredId];
     return createExistingProviderConfig({
+      target,
       id: configuredId,
       label: target.label,
       runtimeProvider: getAgentRuntimeProvider(agent, target.runtimeProvider),
@@ -329,16 +347,18 @@ function createExistingProviderConfigForTarget(target, registry) {
   if (!agent) return null;
 
   return createExistingProviderConfig({
+    target,
     id: agent.id,
     label: target.label,
     runtimeProvider: agent.runtimeProvider,
   });
 }
 
-function createExistingProviderConfig({ id, label, runtimeProvider }) {
+function createExistingProviderConfig({ target, id, label, runtimeProvider }) {
   const agentId = String(id || "").trim();
   if (!agentId) return null;
   return {
+    target,
     id: agentId,
     label: `${label} (${agentId})`,
     runtimeProvider,
@@ -346,10 +366,11 @@ function createExistingProviderConfig({ id, label, runtimeProvider }) {
   };
 }
 
-function createProviderConfig({ id, label, runtimeProvider, endpoint, model, apiKey }) {
+function createProviderConfig({ target, id, label, runtimeProvider, endpoint, model, apiKey }) {
   if (!endpoint || !model) return null;
   const root = getRuntimeRoot(endpoint);
   return {
+    target,
     id,
     label,
     runtimeProvider,
@@ -493,16 +514,7 @@ function truncate(value) {
 
 async function printRegisteredAgents(targets = m9Targets) {
   const registry = await readLocalTrustedRegistry();
-  const agents = Object.entries(registry)
-    .map(([id, agent]) => ({
-      id,
-      name: typeof agent.name === "string" ? agent.name : "",
-      runtimeProvider: agent.runtimeProvider || "hermes",
-      model: typeof agent.model === "string" ? agent.model : "",
-      endpoint: typeof agent.endpoint === "string" ? agent.endpoint : "",
-      hasKey: typeof agent.apiKey === "string" && agent.apiKey.length > 0,
-    }))
-    .sort((left, right) => left.id.localeCompare(right.id));
+  const agents = getRegisteredAgentSummaries(registry);
 
   if (agents.length === 0) {
     console.log("No registered local trusted agents found.");
@@ -522,6 +534,19 @@ async function printRegisteredAgents(targets = m9Targets) {
     console.log(`- ${target.label}: ${readiness}`);
   }
   console.log("\nUse VIBE_M9_HERMES_AGENT_ID, VIBE_M9_DEEPSEEK_AGENT_ID, or VIBE_M9_MINIMAX_AGENT_ID with a ready id.");
+}
+
+function getRegisteredAgentSummaries(registry) {
+  return Object.entries(registry)
+    .map(([id, agent]) => ({
+      id,
+      name: typeof agent.name === "string" ? agent.name : "",
+      runtimeProvider: agent.runtimeProvider || "hermes",
+      model: typeof agent.model === "string" ? agent.model : "",
+      endpoint: typeof agent.endpoint === "string" ? agent.endpoint : "",
+      hasKey: typeof agent.apiKey === "string" && agent.apiKey.length > 0,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 async function readLocalTrustedRegistry() {

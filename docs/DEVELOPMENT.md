@@ -780,6 +780,8 @@ Implementation progress:
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 - M9 provider regression script now has a service-test guard that verifies the Chinese context-continuity probes remain readable UTF-8 text instead of mojibake.
 - M9 provider regression script now accepts `--target hermes|deepseek|minimax` filters, including npm-forwarded bare target arguments, so a single provider can be verified without unrelated unready providers failing the run.
+- M9 provider regression now fails selected unready targets as setup failures instead of silently skipping them, so the default Hermes + DeepSeek + MiniMax matrix cannot pass unless all three target records are ready.
+- M9 status on 2026-06-19: Hermes passes all six checks; DeepSeek is blocked by `MISSING_KEY`; MiniMax is blocked by `PROVIDER_MISMATCH` because the current local trusted record is OpenAI-compatible instead of Anthropic-compatible.
 
 Acceptance:
 

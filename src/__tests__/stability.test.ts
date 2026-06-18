@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -2587,6 +2588,49 @@ test("M9 provider regression script keeps Chinese context probes readable", asyn
   assert.match(source, /请记住暗号：海盐柠檬。只回复：记住了。/);
   assert.match(source, /刚才暗号是什么？请只回答暗号。/);
   assert.doesNotMatch(source, /鐢|璇|娴|鏌|銆\?/);
+});
+
+test("M9 provider regression fails selected targets that are not ready", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-m9-regression-"));
+  try {
+    const missing = spawnSync(process.execPath, ["scripts/run-provider-regression.mjs", "--target", "deepseek"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VIBE_OFFICE_LOCAL_TRUSTED_HOME: localTrustedHome,
+      },
+    });
+    assert.equal(missing.status, 1);
+    assert.match(`${missing.stdout}\n${missing.stderr}`, /DeepSeek OpenAI-compatible/);
+    assert.match(`${missing.stdout}\n${missing.stderr}`, /setup: FAIL not ready: NOT_FOUND/);
+
+    await writeFile(
+      path.join(localTrustedHome, "agent-registry.local.json"),
+      JSON.stringify({
+        "agent-minimax": {
+          id: "agent-minimax",
+          name: "MiniMax",
+          runtimeProvider: "openai",
+          endpoint: "https://api.minimaxi.com/v1",
+          model: "MiniMax-M3",
+        },
+      }),
+    );
+    const mismatch = spawnSync(process.execPath, ["scripts/run-provider-regression.mjs", "--target", "minimax"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VIBE_OFFICE_LOCAL_TRUSTED_HOME: localTrustedHome,
+      },
+    });
+    assert.equal(mismatch.status, 1);
+    assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /MiniMax Anthropic-compatible/);
+    assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /PROVIDER_MISMATCH agent-minimax/);
+  } finally {
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
 });
 
 test("provider setup detects obvious runtime endpoint mismatches", () => {

@@ -56,6 +56,7 @@ Do not paste real keys into source files, docs, screenshots, shell scripts, or c
 
 The script runs any provider whose existing agent ID, ready local trusted registry match, or endpoint/model variables are present.
 When no `VIBE_M9_*_AGENT_ID` is supplied, it can auto-select a ready local trusted agent by provider hints without printing keys.
+The default matrix reports every selected M9 target. If a target is missing, missing a key, or has a provider mismatch, it records a `setup` failure and exits non-zero instead of silently skipping that provider.
 
 Existing registered agents:
 
@@ -124,4 +125,5 @@ Each configured provider must pass:
 - Do not commit shell scripts, screenshots, logs, or docs containing real keys.
 - A skipped provider means neither an existing agent ID nor required endpoint/model variables were set.
 - On 2026-06-19, Hermes auto-selection passed the full matrix against local trusted agent `agent-1781701191359`.
+- On 2026-06-19, the default matrix correctly failed incomplete targets instead of passing a partial run: DeepSeek reported `MISSING_KEY`, and MiniMax reported `PROVIDER_MISMATCH`.
 - DeepSeek and MiniMax are not considered complete until their local trusted records report `READY` in `npm run regression:providers:list`.
