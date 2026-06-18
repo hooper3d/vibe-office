@@ -35,6 +35,7 @@ import {
   createBrowserAgentHttpTransport,
   toLocalTrustedProxyUrl,
 } from "../services/agentHttpTransport";
+import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
@@ -381,6 +382,31 @@ test("agent http transport maps local trusted proxy URLs and normalizes provider
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test("canonical host redirect keeps local storage on one loopback origin", () => {
+  assert.equal(
+    getCanonicalLocalhostRedirectUrl({
+      protocol: "http:",
+      hostname: "localhost",
+      port: "5180",
+      pathname: "/project",
+      search: "?tab=workspace",
+      hash: "#files",
+    }),
+    "http://127.0.0.1:5180/project?tab=workspace#files",
+  );
+  assert.equal(
+    getCanonicalLocalhostRedirectUrl({
+      protocol: "http:",
+      hostname: "127.0.0.1",
+      port: "5180",
+      pathname: "/",
+      search: "",
+      hash: "",
+    }),
+    "",
+  );
 });
 
 test("retry state helpers prepare direct and task-room messages without stale retry artifacts", () => {
