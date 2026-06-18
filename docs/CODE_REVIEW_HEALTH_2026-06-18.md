@@ -72,7 +72,7 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 1449 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, Free Chat selection helpers, Task lifecycle state reducers, Output Area selectors, request submission state helpers, composer submission intent routing, retry submission state helpers, and pending recovery submission helpers.
+- `src/App.tsx` is still about 1425 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, Free Chat selection helpers, Task lifecycle state reducers, Output Area selectors, request submission state helpers, composer submission intent routing, retry submission state helpers, pending recovery submission helpers, and centralizing request workspace state application.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
 - The new `src/components/OutputPanel.tsx` centralizes Free Chat history, project output tabs, Browser preview, grouped Outputs, and no-project right-panel state.
 - The new `src/services/agentSetupState.ts` centralizes add/edit/deduplicate/chief-normalization behavior and keeps credential-bearing payloads separate from UI agent state.
@@ -84,6 +84,7 @@ Evidence:
 - The new `src/services/composerSubmissionState.ts` centralizes the composer entry routing for Free Chat, Project Chat, Task Room, and ignored submission states.
 - The new `src/services/requestRetrySubmissionState.ts` centralizes Direct Chat and Task Room retry preparation/completion state around retryable user messages.
 - The new `src/services/requestRecoverySubmissionState.ts` centralizes interrupted pending request recovery preparation and failure state for Direct Chat and Task Room.
+- `App.tsx` now applies request workspace snapshots through one local `applyRequestWorkspaceState` path, including project delete cleanup, reducing drift between React state and the request runtime store.
 
 Impact:
 

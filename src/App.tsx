@@ -54,7 +54,7 @@ import {
   prepareDirectRetrySubmission,
   prepareTaskRoomRetrySubmission,
 } from "./services/requestRetrySubmissionState";
-import { createRequestRuntimeStore } from "./services/requestRuntimeStore";
+import { createRequestRuntimeStore, type RequestWorkspaceState } from "./services/requestRuntimeStore";
 import {
   executeTaskRoomRequestState,
   type TaskRoomRequestState,
@@ -352,16 +352,12 @@ export function App() {
     if (submission.kind === "none") return;
 
     if (submission.kind === "fail") {
-      requestStoreRef.current.replace(submission.state);
-      setMessages(submission.state.messages);
-      setTasks(submission.state.tasks);
-      setRuns(submission.state.runs);
+      applyRequestWorkspaceState(submission.state);
       return;
     }
 
     const trackedRequestId = requestStoreRef.current.begin(submission.message);
-    requestStoreRef.current.replace(submission.state);
-    setMessages(submission.state.messages);
+    applyRequestWorkspaceState(submission.state);
 
     if (submission.recovery.kind === "free-chat") {
       void completeFreeChatRequest({
@@ -776,11 +772,7 @@ export function App() {
       projectId,
     });
     setProjects(nextState.projects);
-    setConversations(nextState.conversations);
-    setMessages(nextState.messages);
-    setRuns(nextState.runs);
-    setTasks(nextState.tasks);
-    setArtifacts(nextState.artifacts);
+    applyRequestWorkspaceState(nextState);
     if (selectedProjectId === projectId) {
       setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
       setChatScope("free");
@@ -878,19 +870,22 @@ export function App() {
     setMessages(failedMessages);
   }
 
+  function applyRequestWorkspaceState(state: RequestWorkspaceState, outputMode?: OutputMode) {
+    requestStoreRef.current.replace(state);
+    setConversations(state.conversations);
+    setMessages(state.messages);
+    setRuns(state.runs);
+    setTasks(state.tasks);
+    setArtifacts(state.artifacts);
+    if (outputMode) setOutputMode(normalizeOutputMode(outputMode));
+  }
+
   function getDirectRequestState(): DirectRequestState {
     return requestStoreRef.current.snapshot();
   }
 
   function applyDirectRequestResult(result: DirectRequestResult) {
-    requestStoreRef.current.replace(result.state);
-
-    setConversations(result.state.conversations);
-    setMessages(result.state.messages);
-    setRuns(result.state.runs);
-    setTasks(result.state.tasks);
-    setArtifacts(result.state.artifacts);
-    if (result.outputMode) setOutputMode(normalizeOutputMode(result.outputMode));
+    applyRequestWorkspaceState(result.state, result.outputMode);
   }
 
   function getTaskRoomRequestState(): TaskRoomRequestState {
@@ -898,14 +893,7 @@ export function App() {
   }
 
   function applyTaskRoomRequestStep(step: TaskRoomRequestStep) {
-    requestStoreRef.current.replace(step.state);
-
-    setConversations(step.state.conversations);
-    setMessages(step.state.messages);
-    setRuns(step.state.runs);
-    setTasks(step.state.tasks);
-    setArtifacts(step.state.artifacts);
-    if (step.outputMode) setOutputMode(normalizeOutputMode(step.outputMode));
+    applyRequestWorkspaceState(step.state, step.outputMode);
   }
 
   async function completeFreeChatRequest({
@@ -950,9 +938,7 @@ export function App() {
       [targetAgent.id]: conversation.id,
     }));
     requestStoreRef.current.begin(requestId);
-    requestStoreRef.current.replace(submission.state);
-    setConversations(submission.state.conversations);
-    setMessages(submission.state.messages);
+    applyRequestWorkspaceState(submission.state);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
 
@@ -978,8 +964,7 @@ export function App() {
     }
 
     const trackedRequestId = requestStoreRef.current.begin(retry.retry.message);
-    requestStoreRef.current.replace(retry.state);
-    setMessages(retry.state.messages);
+    applyRequestWorkspaceState(retry.state);
 
     try {
       if (retry.retry.kind === "free-chat") {
@@ -1012,8 +997,7 @@ export function App() {
     if (retry.kind === "ignore") return;
 
     const trackedRequestId = requestStoreRef.current.begin(retry.retry.message);
-    requestStoreRef.current.replace(retry.state);
-    setMessages(retry.state.messages);
+    applyRequestWorkspaceState(retry.state);
 
     try {
       const succeeded = await retryTaskLifecycle(retry.retry.taskId);
@@ -1022,8 +1006,7 @@ export function App() {
         messageId: retry.retry.message.id,
         succeeded,
       });
-      requestStoreRef.current.replace(completedState);
-      setMessages(completedState.messages);
+      applyRequestWorkspaceState(completedState);
     } finally {
       requestStoreRef.current.end(trackedRequestId);
     }
@@ -1151,10 +1134,7 @@ export function App() {
       } = submission;
 
       requestStoreRef.current.begin(requestId);
-      requestStoreRef.current.replace(submission.state);
-      setConversations(submission.state.conversations);
-      setMessages(submission.state.messages);
-      setRuns(submission.state.runs);
+      applyRequestWorkspaceState(submission.state);
       setMessageText("");
       setAttachedWorkspaceFiles([]);
 
@@ -1195,11 +1175,7 @@ export function App() {
     const { conversation, requestId, runId, taskId, userMessageId } = submission;
 
     requestStoreRef.current.begin(requestId);
-    requestStoreRef.current.replace(submission.state);
-    setConversations(submission.state.conversations);
-    setMessages(submission.state.messages);
-    setTasks(submission.state.tasks);
-    setRuns(submission.state.runs);
+    applyRequestWorkspaceState(submission.state);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
     setOutputMode("outputs");
