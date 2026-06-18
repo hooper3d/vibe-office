@@ -725,6 +725,8 @@ Implementation progress:
 - Local trusted provider, credential registry, workspace-file, and generated-media dev middleware now lives in `localTrusted/vitePlugin.ts` instead of `vite.config.ts`, making Vite configuration a thin mount point and preparing the trusted layer for a later native/local service move.
 - Local trusted agent registry validation and prototype credential-file reads/writes now live in `localTrusted/agentRegistry.ts`.
 - Local trusted provider request validation, OpenAI-compatible request construction, Anthropic-compatible request construction, native A2A JSON-RPC construction, target checks, and credential injection now live in `localTrusted/providerRequests.ts`.
+- Local trusted workspace directory listing, file preview, and text search now live in `localTrusted/workspaceFiles.ts`.
+- Controlled generated-media serving for local temp images and WSL media roots now lives in `localTrusted/generatedMedia.ts`.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
 - M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.
 - M9 provider regression harness started.
