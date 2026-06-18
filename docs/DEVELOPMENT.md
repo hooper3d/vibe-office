@@ -393,12 +393,12 @@ Completed:
 - Browser-visible refresh restore and timeout failure smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Direct Chat and Task Room retry click-flow smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Direct Chat and Task Room pending-reload recovery smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
+- Browser-visible Project Direct Chat workspace-context recovery and local-folder outage smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 
 Still open:
 
 - Move key request execution orchestration from React component state into a local trusted layer or dedicated request store.
 - Move in-flight request tracking and attempt reconciliation out of the React component once the local trusted layer owns provider calls.
-- Add browser-visible Project Direct Chat workspace-context recovery checks.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 
 ### Milestone 0: Real Agent Onboarding

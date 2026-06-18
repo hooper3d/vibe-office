@@ -139,7 +139,47 @@ Notes:
 - Direct Chat recovery uses an intercepted deterministic OpenAI-compatible response inside the isolated Playwright context.
 - Task Room recovery intentionally does not auto-resume the full multi-agent orchestration after reload; it fails clearly and leaves Retry.
 
+## Workspace Context Recovery Smoke
+
+Purpose:
+
+- Verify a Project Direct Chat request with attached file references can recover after reload.
+- Verify file references are restored through the local trusted workspace layer before the recovered request is sent.
+- Verify local workspace recovery failure becomes a clear context error with Retry.
+
+Latest check:
+
+- Date: 2026-06-18
+- Command: `npm run smoke:browser`
+- App URL: `http://127.0.0.1:5180/`
+- Seeded success state:
+  - Active project: `Context Smoke Project`
+  - Active agent: `Smoke Agent`
+  - Pending project direct-chat message
+  - Attached workspace reference: `package.json`
+  - Project directory: `C:\Users\hooper\Documents\VibeOffice`
+- Seeded failure state:
+  - Active project: `Context Smoke Project`
+  - Pending project direct-chat message
+  - Attached workspace reference: `package.json`
+  - Project directory points to a missing local folder
+- Browser-visible result:
+  - Success recovery renders `Recovered project context reply.`
+  - Success recovery keeps `package.json` visible on the original user message
+  - Success recovery marks the original user message `sent`
+  - Success recovery completes the existing project run
+  - Failure recovery shows failure label `Context`
+  - Failure recovery explains that workspace files from the interrupted request could not be restored
+  - Failure recovery fails the existing project run
+  - Failure recovery keeps a visible Retry action
+- Result: passed.
+
+Notes:
+
+- The success path performs a real local trusted-layer read through `/workspace-local/read`.
+- The failure path verifies the user-facing behavior when the local folder can no longer be read.
+
 ## Still Needed
 
-- Browser-visible Project Direct Chat pending recovery with attached workspace context.
-- Browser-visible local trusted layer outage during workspace file recovery.
+- Move request execution orchestration from React component state into a local trusted layer or dedicated request store.
+- Move in-flight request tracking and attempt reconciliation out of the React component once the local trusted layer owns provider calls.

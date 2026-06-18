@@ -22,6 +22,8 @@ try {
   await runTaskRoomRetrySmoke();
   await runDirectPendingRecoverySmoke();
   await runTaskRoomPendingRecoverySmoke();
+  await runProjectContextPendingRecoverySmoke();
+  await runProjectContextRecoveryFailureSmoke();
   console.log("Browser smoke checks passed.");
 } finally {
   await browser.close();
@@ -183,6 +185,61 @@ async function runTaskRoomPendingRecoverySmoke() {
   }
 }
 
+async function runProjectContextPendingRecoverySmoke() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await installSmokeProviderRoute(page, "Recovered project context reply.");
+    await page.goto(appUrl);
+    await seedStorage(page, createProjectContextPendingRecoverySeed());
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".app-shell");
+
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+      const message = state.messages.find((item) => item.id === "smoke-project-context-pending-message");
+      const run = state.runs.find((item) => item.id === "smoke-project-context-pending-run");
+      return message?.status === "sent" && message.requestAttempt === 2 && run?.state === "completed";
+    });
+
+    const state = await collectProjectContextPendingRecoveryState(page);
+    assertEqual(state.userMessageStatus, "sent", "project context recovery should mark the original user message sent");
+    assertEqual(state.userMessageAttempt, 2, "project context recovery should advance the stable request attempt");
+    assertEqual(state.runState, "completed", "project context recovery should complete the existing run");
+    assertIncludes(state.conversationText, "Recovered project context reply.", "project context recovery should render the recovered agent reply");
+    assertIncludes(state.contextStrip, "package.json", "project context recovery should keep the attached file reference visible");
+  } finally {
+    await context.close();
+  }
+}
+
+async function runProjectContextRecoveryFailureSmoke() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(appUrl);
+    await seedStorage(page, createProjectContextRecoveryFailureSeed());
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".app-shell");
+
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+      const message = state.messages.find((item) => item.id === "smoke-project-context-failure-message");
+      const run = state.runs.find((item) => item.id === "smoke-project-context-failure-run");
+      return message?.status === "failed" && message.errorKind === "context" && run?.state === "failed";
+    });
+
+    const state = await collectProjectContextRecoveryFailureState(page);
+    assertEqual(state.userMessageStatus, "failed", "project context failure should fail the original user message");
+    assertEqual(state.failureKind, "Context", "project context failure should show a context failure label");
+    assertIncludes(state.failureText, "Workspace files from the interrupted request could not be restored.", "project context failure should explain the file recovery issue");
+    assertEqual(state.runState, "failed", "project context failure should fail the existing run");
+    assertEqual(state.retryText, "Retry", "project context failure should leave a visible Retry action");
+  } finally {
+    await context.close();
+  }
+}
+
 async function installSmokeProviderRoute(page, content) {
   await page.route("**/smoke-openai/**", async (route) => {
     await route.fulfill({
@@ -303,6 +360,38 @@ async function collectTaskRoomPendingRecoveryState(page) {
   });
 }
 
+async function collectProjectContextPendingRecoveryState(page) {
+  return page.evaluate(() => {
+    const clean = (value) => value?.trim().replace(/\s+/g, " ") ?? "";
+    const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+    const message = state.messages.find((item) => item.id === "smoke-project-context-pending-message");
+    const run = state.runs.find((item) => item.id === "smoke-project-context-pending-run");
+    return {
+      conversationText: clean(document.querySelector(".conversation-body")?.textContent),
+      contextStrip: clean(document.querySelector(".message-context-strip")?.textContent),
+      userMessageStatus: message?.status ?? "",
+      userMessageAttempt: message?.requestAttempt ?? 0,
+      runState: run?.state ?? "",
+    };
+  });
+}
+
+async function collectProjectContextRecoveryFailureState(page) {
+  return page.evaluate(() => {
+    const clean = (value) => value?.trim().replace(/\s+/g, " ") ?? "";
+    const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+    const message = state.messages.find((item) => item.id === "smoke-project-context-failure-message");
+    const run = state.runs.find((item) => item.id === "smoke-project-context-failure-run");
+    return {
+      failureKind: clean(document.querySelector(".message-error-kind")?.textContent),
+      failureText: clean(document.querySelector(".message-error-text")?.textContent),
+      retryText: clean(document.querySelector(".message-retry-button")?.textContent),
+      userMessageStatus: message?.status ?? "",
+      runState: run?.state ?? "",
+    };
+  });
+}
+
 function createRefreshSeed() {
   const now = "2026-06-18T12:00:00.000Z";
   const agent = createSmokeAgent("smoke-agent-refresh", "Lucy");
@@ -331,6 +420,107 @@ function createRefreshSeed() {
       chatScope: "project",
       conversationMode: "single",
       outputMode: "workspace",
+      activeFreeChatConversationIds: {},
+    },
+  };
+}
+
+function createProjectContextPendingRecoverySeed() {
+  return createProjectContextRecoverySeed({
+    messageId: "smoke-project-context-pending-message",
+    runId: "smoke-project-context-pending-run",
+    requestId: "smoke-project-context-pending-request",
+    directory: "C:\\Users\\hooper\\Documents\\VibeOffice",
+  });
+}
+
+function createProjectContextRecoveryFailureSeed() {
+  return createProjectContextRecoverySeed({
+    messageId: "smoke-project-context-failure-message",
+    runId: "smoke-project-context-failure-run",
+    requestId: "smoke-project-context-failure-request",
+    directory: "C:\\Users\\hooper\\Documents\\VibeOffice\\missing-smoke-root",
+  });
+}
+
+function createProjectContextRecoverySeed({
+  messageId,
+  runId,
+  requestId,
+  directory,
+}) {
+  const now = "2026-06-18T12:00:00.000Z";
+  const agent = createSmokeAgent(`agent-${messageId}`, "Smoke Agent");
+  const project = {
+    id: `project-${messageId}`,
+    name: "Context Smoke Project",
+    namespace: `context-smoke-${messageId}`,
+    description: "Project workspace.",
+    directory,
+  };
+  const conversation = {
+    id: `conversation-${messageId}`,
+    projectId: project.id,
+    mode: "direct",
+    title: "Context smoke chat",
+    primaryAgentId: agent.id,
+    participantAgentIds: [agent.id],
+    a2aContextId: project.namespace,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const message = {
+    id: messageId,
+    conversationId: conversation.id,
+    projectId: project.id,
+    role: "user",
+    contentParts: [{ kind: "text", text: "Recover this project message with file context." }],
+    workspaceContext: [
+      {
+        path: "package.json",
+        size: 0,
+        attachedAt: now,
+      },
+    ],
+    runId,
+    requestId,
+    requestAttempt: 1,
+    requestStartedAt: now,
+    status: "sending",
+    createdAt: now,
+  };
+  const run = {
+    id: runId,
+    projectId: project.id,
+    conversationId: conversation.id,
+    type: "direct_message",
+    ownerAgentId: agent.id,
+    participantAgentIds: [agent.id],
+    state: "submitting",
+    summary: "Project chat request submitted.",
+    eventIds: [`${runId}-submitted`],
+    artifactIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  return {
+    agents: [agent],
+    workspace: {
+      version: 1,
+      projects: [project],
+      conversations: [conversation],
+      messages: [message],
+      runs: [run],
+      tasks: [],
+      artifacts: [],
+    },
+    ui: {
+      selectedAgentId: agent.id,
+      selectedProjectId: project.id,
+      chatScope: "project",
+      conversationMode: "single",
+      outputMode: "runs",
       activeFreeChatConversationIds: {},
     },
   };
