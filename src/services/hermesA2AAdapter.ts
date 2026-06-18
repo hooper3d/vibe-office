@@ -52,7 +52,7 @@ export class HermesA2AAdapter {
     if (provider === "openai") {
       await this.validateOpenAIChat();
       return {
-        card: await this.getHermesBackedAgentCard("OpenAI-compatible"),
+        card: await this.getHermesBackedAgentCard("OpenAI"),
         mode: "openai-compatible",
       };
     }
@@ -60,7 +60,7 @@ export class HermesA2AAdapter {
     if (provider === "anthropic") {
       await this.validateAnthropicMessages();
       return {
-        card: await this.getHermesBackedAgentCard("Anthropic-compatible"),
+        card: await this.getHermesBackedAgentCard("Anthropic"),
         mode: "anthropic-compatible",
       };
     }
@@ -73,7 +73,7 @@ export class HermesA2AAdapter {
     } catch {
       await this.validateOpenAIChat();
       return {
-        card: await this.getHermesBackedAgentCard("Hermes-compatible"),
+        card: await this.getHermesBackedAgentCard("Hermes"),
         mode: "hermes-adapter",
       };
     }
@@ -280,7 +280,7 @@ export class HermesA2AAdapter {
     }, this.timeoutMs, "Agent did not respond before the timeout.");
 
     if (!response.ok) {
-      throw new Error(`OpenAI-compatible chat failed: ${response.status}${await readErrorSuffix(response)}`);
+      throw new Error(`OpenAI chat failed: ${response.status}${await readErrorSuffix(response)}`);
     }
 
     const payload = (await response.json()) as {
@@ -290,7 +290,7 @@ export class HermesA2AAdapter {
         };
       }>;
     };
-    const content = payload.choices?.[0]?.message?.content ?? "OpenAI-compatible provider returned an empty response.";
+    const content = payload.choices?.[0]?.message?.content ?? "OpenAI provider returned an empty response.";
     const now = new Date().toISOString();
 
     return {
@@ -376,7 +376,7 @@ export class HermesA2AAdapter {
     }, this.timeoutMs, "Agent did not respond before the timeout.");
 
     if (!response.ok) {
-      throw new Error(`Anthropic-compatible message failed: ${response.status}${await readErrorSuffix(response)}`);
+      throw new Error(`Anthropic message failed: ${response.status}${await readErrorSuffix(response)}`);
     }
 
     const payload = (await response.json()) as {
@@ -391,7 +391,7 @@ export class HermesA2AAdapter {
         ?.filter((part) => part.type === "text" && typeof part.text === "string")
         .map((part) => part.text)
         .join("\n\n")
-        .trim() || "Anthropic-compatible provider returned an empty response.";
+        .trim() || "Anthropic provider returned an empty response.";
     const now = new Date().toISOString();
 
     return {
@@ -433,7 +433,7 @@ export class HermesA2AAdapter {
     }, this.timeoutMs, "Agent connection test timed out.");
 
     if (!response.ok) {
-      throw new Error(`OpenAI-compatible chat auth failed: ${response.status}${await readErrorSuffix(response)}`);
+      throw new Error(`OpenAI chat auth failed: ${response.status}${await readErrorSuffix(response)}`);
     }
   }
 
@@ -454,7 +454,7 @@ export class HermesA2AAdapter {
     }, this.timeoutMs, "Agent connection test timed out.");
 
     if (!response.ok) {
-      throw new Error(`Anthropic-compatible message auth failed: ${response.status}${await readErrorSuffix(response)}`);
+      throw new Error(`Anthropic message auth failed: ${response.status}${await readErrorSuffix(response)}`);
     }
   }
 

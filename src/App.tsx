@@ -60,7 +60,7 @@ import {
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
-import { createAgentMessageFromTask, extractA2ATaskText, getA2ATaskTimestamp, isDirectMessageResponse } from "./services/agentTaskResult";
+import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -1649,9 +1649,15 @@ export function App() {
     const taskArtifactIds: string[] = [];
 
     try {
-      const chiefPlanTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, chiefRequestText);
-      const chiefPlan = extractA2ATaskText(chiefPlanTask) ?? `${targetAgent.name} returned a Chief task plan.`;
-      const chiefPlanAt = getA2ATaskTimestamp(chiefPlanTask);
+      const chiefPlanResult = await executeProjectAgentRequest({
+        agent: targetAgent,
+        project: selectedWorkspaceProject,
+        text: chiefRequestText,
+        fallbackSummary: `${targetAgent.name} returned a Chief task plan.`,
+      });
+      const chiefPlanTask = chiefPlanResult.task;
+      const chiefPlan = chiefPlanResult.summary;
+      const chiefPlanAt = chiefPlanResult.completedAt;
 
       setMessages((current) => markConversationMessageSent(current, userMessageId));
 
@@ -1752,13 +1758,15 @@ export function App() {
         let participantAt = new Date().toISOString();
 
         try {
-          const participantTask = await new HermesA2AAdapter({ agent: participant }).sendProjectMessage(
-            selectedWorkspaceProject,
-            buildParticipantTaskRequestText(text, selectedWorkspaceProject, targetAgent, participant, chiefPlan, taskFiles),
-          );
-          participantSummary = extractA2ATaskText(participantTask) ?? `${participant.name} returned a task result.`;
-          participantState = mapA2AState(participantTask.status.state);
-          participantAt = participantTask.status.timestamp ?? participantAt;
+          const participantResult = await executeProjectAgentRequest({
+            agent: participant,
+            project: selectedWorkspaceProject,
+            text: buildParticipantTaskRequestText(text, selectedWorkspaceProject, targetAgent, participant, chiefPlan, taskFiles),
+            fallbackSummary: `${participant.name} returned a task result.`,
+          });
+          participantSummary = participantResult.summary;
+          participantState = mapA2AState(participantResult.task.status.state);
+          participantAt = participantResult.completedAt;
         } catch (error) {
           participantState = "failed";
           participantSummary = error instanceof Error ? error.message : `${participant.name} task failed.`;
@@ -1813,10 +1821,16 @@ export function App() {
       let finalAt = new Date().toISOString();
 
       try {
-        const aggregateTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, aggregateRequestText);
-        finalSummary = extractA2ATaskText(aggregateTask) ?? `${targetAgent.name} aggregated the participant results.`;
+        const aggregateResult = await executeProjectAgentRequest({
+          agent: targetAgent,
+          project: selectedWorkspaceProject,
+          text: aggregateRequestText,
+          fallbackSummary: `${targetAgent.name} aggregated the participant results.`,
+        });
+        const aggregateTask = aggregateResult.task;
+        finalSummary = aggregateResult.summary;
         finalState = mapA2AState(aggregateTask.status.state);
-        finalAt = getA2ATaskTimestamp(aggregateTask);
+        finalAt = aggregateResult.completedAt;
         const aggregateMessage = createAgentMessageFromTask({
           task: aggregateTask,
           conversationId: conversation.id,
@@ -3061,20 +3075,20 @@ function sanitizeAgentErrorText(text: string) {
   if (text.includes("Agent did not respond before the timeout") || text.includes("Hermes chat completion timed out")) {
     return "Agent did not respond before the timeout. You can retry, or increase this agent's timeout in Advanced settings.";
   }
-  if (text.includes("OpenAI-compatible chat failed")) {
-    return text.replace("OpenAI-compatible chat failed", "Agent request failed");
+  if (text.includes("OpenAI-compatible chat failed") || text.includes("OpenAI chat failed")) {
+    return text.replace(/OpenAI-compatible chat failed|OpenAI chat failed/, "Agent request failed");
   }
-  if (text.includes("Anthropic-compatible message failed")) {
-    return text.replace("Anthropic-compatible message failed", "Agent request failed");
+  if (text.includes("Anthropic-compatible message failed") || text.includes("Anthropic message failed")) {
+    return text.replace(/Anthropic-compatible message failed|Anthropic message failed/, "Agent request failed");
   }
   if (text.includes("Hermes chat completion failed")) {
     return text.replace("Hermes chat completion failed", "Agent request failed");
   }
-  if (text.includes("OpenAI-compatible chat auth failed")) {
-    return text.replace("OpenAI-compatible chat auth failed", "Agent authentication failed");
+  if (text.includes("OpenAI-compatible chat auth failed") || text.includes("OpenAI chat auth failed")) {
+    return text.replace(/OpenAI-compatible chat auth failed|OpenAI chat auth failed/, "Agent authentication failed");
   }
-  if (text.includes("Anthropic-compatible message auth failed")) {
-    return text.replace("Anthropic-compatible message auth failed", "Agent authentication failed");
+  if (text.includes("Anthropic-compatible message auth failed") || text.includes("Anthropic message auth failed")) {
+    return text.replace(/Anthropic-compatible message auth failed|Anthropic message auth failed/, "Agent authentication failed");
   }
   if (text.includes("Hermes chat completion auth failed")) {
     return text.replace("Hermes chat completion auth failed", "Agent authentication failed");
