@@ -65,6 +65,12 @@ type OutputMode = "workspace" | "browser" | "runs" | "artifacts";
 type ConversationMode = "single" | "task-room";
 type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 type ThemeMode = "dark" | "light";
+type ParticipantTaskResult = {
+  agentId: string;
+  agentName: string;
+  state: WorkState;
+  summary: string;
+};
 type DirectoryPickerHandle = {
   name: string;
 };
@@ -536,6 +542,7 @@ export function App() {
     if (composerSubmittingRef.current) return;
     if (conversationMode === "task-room") {
       if (!chiefAgent) return;
+      if (selectedTaskParticipants.length === 0) return;
       composerSubmittingRef.current = true;
       setIsComposerSubmitting(true);
       try {
@@ -781,12 +788,13 @@ export function App() {
     const taskId = crypto.randomUUID();
     const runId = crypto.randomUUID();
     const userMessageId = crypto.randomUUID();
-    const workspaceContext = attachedWorkspaceFiles.map((file) => ({
+    const taskFiles = [...attachedWorkspaceFiles];
+    const workspaceContext = taskFiles.map((file) => ({
       path: file.path,
       size: file.size,
       attachedAt: file.attachedAt,
     }));
-    const chiefRequestText = buildChiefTaskRequestText(text, selectedProject, targetAgent, participants, attachedWorkspaceFiles);
+    const chiefRequestText = buildChiefTaskRequestText(text, selectedProject, targetAgent, participants, taskFiles);
     const taskTitle = text.length > 56 ? `${text.slice(0, 56)}...` : text;
 
     const userMessage: ConversationMessage = {
@@ -849,12 +857,9 @@ export function App() {
     setOutputMode("runs");
 
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, chiefRequestText);
-      const returnedArtifacts = mapA2AArtifacts(remoteTask, selectedProject.id, targetAgent.id);
-      const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
-      const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a Chief task response.`;
-      const mappedState = mapA2AState(remoteTask.status.state);
-      const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
+      const chiefPlanTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, chiefRequestText);
+      const chiefPlan = extractA2ATaskText(chiefPlanTask) ?? `${targetAgent.name} returned a Chief task plan.`;
+      const chiefPlanAt = chiefPlanTask.status.timestamp ?? new Date().toISOString();
 
       setMessages((current) =>
         current.map((message) =>
@@ -868,45 +873,39 @@ export function App() {
       );
 
       const agentMessage: ConversationMessage = {
-        id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
+        id: chiefPlanTask.status.message?.messageId ?? crypto.randomUUID(),
         conversationId: conversation.id,
         projectId: selectedProject.id,
         role: "agent",
         agentId: targetAgent.id,
-        contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
-        a2aMessageId: remoteTask.status.message?.messageId,
+        contentParts: chiefPlanTask.status.message?.parts ?? createTextParts(chiefPlan),
+        a2aMessageId: chiefPlanTask.status.message?.messageId,
         taskId,
         runId,
         status: "sent",
-        createdAt: completedAt,
+        createdAt: chiefPlanAt,
       };
       setMessages((current) => [...current, agentMessage]);
-
-      if (returnedArtifacts.length > 0) {
-        setArtifacts((current) => [...returnedArtifacts, ...current]);
-        setOutputMode("artifacts");
-      }
 
       setTasks((current) =>
         current.map((task) =>
           task.id === taskId
             ? {
                 ...task,
-                state: mappedState,
-                summary: responseSummary,
+                state: "working",
+                summary: "Chief plan ready. Delegating to selected participants.",
                 events: [
                   ...task.events,
                   {
                     id: `${taskId}-chief-response`,
                     taskId,
                     agentId: targetAgent.id,
-                    label: "Chief returned the first task-room response.",
-                    state: mappedState,
-                    timestamp: completedAt,
+                    label: "Chief returned the first task-room plan.",
+                    state: "working",
+                    timestamp: chiefPlanAt,
                   },
                 ],
-                artifactIds: returnedArtifactIds,
-                updatedAt: completedAt,
+                updatedAt: chiefPlanAt,
               }
             : task,
         ),
@@ -916,10 +915,191 @@ export function App() {
           run.id === runId
             ? {
                 ...run,
-                state: mappedState,
+                state: "working",
                 eventIds: [...run.eventIds, `${runId}-chief-response`],
-                artifactIds: returnedArtifactIds,
-                updatedAt: completedAt,
+                updatedAt: chiefPlanAt,
+              }
+            : run,
+        ),
+      );
+
+      const participantResults: ParticipantTaskResult[] = [];
+      const taskArtifactIds: string[] = [];
+
+      for (const participant of participants) {
+        const delegatedAt = new Date().toISOString();
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  state: "working",
+                  summary: `Delegated to ${participant.name}.`,
+                  events: [
+                    ...task.events,
+                    {
+                      id: `${taskId}-${participant.id}-delegated`,
+                      taskId,
+                      agentId: participant.id,
+                      label: `Delegated to ${participant.name}.`,
+                      state: "submitted",
+                      timestamp: delegatedAt,
+                    },
+                  ],
+                  updatedAt: delegatedAt,
+                }
+              : task,
+          ),
+        );
+
+        let participantSummary = "";
+        let participantState: WorkState = "completed";
+        let participantAt = new Date().toISOString();
+
+        try {
+          const participantTask = await new HermesA2AAdapter({ agent: participant }).sendProjectMessage(
+            selectedProject,
+            buildParticipantTaskRequestText(text, selectedProject, targetAgent, participant, chiefPlan, taskFiles),
+          );
+          participantSummary = extractA2ATaskText(participantTask) ?? `${participant.name} returned a task result.`;
+          participantState = mapA2AState(participantTask.status.state);
+          participantAt = participantTask.status.timestamp ?? participantAt;
+        } catch (error) {
+          participantState = "failed";
+          participantSummary = error instanceof Error ? error.message : `${participant.name} task failed.`;
+          participantAt = new Date().toISOString();
+        }
+
+        const participantArtifact = createTextArtifact({
+          projectId: selectedProject.id,
+          taskId,
+          agentId: participant.id,
+          name: `${participant.name} result`,
+          text: participantSummary,
+          createdAt: participantAt,
+        });
+        taskArtifactIds.push(participantArtifact.id);
+        participantResults.push({
+          agentId: participant.id,
+          agentName: participant.name,
+          state: participantState,
+          summary: participantSummary,
+        });
+        setArtifacts((current) => [participantArtifact, ...current]);
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  state: "working",
+                  summary: `${participant.name} returned a result.`,
+                  events: [
+                    ...task.events,
+                    {
+                      id: `${taskId}-${participant.id}-result`,
+                      taskId,
+                      agentId: participant.id,
+                      label: participantState === "failed" ? `${participant.name} failed.` : `${participant.name} returned a result.`,
+                      state: participantState,
+                      timestamp: participantAt,
+                    },
+                  ],
+                  artifactIds: [...taskArtifactIds],
+                  updatedAt: participantAt,
+                }
+              : task,
+          ),
+        );
+      }
+
+      const aggregateRequestText = buildChiefAggregationRequestText(text, selectedProject, targetAgent, chiefPlan, participantResults, taskFiles);
+      let finalSummary = "";
+      let finalState: WorkState = "completed";
+      let finalAt = new Date().toISOString();
+
+      try {
+        const aggregateTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, aggregateRequestText);
+        finalSummary = extractA2ATaskText(aggregateTask) ?? `${targetAgent.name} aggregated the participant results.`;
+        finalState = mapA2AState(aggregateTask.status.state);
+        finalAt = aggregateTask.status.timestamp ?? finalAt;
+        const aggregateMessage: ConversationMessage = {
+          id: aggregateTask.status.message?.messageId ?? crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: selectedProject.id,
+          role: "agent",
+          agentId: targetAgent.id,
+          contentParts: aggregateTask.status.message?.parts ?? createTextParts(finalSummary),
+          a2aMessageId: aggregateTask.status.message?.messageId,
+          taskId,
+          runId,
+          status: "sent",
+          createdAt: finalAt,
+        };
+        setMessages((current) => [...current, aggregateMessage]);
+      } catch (error) {
+        finalState = "failed";
+        finalSummary = error instanceof Error ? error.message : "Chief aggregation failed.";
+        finalAt = new Date().toISOString();
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            conversationId: conversation.id,
+            projectId: selectedProject.id,
+            role: "system",
+            agentId: targetAgent.id,
+            contentParts: createTextParts(finalSummary),
+            taskId,
+            runId,
+            status: "sent",
+            createdAt: finalAt,
+          },
+        ]);
+      }
+
+      const finalArtifact = createTextArtifact({
+        projectId: selectedProject.id,
+        taskId,
+        agentId: targetAgent.id,
+        name: "Chief summary",
+        text: finalSummary,
+        createdAt: finalAt,
+      });
+      const finalArtifactIds = [...taskArtifactIds, finalArtifact.id];
+      setArtifacts((current) => [finalArtifact, ...current]);
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                state: finalState,
+                summary: finalSummary,
+                events: [
+                  ...task.events,
+                  {
+                    id: `${taskId}-chief-aggregate`,
+                    taskId,
+                    agentId: targetAgent.id,
+                    label: finalState === "failed" ? "Chief aggregation failed." : "Chief aggregated participant results.",
+                    state: finalState,
+                    timestamp: finalAt,
+                  },
+                ],
+                artifactIds: finalArtifactIds,
+                updatedAt: finalAt,
+              }
+            : task,
+        ),
+      );
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                state: finalState,
+                eventIds: [...run.eventIds, `${runId}-completed`],
+                artifactIds: finalArtifactIds,
+                updatedAt: finalAt,
               }
             : run,
         ),
@@ -930,11 +1110,12 @@ export function App() {
             ? {
                 ...item,
                 participantAgentIds,
-                updatedAt: completedAt,
+                updatedAt: finalAt,
               }
             : item,
         ),
       );
+      setOutputMode(finalArtifactIds.length > 0 ? "artifacts" : "runs");
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorMessage = error instanceof Error ? error.message : "Chief task request failed.";
@@ -1249,9 +1430,11 @@ export function App() {
                       ? selectedAgent
                         ? `Ask ${selectedAgent.name} in ${selectedProject.name}`
                         : "Add an agent provider first"
-                      : chiefAgent
-                        ? `Start a Chief-led task in ${selectedProject.name}`
-                        : "Assign one connected agent as Chief first"
+                      : !chiefAgent
+                        ? "Assign one connected agent as Chief first"
+                        : selectedTaskParticipants.length === 0
+                          ? "Select at least one participant first"
+                          : `Start a Chief-led task in ${selectedProject.name}`
                   }
                   disabled={isComposerSubmitting}
                 />
@@ -1259,7 +1442,11 @@ export function App() {
                   className="primary-icon-button composer-send-button"
                   type="submit"
                   aria-label="Send message"
-                  disabled={isComposerSubmitting || (conversationMode === "single" ? !selectedAgent : !chiefAgent) || messageText.trim().length === 0}
+                  disabled={
+                    isComposerSubmitting ||
+                    (conversationMode === "single" ? !selectedAgent : !chiefAgent || selectedTaskParticipants.length === 0) ||
+                    messageText.trim().length === 0
+                  }
                 >
                   <ArrowUp size={18} />
                 </button>
@@ -1400,6 +1587,34 @@ function mapA2AArtifacts(task: A2ATask, projectId: string, agentId: string): Pro
   });
 }
 
+function createTextArtifact({
+  projectId,
+  taskId,
+  agentId,
+  name,
+  text,
+  createdAt,
+}: {
+  projectId: string;
+  taskId: string;
+  agentId: string;
+  name: string;
+  text: string;
+  createdAt: string;
+}): ProjectArtifact {
+  return {
+    id: crypto.randomUUID(),
+    projectId,
+    taskId,
+    agentId,
+    name,
+    kind: "text",
+    summary: text,
+    contentParts: createTextParts(text),
+    createdAt,
+  };
+}
+
 function createConversation({
   projectId,
   namespace,
@@ -1481,6 +1696,61 @@ function buildChiefTaskRequestText(
   ].join("\n");
 
   return buildAgentRequestText(taskRequest, project, files);
+}
+
+function buildParticipantTaskRequestText(
+  text: string,
+  project: Project,
+  chief: AgentInstance,
+  participant: AgentInstance,
+  chiefPlan: string,
+  files: WorkspaceFileAttachment[],
+) {
+  const request = [
+    `You are ${participant.name}, a selected participant agent in Vibe Office project "${project.name}" (${project.namespace}).`,
+    `Chief agent: ${chief.name}.`,
+    "Handle only your assigned portion of this one-round task. Do not delegate recursively.",
+    "",
+    "Original task:",
+    text,
+    "",
+    "Chief plan:",
+    chiefPlan,
+    "",
+    "Return your result clearly and concisely for Chief aggregation.",
+  ].join("\n");
+
+  return buildAgentRequestText(request, project, files);
+}
+
+function buildChiefAggregationRequestText(
+  text: string,
+  project: Project,
+  chief: AgentInstance,
+  chiefPlan: string,
+  participantResults: ParticipantTaskResult[],
+  files: WorkspaceFileAttachment[],
+) {
+  const resultList = participantResults
+    .map((result) => `## ${result.agentName} (${result.state})\n${result.summary}`)
+    .join("\n\n");
+  const request = [
+    `You are ${chief.name}, the Chief agent for Vibe Office project "${project.name}" (${project.namespace}).`,
+    "Aggregate this one-round Task Room result into a final project-scoped answer.",
+    "",
+    "Original task:",
+    text,
+    "",
+    "Your initial plan:",
+    chiefPlan,
+    "",
+    "Participant results:",
+    resultList || "No participant results were returned.",
+    "",
+    "Return the final summary, note any failed participant work, and do not create new delegations.",
+  ].join("\n");
+
+  return buildAgentRequestText(request, project, files);
 }
 
 function getPartText(parts: A2APart[]) {
@@ -1719,21 +1989,25 @@ function TaskRoom({
         </div>
       ) : null}
       <div className="assignment-list">
-        {participants.map((agent) => (
-          <label className="assignment-row selectable-assignment" key={agent.id}>
-            <AgentAvatar agent={agent} size="small" />
-            <div>
-              <strong>{agent.name}</strong>
-              <span>{agent.tags.join(" / ")}</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={participantIds.includes(agent.id)}
-              onChange={(event) => onToggleParticipant(agent.id, event.currentTarget.checked)}
-              aria-label={`Select ${agent.name} for task room`}
-            />
-          </label>
-        ))}
+        {participants.length > 0 ? (
+          participants.map((agent) => (
+            <label className="assignment-row selectable-assignment" key={agent.id}>
+              <AgentAvatar agent={agent} size="small" />
+              <div>
+                <strong>{agent.name}</strong>
+                <span>{agent.tags.join(" / ")}</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={participantIds.includes(agent.id)}
+                onChange={(event) => onToggleParticipant(agent.id, event.currentTarget.checked)}
+                aria-label={`Select ${agent.name} for task room`}
+              />
+            </label>
+          ))
+        ) : (
+          <div className="inline-empty">Connect another online agent to delegate Task Room work.</div>
+        )}
       </div>
       <div className="task-room-transcript">
         {messages.length > 0 ? <MessageRows messages={messages} /> : <div className="inline-empty">Task Room messages will appear here after you submit a Chief-led task.</div>}
