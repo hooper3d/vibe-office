@@ -96,6 +96,11 @@ import {
   recordCancelUnsupportedState,
   recordLifecycleUnsupportedState,
 } from "./services/taskLifecycleState";
+import {
+  getAvailableTaskParticipants,
+  getSelectedTaskParticipants,
+  toggleTaskParticipantSelection,
+} from "./services/taskParticipantSelectionState";
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { getSplitPercentFromClientX, nudgeSplitPercent } from "./services/splitPaneState";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
@@ -183,11 +188,15 @@ export function App() {
   );
   const chiefAgent = useMemo(() => agents.find((agent) => agent.isChief), [agents]);
   const availableTaskParticipants = useMemo(
-    () => agents.filter((agent) => agent.id !== chiefAgent?.id && agent.status === "online"),
+    () => getAvailableTaskParticipants({ agents, chiefAgentId: chiefAgent?.id }),
     [agents, chiefAgent?.id],
   );
   const selectedTaskParticipants = useMemo(
-    () => availableTaskParticipants.filter((agent) => taskParticipantIds.includes(agent.id)),
+    () =>
+      getSelectedTaskParticipants({
+        availableParticipants: availableTaskParticipants,
+        selectedParticipantIds: taskParticipantIds,
+      }),
     [availableTaskParticipants, taskParticipantIds],
   );
   const activeSetupAgentId = agentSetup.setupAgentId ?? agentSetup.setupDraftAgentId ?? "";
@@ -767,7 +776,11 @@ export function App() {
 
   function toggleTaskParticipant(agentId: string, checked: boolean) {
     setTaskParticipantIds((current) =>
-      checked ? Array.from(new Set([...current, agentId])) : current.filter((id) => id !== agentId),
+      toggleTaskParticipantSelection({
+        selectedParticipantIds: current,
+        agentId,
+        checked,
+      }),
     );
   }
 

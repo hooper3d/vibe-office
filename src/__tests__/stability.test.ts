@@ -118,6 +118,11 @@ import {
   recordCancelUnsupportedState,
   recordLifecycleUnsupportedState,
 } from "../services/taskLifecycleState";
+import {
+  getAvailableTaskParticipants,
+  getSelectedTaskParticipants,
+  toggleTaskParticipantSelection,
+} from "../services/taskParticipantSelectionState";
 import { attachWorkspaceFileState, detachWorkspaceFileState } from "../services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "../services/workspaceSelectionState";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
@@ -1391,6 +1396,43 @@ test("task lifecycle helpers preserve unsupported and retry states", () => {
   assert.equal(failed[0].state, "failed");
   assert.equal(failed[0].summary, "Retry failed.");
   assert.equal(failed[0].events[failed[0].events.length - 1]?.label, "Retry failed.");
+});
+
+test("task participant selection excludes chief and offline agents while preserving toggles", () => {
+  const offlineParticipant = {
+    ...participant,
+    id: "agent-offline",
+    status: "offline" as const,
+  };
+  const available = getAvailableTaskParticipants({
+    agents: [agent, participant, offlineParticipant],
+    chiefAgentId: agent.id,
+  });
+
+  assert.deepEqual(available.map((item) => item.id), [participant.id]);
+  assert.deepEqual(
+    getSelectedTaskParticipants({
+      availableParticipants: available,
+      selectedParticipantIds: [participant.id, offlineParticipant.id],
+    }).map((item) => item.id),
+    [participant.id],
+  );
+  assert.deepEqual(
+    toggleTaskParticipantSelection({
+      selectedParticipantIds: [participant.id],
+      agentId: participant.id,
+      checked: true,
+    }),
+    [participant.id],
+  );
+  assert.deepEqual(
+    toggleTaskParticipantSelection({
+      selectedParticipantIds: [participant.id],
+      agentId: participant.id,
+      checked: false,
+    }),
+    [],
+  );
 });
 
 test("output selectors keep chat records separate from trackable project outputs", () => {
