@@ -103,7 +103,6 @@ const THEME_STORAGE_KEY = "vibe-office.theme";
 const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
-const FREE_CHAT_CONTEXT_MESSAGE_LIMIT = 12;
 const MAX_AVATAR_BYTES = 512 * 1024;
 const NON_CAPABILITY_TAGS = ["local", "hermes", "runtime"];
 const CAPABILITY_TAG_OPTIONS = [
@@ -234,13 +233,10 @@ export function App() {
       )
       .map((conversation) => {
         const conversationMessages = messages.filter((message) => message.conversationId === conversation.id);
-        const contextMessages = buildFreeChatContext(messages, conversation.id);
         const firstUserMessage = conversationMessages.find((message) => message.role === "user");
         return {
           conversation,
           messageCount: conversationMessages.length,
-          contextMessageCount: contextMessages.length,
-          estimatedContextTokens: estimateChatContextTokens(contextMessages),
           title: firstUserMessage ? getPartText(firstUserMessage.contentParts) : conversation.title,
         };
       })
@@ -926,8 +922,7 @@ export function App() {
     setAttachedWorkspaceFiles([]);
 
     try {
-      const freeChatContext = buildFreeChatContext(messages, conversation.id);
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text, freeChatContext);
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
       const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
 
@@ -2619,12 +2614,6 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function formatCompactNumber(value: number) {
-  if (value < 1000) return `${value}`;
-  if (value < 10000) return `${(value / 1000).toFixed(1)}k`;
-  return `${Math.round(value / 1000)}k`;
-}
-
 function formatWorkspacePath(result: WorkspaceFileListResult | null) {
   if (!result) return "Root";
   if (!result.path) return result.rootName || "Root";
@@ -2699,8 +2688,6 @@ function FreeChatHistoryPanel({
   histories: Array<{
     conversation: Conversation;
     messageCount: number;
-    contextMessageCount: number;
-    estimatedContextTokens: number;
     title: string;
   }>;
 }) {
@@ -2723,9 +2710,7 @@ function FreeChatHistoryPanel({
               key={item.conversation.id}
             >
               <strong>{item.title}</strong>
-              <span>
-                {item.messageCount} msgs · {item.contextMessageCount} ctx · ~{formatCompactNumber(item.estimatedContextTokens)} tok
-              </span>
+              <span>{item.messageCount} messages</span>
             </div>
           ))
         ) : (
@@ -2774,29 +2759,6 @@ function NoProjectState({ onSelectProject }: { onSelectProject: () => void }) {
 function getDisplayMessageText(message: ConversationMessage) {
   const text = getPartText(message.contentParts);
   return message.role === "system" ? sanitizeAgentErrorText(text) : text;
-}
-
-function buildFreeChatContext(messages: ConversationMessage[], conversationId: string) {
-  return messages
-    .filter((message) => message.conversationId === conversationId && message.status === "sent" && message.role !== "system")
-    .slice(-FREE_CHAT_CONTEXT_MESSAGE_LIMIT)
-    .map((message) => ({
-      role: message.role === "user" ? ("user" as const) : ("assistant" as const),
-      content: getPartText(message.contentParts),
-    }))
-    .filter((message) => message.content.trim().length > 0);
-}
-
-function estimateChatContextTokens(messages: Array<{ content: string }>) {
-  return messages.reduce((total, message) => total + estimateTextTokens(message.content) + 4, 0);
-}
-
-function estimateTextTokens(text: string) {
-  const cjkMatches = text.match(/[\u3400-\u9fff\uf900-\ufaff]/g);
-  const cjkCount = cjkMatches?.length ?? 0;
-  const nonCjkText = text.replace(/[\u3400-\u9fff\uf900-\ufaff]/g, "");
-  const nonWhitespaceCount = nonCjkText.replace(/\s+/g, "").length;
-  return Math.max(1, Math.ceil(cjkCount + nonWhitespaceCount / 4));
 }
 
 function getUserFacingAgentError(error: unknown) {
