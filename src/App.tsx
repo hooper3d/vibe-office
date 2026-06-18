@@ -35,6 +35,7 @@ import {
   createBackfilledMediaArtifacts,
 } from "./services/artifactState";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
+import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
 import {
   applyActiveFreeChatConversation,
   buildFreeChatHistory,
@@ -1125,34 +1126,44 @@ export function App() {
 
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = messageText.trim();
-    if (!text) return;
-    if (composerSubmittingRef.current) return;
-    if (conversationMode === "task-room") {
+    const intent = resolveComposerSubmissionIntent({
+      chatScope,
+      conversationMode,
+      hasChiefAgent: Boolean(chiefAgent),
+      hasSelectedAgent: Boolean(selectedAgent),
+      hasSelectedWorkspaceProject: Boolean(selectedWorkspaceProject),
+      isBusy: composerSubmittingRef.current,
+      selectedTaskParticipantCount: selectedTaskParticipants.length,
+      text: messageText,
+    });
+    if (intent.kind === "ignore") return;
+
+    if (intent.kind === "task-room") {
       if (!selectedWorkspaceProject || !chiefAgent) return;
-      if (selectedTaskParticipants.length === 0) return;
       composerSubmittingRef.current = true;
       setIsComposerSubmitting(true);
       try {
-        await submitTaskRoomMessage(text);
+        await submitTaskRoomMessage(intent.text);
       } finally {
         composerSubmittingRef.current = false;
         setIsComposerSubmitting(false);
       }
       return;
     }
+
     if (!selectedAgent) return;
-    if (chatScope === "free") {
+    if (intent.kind === "free-chat") {
       composerSubmittingRef.current = true;
       setIsComposerSubmitting(true);
       try {
-        await submitFreeChatMessage(text);
+        await submitFreeChatMessage(intent.text);
       } finally {
         composerSubmittingRef.current = false;
         setIsComposerSubmitting(false);
       }
       return;
     }
+
     if (!selectedWorkspaceProject) return;
 
     composerSubmittingRef.current = true;
@@ -1163,7 +1174,7 @@ export function App() {
         state: requestStoreRef.current.snapshot(),
         project: selectedWorkspaceProject,
         targetAgent,
-        text,
+        text: intent.text,
         files: attachedWorkspaceFiles,
       });
       const {
@@ -1191,7 +1202,7 @@ export function App() {
           userMessageId,
           runId,
           participantAgentIds,
-          text,
+          text: intent.text,
           agentRequestText,
         });
       } finally {

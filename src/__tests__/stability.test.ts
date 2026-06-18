@@ -8,6 +8,7 @@ import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, Pr
 import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
 import { getProviderSetupIssue } from "../domain/hermesSetup";
+import { resolveComposerSubmissionIntent } from "../services/composerSubmissionState";
 import {
   getPendingRequestMessages,
   resolveDirectMessageRetry,
@@ -938,6 +939,59 @@ test("output selectors keep chat records separate from trackable project outputs
   assert.deepEqual(filterRunsByAgent(runs, participant.id).map((item) => item.id), ["run-direct-task", "run-chief"]);
   assert.deepEqual(filterTasksByAgent(tasks, participant.id).map((item) => item.id), ["task-chief", "task-direct", "task-standalone"]);
   assert.deepEqual(filterArtifactsByAgent([artifact], participant.id).map((item) => item.id), ["artifact-1"]);
+});
+
+test("composer submission intent routes free, project, and task room requests", () => {
+  const base = {
+    chatScope: "free" as const,
+    conversationMode: "single" as const,
+    hasChiefAgent: true,
+    hasSelectedAgent: true,
+    hasSelectedWorkspaceProject: false,
+    isBusy: false,
+    selectedTaskParticipantCount: 1,
+    text: "  hello  ",
+  };
+
+  assert.deepEqual(resolveComposerSubmissionIntent({ ...base, text: "   " }), {
+    kind: "ignore",
+    reason: "empty",
+  });
+  assert.deepEqual(resolveComposerSubmissionIntent({ ...base, isBusy: true }), {
+    kind: "ignore",
+    reason: "busy",
+  });
+  assert.deepEqual(resolveComposerSubmissionIntent(base), {
+    kind: "free-chat",
+    text: "hello",
+  });
+  assert.deepEqual(resolveComposerSubmissionIntent({ ...base, chatScope: "project", hasSelectedWorkspaceProject: true }), {
+    kind: "project-chat",
+    text: "hello",
+  });
+  assert.deepEqual(
+    resolveComposerSubmissionIntent({
+      ...base,
+      conversationMode: "task-room",
+      hasSelectedWorkspaceProject: true,
+      selectedTaskParticipantCount: 0,
+    }),
+    {
+      kind: "ignore",
+      reason: "missing-participant",
+    },
+  );
+  assert.deepEqual(
+    resolveComposerSubmissionIntent({
+      ...base,
+      conversationMode: "task-room",
+      hasSelectedWorkspaceProject: true,
+    }),
+    {
+      kind: "task-room",
+      text: "hello",
+    },
+  );
 });
 
 test("request submission helpers create stable optimistic chat and task state", () => {
