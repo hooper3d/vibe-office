@@ -28,6 +28,11 @@ import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStor
 import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
+import {
+  applyLocalTrustedAgentStatuses,
+  deriveAgentReadinessIssues,
+  removeAgentReadinessIssues,
+} from "./services/agentReadinessState";
 import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
 import {
   applyActiveFreeChatConversation,
@@ -185,16 +190,10 @@ export function App() {
     [availableTaskParticipants, taskParticipantIds],
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
-  const agentSetupIssues = useMemo(() => {
-    return Object.fromEntries(
-      agents.map((agent) => {
-        const issues = [...(localTrustedAgentIssues[agent.id] ?? [])];
-        const setupIssue = getProviderSetupIssue(agent);
-        if (setupIssue && !issues.includes(setupIssue)) issues.unshift(setupIssue);
-        return [agent.id, issues];
-      }),
-    );
-  }, [agents, localTrustedAgentIssues]);
+  const agentSetupIssues = useMemo(
+    () => deriveAgentReadinessIssues({ agents, localTrustedIssues: localTrustedAgentIssues }),
+    [agents, localTrustedAgentIssues],
+  );
   const selectedWorkspaceProject = selectedProject?.id === FREE_CHAT_ENTRY_PROJECT_ID ? undefined : selectedProject;
   const scopedTasks = useMemo(
     () => (selectedWorkspaceProject ? tasks.filter((task) => task.projectId === selectedWorkspaceProject.id) : []),
@@ -612,8 +611,9 @@ export function App() {
     try {
       const statuses = await getLocalTrustedAgentStatuses(agentIds);
       if (options.isCancelled?.()) return;
-      const nextIssues = Object.fromEntries(statuses.map((status) => [status.id, status.issues]));
-      setLocalTrustedAgentIssues((current) => (options.replace ? nextIssues : { ...current, ...nextIssues }));
+      setLocalTrustedAgentIssues((current) =>
+        applyLocalTrustedAgentStatuses({ currentIssues: current, replace: options.replace, statuses }),
+      );
     } catch {
       if (options.isCancelled?.()) return;
       if (options.replace) setLocalTrustedAgentIssues({});
@@ -697,10 +697,7 @@ export function App() {
     const remainingAgents = normalizeChief(agents.filter((agent) => agent.id !== agentId));
     const fallbackAgent = remainingAgents.find((agent) => agent.isChief) ?? remainingAgents[0];
     setAgents(remainingAgents);
-    setLocalTrustedAgentIssues((current) => {
-      const { [agentId]: _deletedAgentIssues, ...remainingIssues } = current;
-      return remainingIssues;
-    });
+    setLocalTrustedAgentIssues((current) => removeAgentReadinessIssues(current, agentId));
     if (selectedAgentId === agentId) {
       setSelectedAgentId(fallbackAgent?.id ?? "");
     }

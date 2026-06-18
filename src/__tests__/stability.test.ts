@@ -62,6 +62,11 @@ import {
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { A2AClient } from "../services/a2aClient";
 import { applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
+import {
+  applyLocalTrustedAgentStatuses,
+  deriveAgentReadinessIssues,
+  removeAgentReadinessIssues,
+} from "../services/agentReadinessState";
 import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentStorage";
 import {
   applyActiveFreeChatConversation,
@@ -752,6 +757,52 @@ test("agent setup save deduplicates providers and keeps one chief", () => {
   assert.equal(result.agents[1].id, existingAgent.id);
   assert.equal(result.agents[1].isChief, true);
   assert.equal(result.agents[1].apiKey, undefined);
+});
+
+test("agent readiness state merges local trusted and static setup issues", () => {
+  const minimaxAgent: AgentInstance = {
+    ...agent,
+    id: "agent-minimax",
+    endpoint: "https://api.minimaxi.com/v1",
+    model: "MiniMax-M3",
+    runtimeProvider: "openai",
+  };
+
+  const issues = deriveAgentReadinessIssues({
+    agents: [minimaxAgent, participant],
+    localTrustedIssues: {
+      "agent-minimax": ["API key is not saved in the local trusted layer."],
+      [participant.id]: ["Transient local status issue."],
+    },
+  });
+
+  assert.match(issues["agent-minimax"].join("\n"), /MiniMax M3 should be configured as Anthropic-compatible/);
+  assert.match(issues["agent-minimax"].join("\n"), /API key is not saved/);
+  assert.deepEqual(issues[participant.id], ["Transient local status issue."]);
+});
+
+test("agent readiness state applies status refreshes and removes deleted agents", () => {
+  const currentIssues = {
+    "agent-a": ["old"],
+    "agent-b": ["stale"],
+  };
+
+  const merged = applyLocalTrustedAgentStatuses({
+    currentIssues,
+    statuses: [{ id: "agent-a", issues: ["fresh"] }],
+  });
+  assert.deepEqual(merged, {
+    "agent-a": ["fresh"],
+    "agent-b": ["stale"],
+  });
+
+  const replaced = applyLocalTrustedAgentStatuses({
+    currentIssues,
+    replace: true,
+    statuses: [{ id: "agent-c", issues: [] }],
+  });
+  assert.deepEqual(replaced, { "agent-c": [] });
+  assert.deepEqual(removeAgentReadinessIssues(merged, "agent-b"), { "agent-a": ["fresh"] });
 });
 
 test("agent chief normalization preserves legacy chief fallback", () => {
