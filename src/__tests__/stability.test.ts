@@ -1513,6 +1513,64 @@ test("local trusted registry preserves credentials when metadata is rewritten wi
   }
 });
 
+test("local trusted registry update sync keeps saved credentials while refreshing provider metadata", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
+  const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+  process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = localTrustedHome;
+
+  try {
+    const {
+      readLocalTrustedAgentRegistry,
+      updateLocalTrustedAgentRegistry,
+      writeLocalTrustedAgentRegistry,
+    } = await import("../../localTrusted/agentRegistry");
+
+    await writeLocalTrustedAgentRegistry({
+      "agent-provider-sync": {
+        ...agent,
+        id: "agent-provider-sync",
+        name: "Provider Sync",
+        endpoint: "https://api.example.com/v1",
+        a2aEndpoint: "https://api.example.com/a2a",
+        agentCardUrl: "https://api.example.com/.well-known/agent-card.json",
+        model: "old-model",
+        runtimeProvider: "openai",
+        apiKey: "saved-provider-key",
+      },
+    });
+
+    await updateLocalTrustedAgentRegistry((registry) => ({
+      ...registry,
+      "agent-provider-sync": {
+        ...registry["agent-provider-sync"],
+        endpoint: "https://api.example.com/v1",
+        a2aEndpoint: "https://api.example.com/a2a",
+        agentCardUrl: "https://api.example.com/.well-known/agent-card.json",
+        model: "new-model",
+        runtimeProvider: "anthropic",
+        apiKey: undefined,
+      },
+    }));
+
+    const registryRaw = await readFile(path.join(localTrustedHome, "agent-registry.local.json"), "utf8");
+    const credentialRaw = await readFile(path.join(localTrustedHome, "agent-credentials.local.json"), "utf8");
+    const hydrated = await readLocalTrustedAgentRegistry();
+
+    assert.equal(registryRaw.includes("saved-provider-key"), false);
+    assert.equal(JSON.parse(credentialRaw)["agent-provider-sync"].apiKey, "saved-provider-key");
+    assert.equal(hydrated["agent-provider-sync"].apiKey, "saved-provider-key");
+    assert.equal(hydrated["agent-provider-sync"].model, "new-model");
+    assert.equal(hydrated["agent-provider-sync"].runtimeProvider, "anthropic");
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+    } else {
+      process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = previousHome;
+    }
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
 test("local trusted registry exposes safe agent status without credentials", async () => {
   const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
   const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
