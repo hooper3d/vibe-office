@@ -31,13 +31,11 @@ import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
 import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
 import {
-  applyActiveFreeChatConversation,
   buildFreeChatHistory,
   getConversationMessages,
   hasPendingUserRequest,
   resolveCurrentDirectConversation,
   resolveTaskRoomConversation,
-  shouldReuseEmptyFreeChat,
 } from "./services/conversationSelectionState";
 import {
   completeFreeChatRequestState,
@@ -48,6 +46,7 @@ import {
 } from "./services/directRequestOrchestrator";
 import { useProjectDialogState } from "./services/projectDialogState";
 import { useProjectSetupController } from "./services/projectSetupController";
+import { useFreeChatController } from "./services/freeChatController";
 import {
   applyMissingProjectSelection,
   normalizeConversationModeForScope,
@@ -70,7 +69,6 @@ import {
   type TaskRoomRequestStep,
 } from "./services/taskRoomOrchestrator";
 import {
-  createConversation,
   prepareFreeChatSubmission,
   prepareProjectDirectSubmission,
   prepareTaskRoomSubmission,
@@ -282,6 +280,23 @@ export function App() {
     () => hasPendingUserRequest(taskRoomMessages),
     [taskRoomMessages],
   );
+  const freeChatController = useFreeChatController({
+    activeFreeChatConversationIds,
+    chatScope,
+    currentConversation,
+    currentMessages,
+    freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+    freeChatNamespace: FREE_CHAT_NAMESPACE,
+    freeChatProjectId: FREE_CHAT_PROJECT_ID,
+    selectedAgent,
+    setActiveFreeChatConversationIds,
+    setAttachedWorkspaceFiles,
+    setChatScope,
+    setConversationMode,
+    setConversations,
+    setMessageText,
+    setSelectedProjectId,
+  });
   const activeComposerHasPendingRequest =
     conversationMode === "single" ? currentConversationHasPendingRequest : taskRoomHasPendingRequest;
   const respondingAgentIds = useMemo(() => getRespondingAgentIds(conversations, messages), [conversations, messages]);
@@ -328,19 +343,6 @@ export function App() {
     if (nextSelection.chatScope !== chatScope) setChatScope(nextSelection.chatScope);
     if (nextSelection.conversationMode !== conversationMode) setConversationMode(nextSelection.conversationMode);
   }, [chatScope, conversationMode, projects, selectedProjectId]);
-
-  useEffect(() => {
-    if (chatScope !== "free" || !selectedAgent || !currentConversation) return;
-    if (activeFreeChatConversationIds[selectedAgent.id] === currentConversation.id) return;
-
-    setActiveFreeChatConversationIds((current) =>
-      applyActiveFreeChatConversation({
-        activeConversationIds: current,
-        agentId: selectedAgent.id,
-        conversationId: currentConversation.id,
-      }),
-    );
-  }, [activeFreeChatConversationIds, chatScope, currentConversation, selectedAgent]);
 
   useEffect(() => {
     syncRequestRuntimeWorkspaceState(requestStoreRef.current, {
@@ -499,62 +501,6 @@ export function App() {
         checked,
       }),
     );
-  }
-
-  function selectFreeChatConversation(conversationId: string) {
-    if (!selectedAgent) return;
-
-    setActiveFreeChatConversationIds((current) =>
-      applyActiveFreeChatConversation({
-        activeConversationIds: current,
-        agentId: selectedAgent.id,
-        conversationId,
-      }),
-    );
-    setChatScope("free");
-    setConversationMode("single");
-    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
-  }
-
-  function startNewFreeChat() {
-    if (!selectedAgent) return;
-    const reusableConversation = currentConversation;
-    if (
-      reusableConversation &&
-      shouldReuseEmptyFreeChat({
-        conversation: reusableConversation,
-        messageCount: currentMessages.length,
-        freeChatProjectId: FREE_CHAT_PROJECT_ID,
-      })
-    ) {
-      selectFreeChatConversation(reusableConversation.id);
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const conversation = createConversation({
-      projectId: FREE_CHAT_PROJECT_ID,
-      namespace: FREE_CHAT_NAMESPACE,
-      mode: "direct",
-      title: "New chat",
-      primaryAgentId: selectedAgent.id,
-      participantAgentIds: [selectedAgent.id],
-      createdAt: now,
-    });
-
-    setConversations((current) => [conversation, ...current]);
-    setActiveFreeChatConversationIds((current) =>
-      applyActiveFreeChatConversation({
-        activeConversationIds: current,
-        agentId: selectedAgent.id,
-        conversationId: conversation.id,
-      }),
-    );
-    setChatScope("free");
-    setConversationMode("single");
-    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
-    setMessageText("");
-    setAttachedWorkspaceFiles([]);
   }
 
   function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
@@ -1030,12 +976,12 @@ export function App() {
             onCreateProject={projectDialog.openProjectDialog}
             onDetachFile={detachWorkspaceFile}
             onEditProject={projectDialog.openProjectEditor}
-            onNewFreeChat={startNewFreeChat}
+            onNewFreeChat={freeChatController.startNewConversation}
             onOpenPreview={openPreview}
             onOutputModeChange={setOutputMode}
             onRefreshTask={refreshTaskLifecycle}
             onRetryTask={retryTaskLifecycle}
-            onSelectFreeChatConversation={selectFreeChatConversation}
+            onSelectFreeChatConversation={freeChatController.selectConversation}
           />
         </div>
       </main>
