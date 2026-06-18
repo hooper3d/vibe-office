@@ -383,6 +383,7 @@ Completed:
 - User messages now carry durable `requestId`, `requestAttempt`, `requestStartedAt`, and `requestCompletedAt` fields so retry/reload recovery has a stable request identity separate from the visible message id.
 - In-flight request tracking is centralized in a request tracker service instead of a bare React `Set`, preparing the boundary for local trusted request orchestration.
 - Direct free-chat and project-chat provider turns are routed through a direct chat request service that owns history construction plus provider execution.
+- Task Room Chief planning, participant execution, and Chief aggregation provider turns are routed through a task-room request service.
 
 Still open:
 
