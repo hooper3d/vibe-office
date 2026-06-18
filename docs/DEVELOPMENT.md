@@ -720,6 +720,7 @@ Implementation progress:
 - Agent profile saves now upsert provider connection details into the local trusted agent registry.
 - Browser agent storage strips API keys before writing `localStorage`; legacy browser-stored keys are migrated into the local trusted registry on the next agent sync.
 - Provider adapters now pass `agentId` to the local trusted layer and no longer assemble provider credential headers in browser code.
+- Provider adapter boundary tests now guard OpenAI-compatible, Anthropic-compatible, and Native A2A browser adapters against direct `fetch`, `apiKey`, `Authorization`, `x-api-key`, or Bearer-token handling.
 - Add/Edit Agent connection tests now persist credentials to the local trusted registry first, then test with a credential-stripped agent object so browser adapters do not retain API keys.
 - Browser agent loading no longer restores legacy `apiKey` fields from old localStorage records.
 - The local trusted provider endpoint validates that an agent-scoped request targets that registered agent before injecting credentials.

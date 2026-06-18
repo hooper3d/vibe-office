@@ -738,6 +738,26 @@ test("agent http transport delegates provider commands to the local trusted laye
   }
 });
 
+test("browser provider adapters stay credential-free and command-only", async () => {
+  const providerSources = await Promise.all(
+    ["openaiProvider.ts", "anthropicProvider.ts", "nativeA2AProvider.ts", "a2aClient.ts"].map(async (fileName) => ({
+      fileName,
+      source: await readFile(path.join(process.cwd(), "src", "services", fileName), "utf8"),
+    })),
+  );
+
+  for (const { fileName, source } of providerSources) {
+    assert.doesNotMatch(source, /apiKey|Authorization|x-api-key|Bearer/i, `${fileName} must not handle credentials in browser code`);
+    assert.doesNotMatch(source, /\bfetch\s*\(/, `${fileName} must use the local trusted transport, not direct fetch`);
+  }
+
+  assert.match(providerSources.find((item) => item.fileName === "openaiProvider.ts")?.source ?? "", /openai\.chatCompletions/);
+  assert.match(providerSources.find((item) => item.fileName === "anthropicProvider.ts")?.source ?? "", /anthropic\.messages/);
+  assert.match(providerSources.find((item) => item.fileName === "nativeA2AProvider.ts")?.source ?? "", /new A2AClient/);
+  assert.match(providerSources.find((item) => item.fileName === "a2aClient.ts")?.source ?? "", /a2a\.messageSend/);
+  assert.match(providerSources.find((item) => item.fileName === "a2aClient.ts")?.source ?? "", /commandJson/);
+});
+
 test("agent http transport preserves local trusted error details", async () => {
   const objectError = await readErrorSuffix(
     new Response(JSON.stringify({ error: { message: "API key is missing in the local trusted layer." } }), {
