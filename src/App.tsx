@@ -1,9 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { AppDialogs } from "./components/AppDialogs";
 import { AppSidebar } from "./components/AppSidebar";
-import { ConversationWorkspace } from "./components/ConversationWorkspace";
-import { OutputPanel, type OutputMode } from "./components/OutputPanel";
+import { MainWorkspace, type OutputMode } from "./components/MainWorkspace";
 import type {
   Conversation,
   ConversationMessage,
@@ -371,91 +369,58 @@ export function App() {
         onToggleTheme={appActionController.toggleTheme}
       />
 
-      <main className="workspace">
-        <div
-          className="main-split"
-          style={{
-            "--conversation-fr": `${splitPercent}fr`,
-            "--output-fr": `${100 - splitPercent}fr`,
-          } as CSSProperties}
-        >
-          <ConversationWorkspace
-            activeComposerHasPendingRequest={conversationView.activeComposerHasPendingRequest}
-            agents={agents}
-            attachedWorkspaceFiles={attachedWorkspaceFiles}
-            chatScope={chatScope}
-            chiefAgent={agentView.chiefAgent}
-            conversationMode={conversationMode}
-            currentConversationHasPendingRequest={conversationView.currentConversationHasPendingRequest}
-            currentMessages={conversationView.currentMessages}
-            isComposerSubmitting={composerController.isComposerSubmitting}
-            latestChiefTask={latestChiefTask}
-            messageText={messageText}
-            selectedAgent={agentView.selectedAgent}
-            selectedTaskParticipantCount={agentView.selectedTaskParticipants.length}
-            selectedWorkspaceProject={selectedWorkspaceProject}
-            taskParticipantIds={taskParticipantIds}
-            taskRoomHasPendingRequest={conversationView.taskRoomHasPendingRequest}
-            taskRoomMessages={conversationView.taskRoomMessages}
-            onAddAgent={agentSetup.openAddAgentDialog}
-            onDetachWorkspaceFile={appActionController.detachWorkspaceFile}
-            onMessageTextChange={setMessageText}
-            onRetryDirectMessage={directChatController.retryDirectMessage}
-            onRetryTaskRoomMessage={taskRoomController.retryTaskRoomMessage}
-            onSelectFreeChat={() => setChatScope("free")}
-            onSubmitMessage={composerController.submitMessage}
-            onToggleTaskParticipant={appSelectionController.toggleTaskParticipant}
-          />
-
-          <div
-            className="splitter"
-            role="separator"
-            aria-label="Resize conversation and output panels"
-            aria-orientation="vertical"
-            aria-valuemin={35}
-            aria-valuemax={70}
-            aria-valuenow={Math.round(splitPercent)}
-            tabIndex={0}
-            onPointerDown={workspaceChromeController.startSplitDrag}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") workspaceChromeController.nudgeSplit("left");
-              if (event.key === "ArrowRight") workspaceChromeController.nudgeSplit("right");
-            }}
-          >
-            <span />
-          </div>
-
-          <OutputPanel
-            agents={agents}
-            artifacts={scopedArtifacts}
-            attachedWorkspaceFiles={attachedWorkspaceFiles}
-            browserUrl={browserUrl}
-            busyActionId={taskLifecycleBusyId}
-            chatScope={chatScope}
-            freeChatActiveConversationId={conversationView.currentConversation?.id}
-            freeChatAgent={agentView.selectedAgent}
-            freeChatHistories={conversationView.freeChatHistory}
-            outputMode={outputMode}
-            previewOwnerAgentId={previewOutput?.ownerAgentId}
-            previewUrl={previewOutput?.url ?? ""}
-            project={selectedWorkspaceProject}
-            runs={scopedRuns}
-            tasks={scopedTasks}
-            onAttachFile={appActionController.attachWorkspaceFile}
-            onBrowserUrlChange={setBrowserUrl}
-            onCancelTask={cancelTaskLifecycle}
-            onCreateProject={projectDialog.openProjectDialog}
-            onDetachFile={appActionController.detachWorkspaceFile}
-            onEditProject={projectDialog.openProjectEditor}
-            onNewFreeChat={freeChatController.startNewConversation}
-            onOpenPreview={workspaceChromeController.openPreview}
-            onOutputModeChange={setOutputMode}
-            onRefreshTask={refreshTaskLifecycle}
-            onRetryTask={retryTaskLifecycle}
-            onSelectFreeChatConversation={freeChatController.selectConversation}
-          />
-        </div>
-      </main>
+      <MainWorkspace
+        activeComposerHasPendingRequest={conversationView.activeComposerHasPendingRequest}
+        agents={agents}
+        attachedWorkspaceFiles={attachedWorkspaceFiles}
+        browserUrl={browserUrl}
+        busyActionId={taskLifecycleBusyId}
+        chatScope={chatScope}
+        chiefAgent={agentView.chiefAgent}
+        conversationMode={conversationMode}
+        currentConversation={conversationView.currentConversation}
+        currentConversationHasPendingRequest={conversationView.currentConversationHasPendingRequest}
+        currentMessages={conversationView.currentMessages}
+        freeChatAgent={agentView.selectedAgent}
+        freeChatHistories={conversationView.freeChatHistory}
+        isComposerSubmitting={composerController.isComposerSubmitting}
+        latestChiefTask={latestChiefTask}
+        messageText={messageText}
+        outputMode={outputMode}
+        previewOwnerAgentId={previewOutput?.ownerAgentId}
+        previewUrl={previewOutput?.url ?? ""}
+        project={selectedWorkspaceProject}
+        runs={scopedRuns}
+        scopedArtifacts={scopedArtifacts}
+        selectedAgent={agentView.selectedAgent}
+        selectedTaskParticipantCount={agentView.selectedTaskParticipants.length}
+        splitPercent={splitPercent}
+        taskParticipantIds={taskParticipantIds}
+        taskRoomHasPendingRequest={conversationView.taskRoomHasPendingRequest}
+        taskRoomMessages={conversationView.taskRoomMessages}
+        tasks={scopedTasks}
+        onAddAgent={agentSetup.openAddAgentDialog}
+        onAttachFile={appActionController.attachWorkspaceFile}
+        onBrowserUrlChange={setBrowserUrl}
+        onCancelTask={cancelTaskLifecycle}
+        onCreateProject={projectDialog.openProjectDialog}
+        onDetachWorkspaceFile={appActionController.detachWorkspaceFile}
+        onEditProject={projectDialog.openProjectEditor}
+        onMessageTextChange={setMessageText}
+        onNewFreeChat={freeChatController.startNewConversation}
+        onOpenPreview={workspaceChromeController.openPreview}
+        onOutputModeChange={setOutputMode}
+        onRefreshTask={refreshTaskLifecycle}
+        onRetryDirectMessage={directChatController.retryDirectMessage}
+        onRetryTask={retryTaskLifecycle}
+        onRetryTaskRoomMessage={taskRoomController.retryTaskRoomMessage}
+        onSelectFreeChat={() => setChatScope("free")}
+        onSelectFreeChatConversation={freeChatController.selectConversation}
+        onSplitterKeyNudge={workspaceChromeController.nudgeSplit}
+        onSplitterPointerDown={workspaceChromeController.startSplitDrag}
+        onSubmitMessage={composerController.submitMessage}
+        onToggleTaskParticipant={appSelectionController.toggleTaskParticipant}
+      />
 
       <AppDialogs
         activeSetupAgentId={activeSetupAgentId}

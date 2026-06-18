@@ -2870,6 +2870,20 @@ test("output workspace keeps browser preview and project outputs in focused comp
   assert.match(projectOutputs, /OutputTypeButton/);
 });
 
+test("app shell delegates main workspace rendering to a focused component", async () => {
+  const app = await readFile(path.join(process.cwd(), "src", "App.tsx"), "utf8");
+  const mainWorkspace = await readFile(path.join(process.cwd(), "src", "components", "MainWorkspace.tsx"), "utf8");
+
+  assert.match(app, /MainWorkspace/);
+  assert.doesNotMatch(app, /<ConversationWorkspace/);
+  assert.doesNotMatch(app, /<OutputPanel/);
+  assert.doesNotMatch(app, /className="main-split"/);
+  assert.match(mainWorkspace, /export function MainWorkspace/);
+  assert.match(mainWorkspace, /<ConversationWorkspace/);
+  assert.match(mainWorkspace, /<OutputPanel/);
+  assert.match(mainWorkspace, /className="main-split"/);
+});
+
 test("M9 provider regression script keeps Chinese context probes readable", async () => {
   const source = await readFile(path.join(process.cwd(), "scripts", "run-provider-regression.mjs"), "utf8");
 
