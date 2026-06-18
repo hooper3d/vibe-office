@@ -33,8 +33,10 @@ import {
 } from "../services/taskRoomOrchestrator";
 import {
   createBrowserAgentHttpTransport,
+  type AgentHttpTransport,
   toLocalTrustedProxyUrl,
 } from "../services/agentHttpTransport";
+import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
@@ -382,6 +384,122 @@ test("agent http transport maps local trusted proxy URLs and normalizes provider
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test("provider adapter routes OpenAI-compatible free chat through chat completions", async () => {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const transport: AgentHttpTransport = {
+    async request() {
+      throw new Error("Native A2A should not be used for OpenAI-compatible agents.");
+    },
+    async requestJson<T>(url: string, init: RequestInit) {
+      calls.push({ url, init });
+      return {
+        choices: [
+          {
+            message: {
+              content: "OpenAI-compatible response.",
+            },
+          },
+        ],
+      } as T;
+    },
+  };
+  const openAIAgent: AgentInstance = {
+    ...agent,
+    runtimeProvider: "openai",
+    endpoint: "https://api.deepseek.example/v1",
+    model: "deepseek-chat",
+  };
+
+  const adapter = new HermesA2AAdapter({ agent: openAIAgent, transport });
+  const task = await adapter.sendFreeChatMessage("hi", [{ role: "assistant", content: "prior answer" }]);
+  const result = await adapter.testConnection();
+  const metadata = createA2ACompatibilityMetadata(result);
+
+  assert.equal(calls[0].url, "https://api.deepseek.example/v1/chat/completions");
+  assert.equal(task.metadata?.adapter, "openai-compatible");
+  assert.equal(task.status.message?.parts[0].kind, "text");
+  assert.equal(result.mode, "openai-compatible");
+  assert.equal(metadata.a2aTransportBinding, "openai-compatible-http");
+});
+
+test("provider adapter routes Anthropic-compatible project chat through messages", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const transport: AgentHttpTransport = {
+    async request() {
+      throw new Error("Native A2A should not be used for Anthropic-compatible agents.");
+    },
+    async requestJson<T>(url: string, init: RequestInit) {
+      calls.push({ url, body: JSON.parse(String(init.body)) });
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Anthropic-compatible response.",
+          },
+        ],
+      } as T;
+    },
+  };
+  const anthropicAgent: AgentInstance = {
+    ...agent,
+    runtimeProvider: "anthropic",
+    endpoint: "https://api.minimax.example/anthropic",
+    model: "MiniMax-M3",
+  };
+
+  const adapter = new HermesA2AAdapter({ agent: anthropicAgent, transport });
+  const task = await adapter.sendProjectMessage(project, "Draft release notes.", [{ role: "assistant", content: "prior answer" }]);
+  const result = await adapter.testConnection();
+  const metadata = createA2ACompatibilityMetadata(result);
+
+  assert.equal(calls[0].url, "https://api.minimax.example/anthropic/v1/messages");
+  assert.equal((calls[0].body as { system?: string }).system, "Vibe Office project namespace: project-vibe-office. Keep this task scoped to this project.");
+  assert.equal(task.metadata?.adapter, "anthropic-compatible");
+  assert.equal(result.mode, "anthropic-compatible");
+  assert.equal(metadata.a2aSelectedInterface, "Anthropic messages");
+});
+
+test("provider adapter falls Hermes native A2A failures back to Hermes chat compatibility", async () => {
+  const requestUrls: string[] = [];
+  const requestJsonUrls: string[] = [];
+  const transport: AgentHttpTransport = {
+    async request(url: string) {
+      requestUrls.push(url);
+      return new Response(JSON.stringify({ error: "native unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    async requestJson<T>(url: string) {
+      requestJsonUrls.push(url);
+      return {
+        choices: [
+          {
+            message: {
+              content: "Hermes compatibility response.",
+            },
+          },
+        ],
+      } as T;
+    },
+  };
+  const nativeHermesAgent: AgentInstance = {
+    ...agent,
+    runtimeProvider: "hermes",
+    endpoint: "http://127.0.0.1:8642/v1",
+    a2aEndpoint: "https://native.example/a2a",
+    agentCardUrl: "https://native.example/.well-known/agent-card.json",
+    a2aTransportBinding: "json-rpc/http",
+    a2aProtocolVersion: "1.0",
+  };
+
+  const task = await new HermesA2AAdapter({ agent: nativeHermesAgent, transport }).sendProjectMessage(project, "Recover through chat.");
+
+  assert.equal(requestUrls[0], "https://native.example/a2a");
+  assert.equal(requestJsonUrls[0], "http://127.0.0.1:8642/v1/chat/completions");
+  assert.equal(task.metadata?.adapter, "hermes-openai-compatible");
 });
 
 test("canonical host redirect keeps local storage on one loopback origin", () => {

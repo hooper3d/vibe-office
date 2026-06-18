@@ -70,7 +70,7 @@ import {
   type DirectRequestResult,
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
-import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
+import { createA2ACompatibilityMetadata, HermesA2AAdapter, type A2ACompatibilityMetadata } from "./services/hermesA2AAdapter";
 import {
   getPendingRequestMessages,
   getRespondingAgentIds,
@@ -101,16 +101,6 @@ import {
 type OutputMode = "workspace" | "browser" | "runs" | "artifacts";
 type ConversationMode = "single" | "task-room";
 type ChatScope = "free" | "project";
-type A2ACompatibilityMetadata = Pick<
-  AgentInstance,
-  | "a2aLastCompatibilityCheckAt"
-  | "a2aProtocolVersion"
-  | "a2aSelectedInterface"
-  | "a2aSupportedInterfaces"
-  | "a2aTransportBinding"
-  | "supportsCancel"
-  | "supportsTaskLifecycle"
->;
 type DirectoryPickerHandle = {
   name: string;
 };
@@ -2057,37 +2047,6 @@ function MarkdownContent({ content }: { content: string }) {
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
     </div>
   );
-}
-
-function createA2ACompatibilityMetadata(result: HermesConnectionTestResult): A2ACompatibilityMetadata {
-  const nativeA2A = result.mode === "native-a2a";
-  const providerInterfaces: Record<HermesConnectionTestResult["mode"], string[]> = {
-    "native-a2a": ["message/send", "tasks/get", "tasks/cancel"],
-    "hermes-adapter": ["chat/completions"],
-    "openai-compatible": ["chat/completions"],
-    "anthropic-compatible": ["messages"],
-  };
-  const providerTransport: Record<HermesConnectionTestResult["mode"], string> = {
-    "native-a2a": "json-rpc/http",
-    "hermes-adapter": "hermes-compatible-http",
-    "openai-compatible": "openai-compatible-http",
-    "anthropic-compatible": "anthropic-compatible-http",
-  };
-  const providerSelectedInterface: Record<HermesConnectionTestResult["mode"], string> = {
-    "native-a2a": "message/send + tasks/get",
-    "hermes-adapter": "Hermes compatibility",
-    "openai-compatible": "OpenAI chat completions",
-    "anthropic-compatible": "Anthropic messages",
-  };
-  return {
-    a2aProtocolVersion: result.card.protocolVersion ?? (nativeA2A ? "unknown" : "compatibility"),
-    a2aTransportBinding: providerTransport[result.mode],
-    a2aSupportedInterfaces: providerInterfaces[result.mode],
-    a2aSelectedInterface: providerSelectedInterface[result.mode],
-    a2aLastCompatibilityCheckAt: new Date().toISOString(),
-    supportsTaskLifecycle: nativeA2A,
-    supportsCancel: nativeA2A ? undefined : false,
-  };
 }
 
 function mergeLifecycleTaskUpdate(

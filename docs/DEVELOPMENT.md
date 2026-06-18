@@ -696,7 +696,14 @@ Implementation progress:
 - Shared agent profile constants live in `src/domain/agentProfile.ts`.
 - Shared agent display primitives live in `src/components/AgentPrimitives.tsx`.
 - `App.tsx` remains the state and request orchestration owner for this slice.
-- Next M7-1 slice should continue separating provider adapters from UI orchestration.
+- M7-2 provider adapter split started.
+- OpenAI-compatible execution lives in `src/services/openaiProvider.ts`.
+- Anthropic-compatible execution lives in `src/services/anthropicProvider.ts`.
+- Native A2A execution lives in `src/services/nativeA2AProvider.ts`.
+- Shared provider result and task helpers live in `src/services/providerTypes.ts`.
+- `HermesA2AAdapter` remains the unified provider entry, native fallback coordinator, and A2A compatibility metadata mapper.
+- Provider split tests cover OpenAI-compatible free chat, Anthropic-compatible project chat, and Hermes native fallback to chat compatibility.
+- Next M7 slice should start Output Area organization by agent and output type.
 
 Acceptance:
 
