@@ -728,6 +728,7 @@ Implementation progress:
 - Local trusted workspace directory listing, file preview, and text search now live in `localTrusted/workspaceFiles.ts`.
 - Controlled generated-media serving for local temp images and WSL media roots now lives in `localTrusted/generatedMedia.ts`.
 - Shared local trusted JSON parsing, JSON/binary responses, safe error text, and provider HTTP forwarding now live in `localTrusted/http.ts`, keeping `localTrusted/vitePlugin.ts` focused on route registration.
+- Local trusted agent registry updates are now serialized and written through a temporary file before replacement, preventing concurrent upsert/delete requests from corrupting the local provider registry during browser smoke cleanup or rapid agent edits.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
 - M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.
 - M9 provider regression harness started.

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 const LOCAL_TRUSTED_AGENT_REGISTRY_PATH = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
+let registryUpdateQueue = Promise.resolve();
 
 export type LocalTrustedAgentRecord = {
   id: string;
@@ -81,8 +82,33 @@ export async function readLocalTrustedAgentRegistry(): Promise<Record<string, Lo
 }
 
 export async function writeLocalTrustedAgentRegistry(registry: Record<string, LocalTrustedAgentRecord>) {
-  await fs.mkdir(path.dirname(LOCAL_TRUSTED_AGENT_REGISTRY_PATH), { recursive: true });
-  await fs.writeFile(LOCAL_TRUSTED_AGENT_REGISTRY_PATH, JSON.stringify(registry, null, 2), "utf8");
+  const registryDirectory = path.dirname(LOCAL_TRUSTED_AGENT_REGISTRY_PATH);
+  const temporaryPath = path.join(
+    registryDirectory,
+    `agent-registry.local.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
+  );
+
+  await fs.mkdir(registryDirectory, { recursive: true });
+  await fs.writeFile(temporaryPath, JSON.stringify(registry, null, 2), "utf8");
+  await fs.rename(temporaryPath, LOCAL_TRUSTED_AGENT_REGISTRY_PATH);
+}
+
+export function updateLocalTrustedAgentRegistry(
+  updater: (registry: Record<string, LocalTrustedAgentRecord>) => Record<string, LocalTrustedAgentRecord> | Promise<Record<string, LocalTrustedAgentRecord>>,
+) {
+  const update = registryUpdateQueue.then(async () => {
+    const registry = await readLocalTrustedAgentRegistry();
+    const nextRegistry = await updater({ ...registry });
+    await writeLocalTrustedAgentRegistry(nextRegistry);
+    return nextRegistry;
+  });
+
+  registryUpdateQueue = update.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  return update;
 }
 
 function getVerifiedRuntimeProvider(value: unknown): LocalTrustedAgentRecord["runtimeProvider"] {

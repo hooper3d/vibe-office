@@ -2,8 +2,7 @@ import type { Plugin, ViteDevServer } from "vite";
 import {
   getVerifiedTrustedAgentRecord,
   getLocalTrustedAgent,
-  readLocalTrustedAgentRegistry,
-  writeLocalTrustedAgentRegistry,
+  updateLocalTrustedAgentRegistry,
 } from "./agentRegistry";
 import {
   assertProviderTargetBelongsToAgent,
@@ -35,14 +34,15 @@ export function localTrustedLayerPlugin(): Plugin {
         try {
           const body = await readJsonBody(req);
           const agent = getVerifiedTrustedAgentRecord(body.agent);
-          const registry = await readLocalTrustedAgentRegistry();
-          const existing = registry[agent.id];
-          registry[agent.id] = {
-            ...existing,
-            ...agent,
-            apiKey: agent.apiKey ?? existing?.apiKey,
-          };
-          await writeLocalTrustedAgentRegistry(registry);
+          await updateLocalTrustedAgentRegistry((registry) => {
+            const existing = registry[agent.id];
+            registry[agent.id] = {
+              ...existing,
+              ...agent,
+              apiKey: agent.apiKey ?? existing?.apiKey,
+            };
+            return registry;
+          });
           sendJson(res, 200, { ok: true });
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
@@ -56,9 +56,10 @@ export function localTrustedLayerPlugin(): Plugin {
           const body = await readJsonBody(req);
           const agentId = String(body.agentId || "").trim();
           if (!agentId) throw new Error("Agent id is required.");
-          const registry = await readLocalTrustedAgentRegistry();
-          delete registry[agentId];
-          await writeLocalTrustedAgentRegistry(registry);
+          await updateLocalTrustedAgentRegistry((registry) => {
+            delete registry[agentId];
+            return registry;
+          });
           sendJson(res, 200, { ok: true });
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });

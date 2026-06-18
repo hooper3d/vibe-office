@@ -1,4 +1,6 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { chromium } from "playwright-core";
 
 const appUrl = process.env.VIBE_OFFICE_URL ?? "http://127.0.0.1:5180/";
@@ -30,6 +32,7 @@ try {
   await cleanupSmokeAgents().catch((error) => {
     console.warn(`Unable to clean up smoke agents: ${error instanceof Error ? error.message : String(error)}`);
   });
+  await assertLocalTrustedRegistryJson();
   await browser.close();
 }
 
@@ -854,6 +857,22 @@ async function cleanupSmokeAgents() {
       }
     }),
   );
+}
+
+async function assertLocalTrustedRegistryJson() {
+  const registryPath = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
+  let raw = "";
+  try {
+    raw = await readFile(registryPath, "utf8");
+  } catch {
+    return;
+  }
+
+  try {
+    JSON.parse(raw);
+  } catch {
+    throw new Error("Local trusted agent registry must remain valid JSON after browser smoke cleanup.");
+  }
 }
 
 function assertEqual(actual, expected, label) {
