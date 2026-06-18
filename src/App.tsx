@@ -42,7 +42,10 @@ import { resolveComposerSubmissionIntent } from "./services/composerSubmissionSt
 import {
   applyActiveFreeChatConversation,
   buildFreeChatHistory,
+  getConversationMessages,
+  hasPendingUserRequest,
   resolveCurrentDirectConversation,
+  resolveTaskRoomConversation,
   shouldReuseEmptyFreeChat,
 } from "./services/conversationSelectionState";
 import {
@@ -247,29 +250,24 @@ export function App() {
       }),
     [activeFreeChatConversationId, chatScope, conversations, directConversationProjectId, freeChatHistory, selectedAgent],
   );
-  const currentMessages = useMemo(() => {
-    if (!currentConversation) return [];
-    return messages.filter((message) => message.conversationId === currentConversation.id);
-  }, [currentConversation, messages]);
+  const currentMessages = useMemo(
+    () => getConversationMessages({ conversation: currentConversation, messages }),
+    [currentConversation, messages],
+  );
   const currentConversationHasPendingRequest = useMemo(
-    () => currentMessages.some((message) => message.role === "user" && message.status === "sending"),
+    () => hasPendingUserRequest(currentMessages),
     [currentMessages],
   );
-  const taskRoomConversation = useMemo(() => {
-    if (!chiefAgent || !selectedWorkspaceProject) return undefined;
-    return conversations.find(
-      (conversation) =>
-        conversation.projectId === selectedWorkspaceProject.id &&
-        conversation.mode === "task_room" &&
-        conversation.chiefAgentId === chiefAgent.id,
-    );
-  }, [chiefAgent, conversations, selectedWorkspaceProject]);
-  const taskRoomMessages = useMemo(() => {
-    if (!taskRoomConversation) return [];
-    return messages.filter((message) => message.conversationId === taskRoomConversation.id);
-  }, [messages, taskRoomConversation]);
+  const taskRoomConversation = useMemo(
+    () => resolveTaskRoomConversation({ chiefAgent, conversations, project: selectedWorkspaceProject }),
+    [chiefAgent, conversations, selectedWorkspaceProject],
+  );
+  const taskRoomMessages = useMemo(
+    () => getConversationMessages({ conversation: taskRoomConversation, messages }),
+    [messages, taskRoomConversation],
+  );
   const taskRoomHasPendingRequest = useMemo(
-    () => taskRoomMessages.some((message) => message.role === "user" && message.status === "sending"),
+    () => hasPendingUserRequest(taskRoomMessages),
     [taskRoomMessages],
   );
   const activeComposerHasPendingRequest =

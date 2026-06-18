@@ -1,6 +1,6 @@
 import type { A2APart } from "../domain/a2a";
 import type { Conversation, ConversationMessage } from "../domain/projectScope";
-import type { AgentInstance } from "../domain/types";
+import type { AgentInstance, Project } from "../domain/types";
 
 export type FreeChatHistoryItem = {
   conversation: Conversation;
@@ -68,6 +68,39 @@ export function resolveCurrentDirectConversation({
       conversation.projectId === directConversationProjectId &&
       conversation.mode === "direct" &&
       conversation.primaryAgentId === agent.id,
+  );
+}
+
+export function getConversationMessages({
+  conversation,
+  messages,
+}: {
+  conversation?: Conversation;
+  messages: ConversationMessage[];
+}) {
+  if (!conversation) return [];
+  return messages.filter((message) => message.conversationId === conversation.id);
+}
+
+export function hasPendingUserRequest(messages: ConversationMessage[]) {
+  return messages.some((message) => message.role === "user" && message.status === "sending");
+}
+
+export function resolveTaskRoomConversation({
+  chiefAgent,
+  conversations,
+  project,
+}: {
+  chiefAgent?: AgentInstance;
+  conversations: Conversation[];
+  project?: Project;
+}) {
+  if (!chiefAgent || !project) return undefined;
+  return conversations.find(
+    (conversation) =>
+      conversation.projectId === project.id &&
+      conversation.mode === "task_room" &&
+      conversation.chiefAgentId === chiefAgent.id,
   );
 }
 

@@ -765,6 +765,7 @@ Implementation progress:
 - Workspace project selection now lives in `src/services/workspaceSelectionState.ts`, keeping scoped tasks/runs/artifacts and latest Chief task derivation out of `App.tsx`.
 - Workspace file attachment add/remove rules now live in `src/services/workspaceAttachmentState.ts`, keeping dedupe and max-attachment behavior reusable outside `App.tsx`.
 - Task participant availability, selection, and toggle rules now live in `src/services/taskParticipantSelectionState.ts`, keeping Chief/offline filtering out of `App.tsx`.
+- Conversation message, pending-request, and Task Room conversation selectors now live in `src/services/conversationSelectionState.ts`, keeping more chat derivation out of `App.tsx`.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:
@@ -804,6 +805,7 @@ Acceptance:
 - Workspace selection state now lives in `src/services/workspaceSelectionState.ts`, covering selected project, selected workspace project, scoped tasks/runs/artifacts, and latest Chief task derivation.
 - Workspace attachment state now lives in `src/services/workspaceAttachmentState.ts`, covering dedupe, attach timestamps, max attached files, and detach-by-path behavior.
 - Task participant selection state now lives in `src/services/taskParticipantSelectionState.ts`, covering available participant filtering, active participant derivation, and duplicate-safe toggles.
+- Conversation selection state now also covers conversation message filtering, pending user request detection, and Task Room conversation lookup.
 - Generated media artifact backfill now lives in `src/services/artifactBackfillState.ts`, keeping artifacts plus task/run artifact links aligned in both React state and `requestRuntimeStore`.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
 

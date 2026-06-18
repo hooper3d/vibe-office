@@ -71,7 +71,10 @@ import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentSto
 import {
   applyActiveFreeChatConversation,
   buildFreeChatHistory,
+  getConversationMessages,
+  hasPendingUserRequest,
   resolveCurrentDirectConversation,
+  resolveTaskRoomConversation,
   shouldReuseEmptyFreeChat,
 } from "../services/conversationSelectionState";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
@@ -1209,6 +1212,57 @@ test("free chat selection derives history and current conversation", () => {
       freeChatHistory: history,
     })?.id,
     newerFreeConversation.id,
+  );
+});
+
+test("conversation selection derives messages, pending state, and task room conversation", () => {
+  const directConversation = conversation({ id: "direct-conversation" });
+  const taskConversation = conversation({
+    id: "task-room-conversation",
+    mode: "task_room",
+    chiefAgentId: agent.id,
+  });
+  const directSendingMessage = userMessage({
+    id: "direct-sending",
+    conversationId: directConversation.id,
+    status: "sending",
+  });
+  const directSentMessage = userMessage({
+    id: "direct-sent",
+    conversationId: directConversation.id,
+    status: "sent",
+  });
+  const taskMessage = userMessage({
+    id: "task-message",
+    conversationId: taskConversation.id,
+    status: "sent",
+  });
+
+  assert.deepEqual(
+    getConversationMessages({
+      conversation: directConversation,
+      messages: [directSendingMessage, taskMessage, directSentMessage],
+    }).map((item) => item.id),
+    ["direct-sending", "direct-sent"],
+  );
+  assert.deepEqual(getConversationMessages({ conversation: undefined, messages: [directSendingMessage] }), []);
+  assert.equal(hasPendingUserRequest([directSentMessage]), false);
+  assert.equal(hasPendingUserRequest([directSentMessage, directSendingMessage]), true);
+  assert.equal(
+    resolveTaskRoomConversation({
+      chiefAgent: agent,
+      conversations: [directConversation, taskConversation],
+      project,
+    })?.id,
+    taskConversation.id,
+  );
+  assert.equal(
+    resolveTaskRoomConversation({
+      chiefAgent: participant,
+      conversations: [taskConversation],
+      project,
+    }),
+    undefined,
   );
 });
 
