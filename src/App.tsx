@@ -100,6 +100,7 @@ type ConfirmAction =
     };
 
 const THEME_STORAGE_KEY = "vibe-office.theme";
+const UI_STATE_STORAGE_KEY = "vibe-office.ui.v1";
 const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
@@ -122,6 +123,34 @@ const OFFICE_ROLE_OPTIONS: Array<{ label: string; value: AgentOfficeRole }> = [
   { label: "Operator", value: "operator" },
 ];
 
+type StoredUiState = {
+  selectedAgentId?: string;
+  selectedProjectId?: string;
+  chatScope?: ChatScope;
+  conversationMode?: ConversationMode;
+  outputMode?: OutputMode;
+};
+
+function loadUiState(): StoredUiState {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(UI_STATE_STORAGE_KEY);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw) as StoredUiState;
+    return {
+      selectedAgentId: typeof parsed.selectedAgentId === "string" ? parsed.selectedAgentId : undefined,
+      selectedProjectId: typeof parsed.selectedProjectId === "string" ? parsed.selectedProjectId : undefined,
+      chatScope: parsed.chatScope === "project" ? "project" : parsed.chatScope === "free" ? "free" : undefined,
+      conversationMode: parsed.conversationMode === "task-room" ? "task-room" : parsed.conversationMode === "single" ? "single" : undefined,
+      outputMode: ["workspace", "browser", "runs", "artifacts"].includes(parsed.outputMode ?? "") ? parsed.outputMode : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 declare global {
   interface Window {
     showDirectoryPicker?: () => Promise<DirectoryPickerHandle>;
@@ -130,6 +159,7 @@ declare global {
 
 export function App() {
   const [initialWorkspace] = useState(() => loadWorkspaceState());
+  const [initialUiState] = useState(() => loadUiState());
   const [agents, setAgents] = useState<AgentInstance[]>(() => loadConfiguredAgents());
   const [projects, setProjects] = useState<Project[]>(() =>
     initialWorkspace.projects.length > 0 ? initialWorkspace.projects : seedProjects,
@@ -149,11 +179,13 @@ export function App() {
   const [artifacts, setArtifacts] = useState<ProjectArtifact[]>(() =>
     initialWorkspace.artifacts.length > 0 ? initialWorkspace.artifacts : projectArtifacts,
   );
-  const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState(FREE_CHAT_ENTRY_PROJECT_ID);
-  const [chatScope, setChatScope] = useState<ChatScope>("free");
-  const [conversationMode, setConversationMode] = useState<ConversationMode>("single");
-  const [outputMode, setOutputMode] = useState<OutputMode>("workspace");
+  const [selectedAgentId, setSelectedAgentId] = useState(initialUiState.selectedAgentId ?? "");
+  const [selectedProjectId, setSelectedProjectId] = useState(initialUiState.selectedProjectId ?? FREE_CHAT_ENTRY_PROJECT_ID);
+  const [chatScope, setChatScope] = useState<ChatScope>(
+    initialUiState.chatScope ?? (initialUiState.selectedProjectId && initialUiState.selectedProjectId !== FREE_CHAT_ENTRY_PROJECT_ID ? "project" : "free"),
+  );
+  const [conversationMode, setConversationMode] = useState<ConversationMode>(initialUiState.conversationMode ?? "single");
+  const [outputMode, setOutputMode] = useState<OutputMode>(initialUiState.outputMode ?? "workspace");
   const [messageText, setMessageText] = useState("");
   const [browserUrl, setBrowserUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -162,6 +194,7 @@ export function App() {
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
   const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
+  const activeRequestMessageIdsRef = useRef(new Set<string>());
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
@@ -222,6 +255,10 @@ export function App() {
     if (!currentConversation) return [];
     return messages.filter((message) => message.conversationId === currentConversation.id);
   }, [currentConversation, messages]);
+  const currentConversationHasPendingRequest = useMemo(
+    () => currentMessages.some((message) => message.role === "user" && message.status === "sending"),
+    [currentMessages],
+  );
   const freeChatHistory = useMemo(() => {
     if (!selectedAgent) return [];
     return conversations
@@ -255,6 +292,10 @@ export function App() {
     if (!taskRoomConversation) return [];
     return messages.filter((message) => message.conversationId === taskRoomConversation.id);
   }, [messages, taskRoomConversation]);
+  const taskRoomHasPendingRequest = useMemo(
+    () => taskRoomMessages.some((message) => message.role === "user" && message.status === "sending"),
+    [taskRoomMessages],
+  );
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
@@ -277,8 +318,30 @@ export function App() {
   }, [selectedAgent, selectedAgentId]);
 
   useEffect(() => {
+    if (selectedProjectId === FREE_CHAT_ENTRY_PROJECT_ID) return;
+    if (projects.some((project) => project.id === selectedProjectId)) return;
+
+    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
+    setChatScope("free");
+    setConversationMode("single");
+  }, [projects, selectedProjectId]);
+
+  useEffect(() => {
     saveConfiguredAgents(agents);
   }, [agents]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      UI_STATE_STORAGE_KEY,
+      JSON.stringify({
+        selectedAgentId,
+        selectedProjectId,
+        chatScope,
+        conversationMode,
+        outputMode,
+      }),
+    );
+  }, [chatScope, conversationMode, outputMode, selectedAgentId, selectedProjectId]);
 
   useEffect(() => {
     saveWorkspaceState({
@@ -290,6 +353,72 @@ export function App() {
       artifacts,
     });
   }, [artifacts, conversations, messages, projects, runs, tasks]);
+
+  useEffect(() => {
+    const pendingMessages = messages.filter(
+      (message) =>
+        message.role === "user" &&
+        message.status === "sending" &&
+        !activeRequestMessageIdsRef.current.has(message.id),
+    );
+    if (pendingMessages.length === 0) return;
+
+    pendingMessages.forEach((message) => {
+      const conversation = conversations.find((item) => item.id === message.conversationId);
+      if (!conversation) {
+        markInterruptedMessageFailed(message, "Conversation no longer exists. Please resend this message.");
+        return;
+      }
+
+      if (conversation.mode !== "direct") {
+        markInterruptedMessageFailed(message, "This interrupted task-room request cannot be restored yet. Please resend it.");
+        return;
+      }
+
+      const agent = agents.find((item) => item.id === conversation.primaryAgentId);
+      if (!agent) {
+        markInterruptedMessageFailed(message, "Agent no longer exists. Please resend this message after reconnecting the agent.");
+        return;
+      }
+
+      const text = getTextPartContent(message.contentParts).trim();
+      if (!text) {
+        markInterruptedMessageFailed(message, "Message content could not be restored. Please resend it.");
+        return;
+      }
+
+      activeRequestMessageIdsRef.current.add(message.id);
+
+      if (conversation.projectId === FREE_CHAT_PROJECT_ID) {
+        void completeFreeChatRequest({
+          conversation,
+          targetAgent: agent,
+          userMessageId: message.id,
+          text,
+        }).finally(() => {
+          activeRequestMessageIdsRef.current.delete(message.id);
+        });
+        return;
+      }
+
+      const project = projects.find((item) => item.id === conversation.projectId);
+      if (!project) {
+        activeRequestMessageIdsRef.current.delete(message.id);
+        markInterruptedMessageFailed(message, "Project no longer exists. Please resend this message.");
+        return;
+      }
+
+      void resumeProjectDirectRequest({
+        message,
+        conversation,
+        project,
+        targetAgent: agent,
+        text,
+      }).finally(() => {
+        activeRequestMessageIdsRef.current.delete(message.id);
+      });
+    });
+  }, [agents, conversations, messages, projects]);
 
   useEffect(() => {
     const mediaLinks = createBackfilledMediaArtifacts(messages);
@@ -881,46 +1010,45 @@ export function App() {
     );
   }
 
-  async function submitFreeChatMessage(text: string) {
-    if (!selectedAgent) return;
-
-    const targetAgent = selectedAgent;
-    const now = new Date().toISOString();
-    const existingConversation = conversations.find(
-      (item) =>
-        item.projectId === FREE_CHAT_PROJECT_ID &&
-        item.mode === "direct" &&
-        item.primaryAgentId === targetAgent.id,
+  function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
+    const failedAt = new Date().toISOString();
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === message.id
+          ? {
+              ...item,
+              status: "failed",
+            }
+          : item,
+      ),
     );
-    const conversation =
-      existingConversation ??
-      createConversation({
-        projectId: FREE_CHAT_PROJECT_ID,
-        namespace: FREE_CHAT_NAMESPACE,
-        mode: "direct",
-        title: `${targetAgent.name} free chat`,
-        primaryAgentId: targetAgent.id,
-        participantAgentIds: [targetAgent.id],
-        createdAt: now,
-      });
-    const userMessageId = crypto.randomUUID();
-    const userMessage: ConversationMessage = {
-      id: userMessageId,
-      conversationId: conversation.id,
-      projectId: FREE_CHAT_PROJECT_ID,
-      role: "user",
-      contentParts: createTextParts(text),
-      status: "sending",
-      createdAt: now,
-    };
+    setMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        conversationId: message.conversationId,
+        projectId: message.projectId,
+        role: "system",
+        agentId: message.agentId,
+        contentParts: createTextParts(reason),
+        runId: message.runId,
+        status: "sent",
+        createdAt: failedAt,
+      },
+    ]);
+  }
 
-    if (!existingConversation) {
-      setConversations((current) => [conversation, ...current]);
-    }
-    setMessages((current) => [...current, userMessage]);
-    setMessageText("");
-    setAttachedWorkspaceFiles([]);
-
+  async function completeFreeChatRequest({
+    conversation,
+    targetAgent,
+    userMessageId,
+    text,
+  }: {
+    conversation: Conversation;
+    targetAgent: AgentInstance;
+    userMessageId: string;
+    text: string;
+  }) {
     try {
       const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
@@ -986,6 +1114,304 @@ export function App() {
           createdAt: failedAt,
         },
       ]);
+    }
+  }
+
+  async function submitFreeChatMessage(text: string) {
+    if (!selectedAgent) return;
+
+    const targetAgent = selectedAgent;
+    const now = new Date().toISOString();
+    const existingConversation = conversations.find(
+      (item) =>
+        item.projectId === FREE_CHAT_PROJECT_ID &&
+        item.mode === "direct" &&
+        item.primaryAgentId === targetAgent.id,
+    );
+    const conversation =
+      existingConversation ??
+      createConversation({
+        projectId: FREE_CHAT_PROJECT_ID,
+        namespace: FREE_CHAT_NAMESPACE,
+        mode: "direct",
+        title: `${targetAgent.name} free chat`,
+        primaryAgentId: targetAgent.id,
+        participantAgentIds: [targetAgent.id],
+        createdAt: now,
+      });
+    const userMessageId = crypto.randomUUID();
+    const userMessage: ConversationMessage = {
+      id: userMessageId,
+      conversationId: conversation.id,
+      projectId: FREE_CHAT_PROJECT_ID,
+      role: "user",
+      contentParts: createTextParts(text),
+      status: "sending",
+      createdAt: now,
+    };
+
+    if (!existingConversation) {
+      setConversations((current) => [conversation, ...current]);
+    }
+    activeRequestMessageIdsRef.current.add(userMessageId);
+    setMessages((current) => [...current, userMessage]);
+    setMessageText("");
+    setAttachedWorkspaceFiles([]);
+
+    try {
+      await completeFreeChatRequest({ conversation, targetAgent, userMessageId, text });
+    } finally {
+      activeRequestMessageIdsRef.current.delete(userMessageId);
+    }
+  }
+
+  async function restoreWorkspaceAttachments(project: Project, message: ConversationMessage) {
+    const references = message.workspaceContext ?? [];
+    if (references.length === 0) return [];
+    if (!project.directory) {
+      throw new Error("Project directory is not available.");
+    }
+
+    const restoredFiles = await Promise.all(
+      references.map(async (reference) => {
+        const file = await readWorkspaceFile(project.directory ?? "", reference.path);
+        return {
+          path: file.path,
+          content: file.content,
+          size: file.size,
+          updatedAt: file.updatedAt,
+          attachedAt: reference.attachedAt,
+        };
+      }),
+    );
+
+    return restoredFiles;
+  }
+
+  async function resumeProjectDirectRequest({
+    message,
+    conversation,
+    project,
+    targetAgent,
+    text,
+  }: {
+    message: ConversationMessage;
+    conversation: Conversation;
+    project: Project;
+    targetAgent: AgentInstance;
+    text: string;
+  }) {
+    let restoredFiles: WorkspaceFileAttachment[] = [];
+
+    try {
+      restoredFiles = await restoreWorkspaceAttachments(project, message);
+    } catch {
+      markInterruptedMessageFailed(message, "Workspace files from the interrupted request could not be restored. Please resend it.");
+      return;
+    }
+
+    const runId = message.runId ?? crypto.randomUUID();
+    const participantAgentIds = [targetAgent.id];
+    const existingRun = runs.find((run) => run.id === runId);
+    if (!existingRun) {
+      const now = new Date().toISOString();
+      setRuns((current) => [
+        {
+          id: runId,
+          projectId: project.id,
+          conversationId: conversation.id,
+          type: "direct_message",
+          ownerAgentId: targetAgent.id,
+          participantAgentIds,
+          state: "submitting",
+          eventIds: [`${runId}-restored`],
+          artifactIds: [],
+          createdAt: message.createdAt,
+          updatedAt: now,
+        },
+        ...current,
+      ]);
+    }
+
+    await completeProjectDirectRequest({
+      project,
+      conversation,
+      targetAgent,
+      userMessageId: message.id,
+      runId,
+      participantAgentIds,
+      text,
+      agentRequestText: buildAgentRequestText(text, project, restoredFiles),
+    });
+  }
+
+  async function completeProjectDirectRequest({
+    project,
+    conversation,
+    targetAgent,
+    userMessageId,
+    runId,
+    participantAgentIds,
+    text,
+    agentRequestText,
+  }: {
+    project: Project;
+    conversation: Conversation;
+    targetAgent: AgentInstance;
+    userMessageId: string;
+    runId: string;
+    participantAgentIds: string[];
+    text: string;
+    agentRequestText: string;
+  }) {
+    try {
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(project, agentRequestText);
+      const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a task update.`;
+      const mediaArtifact = createMediaArtifactFromText({
+        projectId: project.id,
+        taskId: remoteTask.id || runId,
+        agentId: targetAgent.id,
+        name: `${targetAgent.name} media`,
+        text: responseSummary,
+        createdAt: remoteTask.status.timestamp ?? new Date().toISOString(),
+      });
+      const returnedArtifacts = [
+        ...mapA2AArtifacts(remoteTask, project.id, targetAgent.id),
+        ...(mediaArtifact ? [mediaArtifact] : []),
+      ];
+      const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
+      const mappedState = mapA2AState(remoteTask.status.state);
+      const shouldCreateTask = !isDirectMessageResponse(remoteTask);
+      const taskId = shouldCreateTask ? remoteTask.id || crypto.randomUUID() : undefined;
+      const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
+            ? {
+                ...message,
+                status: "sent",
+                runId,
+              }
+            : message,
+        ),
+      );
+
+      if (responseSummary) {
+        const agentMessage: ConversationMessage = {
+          id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: project.id,
+          role: "agent",
+          agentId: targetAgent.id,
+          contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
+          a2aMessageId: remoteTask.status.message?.messageId,
+          taskId,
+          runId,
+          status: "sent",
+          createdAt: completedAt,
+        };
+        setMessages((current) => [...current, agentMessage]);
+      }
+
+      if (returnedArtifacts.length > 0) {
+        setArtifacts((current) => [...returnedArtifacts, ...current]);
+        setOutputMode("artifacts");
+      }
+
+      if (shouldCreateTask && taskId) {
+        const projectTask: ProjectTask = {
+          id: taskId,
+          projectId: project.id,
+          contextId: remoteTask.contextId || project.namespace,
+          remoteTaskId: remoteTask.id || taskId,
+          remoteContextId: remoteTask.contextId || project.namespace,
+          title: text.length > 56 ? `${text.slice(0, 56)}...` : text,
+          ownerAgentId: targetAgent.id,
+          participantAgentIds,
+          state: mappedState,
+          summary: responseSummary,
+          events: [
+            {
+              id: `${taskId}-accepted`,
+              taskId,
+              agentId: targetAgent.id,
+              label: "Agent returned a task.",
+              state: mappedState,
+              timestamp: completedAt,
+            },
+          ],
+          artifactIds: returnedArtifactIds,
+          updatedAt: completedAt,
+        };
+        setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
+        setOutputMode("runs");
+      }
+
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                taskId,
+                state: mappedState,
+                eventIds: mergeIds(run.eventIds, [`${runId}-completed`]),
+                artifactIds: returnedArtifactIds,
+                updatedAt: completedAt,
+              }
+            : run,
+        ),
+      );
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === conversation.id
+            ? {
+                ...item,
+                updatedAt: completedAt,
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
+            ? {
+                ...message,
+                status: "failed",
+                runId,
+              }
+            : message,
+        ),
+      );
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                state: "failed",
+                eventIds: mergeIds(run.eventIds, [`${runId}-failed`]),
+                updatedAt: failedAt,
+              }
+            : run,
+        ),
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: project.id,
+          role: "system",
+          agentId: targetAgent.id,
+          contentParts: createTextParts(getUserFacingAgentError(error)),
+          runId,
+          status: "sent",
+          createdAt: failedAt,
+        },
+      ]);
+      setOutputMode("runs");
     }
   }
 
@@ -1082,157 +1508,25 @@ export function App() {
       if (!existingConversation) {
         setConversations((current) => [conversation, ...current]);
       }
+      activeRequestMessageIdsRef.current.add(userMessageId);
       setMessages((current) => [...current, userMessage]);
       setRuns((current) => [optimisticRun, ...current]);
       setMessageText("");
       setAttachedWorkspaceFiles([]);
 
       try {
-        const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, agentRequestText);
-        const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a task update.`;
-        const mediaArtifact = createMediaArtifactFromText({
-          projectId: selectedWorkspaceProject.id,
-          taskId: remoteTask.id || runId,
-          agentId: targetAgent.id,
-          name: `${targetAgent.name} media`,
-          text: responseSummary,
-          createdAt: remoteTask.status.timestamp ?? new Date().toISOString(),
+        await completeProjectDirectRequest({
+          project: selectedWorkspaceProject,
+          conversation,
+          targetAgent,
+          userMessageId,
+          runId,
+          participantAgentIds,
+          text,
+          agentRequestText,
         });
-        const returnedArtifacts = [
-          ...mapA2AArtifacts(remoteTask, selectedWorkspaceProject.id, targetAgent.id),
-          ...(mediaArtifact ? [mediaArtifact] : []),
-        ];
-        const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
-        const mappedState = mapA2AState(remoteTask.status.state);
-        const shouldCreateTask = !isDirectMessageResponse(remoteTask);
-        const taskId = shouldCreateTask ? remoteTask.id || crypto.randomUUID() : undefined;
-        const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
-
-        setMessages((current) =>
-          current.map((message) =>
-            message.id === userMessageId
-              ? {
-                  ...message,
-                  status: "sent",
-                }
-              : message,
-          ),
-        );
-
-        if (responseSummary) {
-          const agentMessage: ConversationMessage = {
-            id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
-            conversationId: conversation.id,
-            projectId: selectedWorkspaceProject.id,
-            role: "agent",
-            agentId: targetAgent.id,
-            contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
-            a2aMessageId: remoteTask.status.message?.messageId,
-            taskId,
-            runId,
-            status: "sent",
-            createdAt: completedAt,
-          };
-          setMessages((current) => [...current, agentMessage]);
-        }
-
-        if (returnedArtifacts.length > 0) {
-          setArtifacts((current) => [...returnedArtifacts, ...current]);
-          setOutputMode("artifacts");
-        }
-
-        if (shouldCreateTask && taskId) {
-          const projectTask: ProjectTask = {
-            id: taskId,
-            projectId: selectedWorkspaceProject.id,
-            contextId: remoteTask.contextId || selectedWorkspaceProject.namespace,
-            remoteTaskId: remoteTask.id || taskId,
-            remoteContextId: remoteTask.contextId || selectedWorkspaceProject.namespace,
-            title: text.length > 56 ? `${text.slice(0, 56)}...` : text,
-            ownerAgentId: targetAgent.id,
-            participantAgentIds,
-            state: mappedState,
-            summary: responseSummary,
-            events: [
-              {
-                id: `${taskId}-accepted`,
-                taskId,
-                agentId: targetAgent.id,
-                label: "Agent returned a task.",
-                state: mappedState,
-                timestamp: completedAt,
-              },
-            ],
-            artifactIds: returnedArtifactIds,
-            updatedAt: completedAt,
-          };
-          setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
-          setOutputMode("runs");
-        }
-
-        setRuns((current) =>
-          current.map((run) =>
-            run.id === runId
-              ? {
-                  ...run,
-                  taskId,
-                  state: mappedState,
-                  eventIds: [...run.eventIds, `${runId}-completed`],
-                  artifactIds: returnedArtifactIds,
-                  updatedAt: completedAt,
-                }
-              : run,
-          ),
-        );
-        setConversations((current) =>
-          current.map((item) =>
-            item.id === conversation.id
-              ? {
-                  ...item,
-                  updatedAt: completedAt,
-                }
-              : item,
-          ),
-        );
-      } catch (error) {
-        const failedAt = new Date().toISOString();
-        setMessages((current) =>
-          current.map((message) =>
-            message.id === userMessageId
-              ? {
-                  ...message,
-                  status: "failed",
-                }
-              : message,
-          ),
-        );
-        setRuns((current) =>
-          current.map((run) =>
-            run.id === runId
-              ? {
-                  ...run,
-                  state: "failed",
-                  eventIds: [...run.eventIds, `${runId}-failed`],
-                  updatedAt: failedAt,
-                }
-              : run,
-          ),
-        );
-        setMessages((current) => [
-          ...current,
-          {
-            id: crypto.randomUUID(),
-            conversationId: conversation.id,
-            projectId: selectedWorkspaceProject.id,
-            role: "system",
-            agentId: targetAgent.id,
-            contentParts: createTextParts(getUserFacingAgentError(error)),
-            runId,
-            status: "sent",
-            createdAt: failedAt,
-          },
-        ]);
-        setOutputMode("runs");
+      } finally {
+        activeRequestMessageIdsRef.current.delete(userMessageId);
       }
     } finally {
       composerSubmittingRef.current = false;
@@ -1885,7 +2179,7 @@ export function App() {
               <DirectChat
                 messages={currentMessages}
                 scope={chatScope}
-                isResponding={isComposerSubmitting}
+                isResponding={isComposerSubmitting || currentConversationHasPendingRequest}
               />
             ) : conversationMode === "single" ? (
               <NoAgentState onAddAgent={() => setShowSetup(true)} />
@@ -1896,7 +2190,7 @@ export function App() {
                 messages={taskRoomMessages}
                 participantIds={taskParticipantIds}
                 projectTask={latestChiefTask}
-                isResponding={isComposerSubmitting}
+                isResponding={isComposerSubmitting || taskRoomHasPendingRequest}
                 onToggleParticipant={toggleTaskParticipant}
               />
             ) : (
