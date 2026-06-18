@@ -4,7 +4,7 @@ import { AppSidebar } from "./components/AppSidebar";
 import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { ConfirmDialog, ProjectDialog, type ConfirmAction } from "./components/ProjectDialogs";
-import { SetupWizard, type ConnectionTestState } from "./components/SetupWizard";
+import { SetupWizard } from "./components/SetupWizard";
 import type { A2ATask } from "./domain/a2a";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
 import {
@@ -27,6 +27,7 @@ import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
+import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
 import {
   applyLocalTrustedAgentStatuses,
@@ -47,7 +48,7 @@ import {
   type DirectRequestResult,
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
-import { createA2ACompatibilityMetadata, HermesA2AAdapter, type A2ACompatibilityMetadata } from "./services/hermesA2AAdapter";
+import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "./services/hermesA2AAdapter";
 import {
   deleteLocalTrustedAgent,
   getLocalTrustedAgentStatuses,
@@ -162,16 +163,11 @@ export function App() {
   const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
   const requestStoreRef = useRef(createRequestRuntimeStore({ conversations, messages, runs, tasks, artifacts }));
-  const [showSetup, setShowSetup] = useState(false);
-  const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
+  const agentSetup = useAgentSetupDialogState();
   const [showProjectDialog, setShowProjectDialog] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [projectFormError, setProjectFormError] = useState("");
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const [testState, setTestState] = useState<ConnectionTestState>("idle");
-  const [testMessage, setTestMessage] = useState("");
-  const [lastConnectionMetadata, setLastConnectionMetadata] = useState<A2ACompatibilityMetadata | null>(null);
-  const [isSavingAgent, setIsSavingAgent] = useState(false);
   const [localTrustedAgentIssues, setLocalTrustedAgentIssues] = useState<Record<string, string[]>>({});
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
@@ -563,28 +559,24 @@ export function App() {
   }
 
   async function runConnectionTest(form: FormData) {
-    setTestState("running");
-    setTestMessage("");
+    agentSetup.markConnectionRunning();
 
     try {
       const agent = createAgentFromHermesSetup(form);
       const setupIssue = getProviderSetupIssue(agent);
       if (setupIssue) {
-        setTestState("failed");
-        setLastConnectionMetadata(null);
-        setTestMessage(setupIssue);
+        agentSetup.markConnectionFailed(setupIssue);
         return;
       }
       if (!(await persistLocalTrustedAgent(agent))) return;
       const result = await new HermesA2AAdapter({ agent: stripAgentCredential(agent) }).testConnection();
 
-      setTestState("passed");
-      setLastConnectionMetadata(createA2ACompatibilityMetadata(result));
-      setTestMessage(`${result.card.name || agent.name} provider connection verified.`);
+      agentSetup.markConnectionPassed(
+        createA2ACompatibilityMetadata(result),
+        `${result.card.name || agent.name} provider connection verified.`,
+      );
     } catch (error) {
-      setTestState("failed");
-      setLastConnectionMetadata(null);
-      setTestMessage(getUserFacingAgentError(error));
+      agentSetup.markConnectionFailed(getUserFacingAgentError(error));
     }
   }
 
@@ -593,8 +585,7 @@ export function App() {
       await upsertLocalTrustedAgent(agent);
       return true;
     } catch {
-      setTestState("failed");
-      setTestMessage("Unable to update the local trusted agent registry.");
+      agentSetup.markConnectionFailed("Unable to update the local trusted agent registry.");
       return false;
     }
   }
@@ -620,58 +611,24 @@ export function App() {
     }
   }
 
-  function resetConnectionTest() {
-    if (testState !== "idle") {
-      setTestState("idle");
-    }
-    setTestMessage("");
-    setLastConnectionMetadata(null);
-  }
-
-  function closeSetup() {
-    setShowSetup(false);
-    setSetupAgentId(null);
-    setTestState("idle");
-    setTestMessage("");
-    setLastConnectionMetadata(null);
-  }
-
-  function openAddAgentDialog() {
-    setSetupAgentId(null);
-    setTestState("idle");
-    setTestMessage("");
-    setLastConnectionMetadata(null);
-    setShowSetup(true);
-  }
-
-  function openAgentEditor(agentId: string) {
-    setSetupAgentId(agentId);
-    setTestState("idle");
-    setTestMessage("");
-    setLastConnectionMetadata(null);
-    setShowSetup(true);
-  }
-
   async function saveDemoAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSavingAgent) return;
+    if (agentSetup.isSavingAgent) return;
     const form = new FormData(event.currentTarget);
     const newAgent = createAgentFromHermesSetup(form);
     const setupIssue = getProviderSetupIssue(newAgent);
     if (setupIssue) {
-      setTestState("failed");
-      setLastConnectionMetadata(null);
-      setTestMessage(setupIssue);
+      agentSetup.markConnectionFailed(setupIssue);
       return;
     }
 
-    setIsSavingAgent(true);
+    agentSetup.setIsSavingAgent(true);
     try {
       const saveResult = applyAgentSetupSave({
         agents,
         submittedAgent: newAgent,
-        editingAgentId: setupAgentId,
-        metadata: lastConnectionMetadata,
+        editingAgentId: agentSetup.setupAgentId,
+        metadata: agentSetup.lastConnectionMetadata,
       });
 
       if (!(await persistLocalTrustedAgent(saveResult.trustedAgent))) return;
@@ -680,9 +637,9 @@ export function App() {
       if (saveResult.selectedAgentId) {
         setSelectedAgentId(saveResult.selectedAgentId);
       }
-      closeSetup();
+      agentSetup.closeSetup();
     } finally {
-      setIsSavingAgent(false);
+      agentSetup.setIsSavingAgent(false);
     }
   }
 
@@ -711,8 +668,7 @@ export function App() {
   async function handleExistingAgentAvatar(agentId: string, file?: File) {
     const result = await readAvatarFile(file);
     if (result.error) {
-      setTestState("failed");
-      setTestMessage(result.error);
+      agentSetup.markConnectionFailed(result.error);
       return;
     }
     updateAgentAvatar(agentId, result.dataUrl);
@@ -1260,10 +1216,10 @@ export function App() {
         agentSetupIssues={agentSetupIssues}
         respondingAgentIds={respondingAgentIds}
         themeMode={themeMode}
-        onAddAgent={openAddAgentDialog}
+        onAddAgent={agentSetup.openAddAgentDialog}
         onCreateProject={openProjectDialog}
         onDeleteProject={requestDeleteProject}
-        onEditAgent={openAgentEditor}
+        onEditAgent={agentSetup.openAgentEditor}
         onEditProject={openProjectEditor}
         onSelectAgent={(agentId) => {
           setSelectedAgentId(agentId);
@@ -1303,7 +1259,7 @@ export function App() {
             taskParticipantIds={taskParticipantIds}
             taskRoomHasPendingRequest={taskRoomHasPendingRequest}
             taskRoomMessages={taskRoomMessages}
-            onAddAgent={() => setShowSetup(true)}
+            onAddAgent={agentSetup.openAddAgentDialog}
             onDetachWorkspaceFile={detachWorkspaceFile}
             onMessageTextChange={setMessageText}
             onRetryDirectMessage={retryDirectMessage}
@@ -1362,16 +1318,16 @@ export function App() {
         </div>
       </main>
 
-      {showSetup ? (
+      {agentSetup.showSetup ? (
         <SetupWizard
-          testState={testState}
-          testMessage={testMessage}
-          isSaving={isSavingAgent}
-          onClose={closeSetup}
+          testState={agentSetup.testState}
+          testMessage={agentSetup.testMessage}
+          isSaving={agentSetup.isSavingAgent}
+          onClose={agentSetup.closeSetup}
           onRunTest={runConnectionTest}
-          onResetTest={resetConnectionTest}
+          onResetTest={agentSetup.resetConnectionTest}
           onSaveAgent={saveDemoAgent}
-          agent={setupAgentId ? agents.find((agent) => agent.id === setupAgentId) : undefined}
+          agent={agentSetup.setupAgentId ? agents.find((agent) => agent.id === agentSetup.setupAgentId) : undefined}
           onDeleteAgent={requestDeleteAgent}
           onAgentAvatarFile={handleExistingAgentAvatar}
         />

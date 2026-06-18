@@ -15,9 +15,8 @@ import {
 } from "lucide-react";
 import { CAPABILITY_TAG_OPTIONS, getOfficeRoleLabel, NON_CAPABILITY_TAGS, OFFICE_ROLE_OPTIONS } from "../domain/agentProfile";
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "../domain/types";
+import type { ConnectionTestState } from "../services/agentSetupDialogState";
 import { AgentAvatar, StatusDot } from "./AgentPrimitives";
-
-export type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 
 export function SetupWizard({
   testState,
