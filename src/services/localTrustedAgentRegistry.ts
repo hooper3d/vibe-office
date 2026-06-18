@@ -27,6 +27,22 @@ export async function upsertLocalTrustedAgent(agent: AgentInstance) {
   }
 }
 
+export async function assertLocalTrustedAgentCredential(agent: AgentInstance) {
+  const runtimeProvider = agent.runtimeProvider ?? "hermes";
+  if (runtimeProvider === "hermes" || typeof window === "undefined") return;
+
+  const [status] = await getLocalTrustedAgentStatuses([agent.id]);
+  if (!status?.registered) {
+    throw new Error("Agent is not saved in the local trusted layer.");
+  }
+  if (status.runtimeProvider !== runtimeProvider) {
+    throw new Error("Agent provider type was not saved in the local trusted layer.");
+  }
+  if (!status.hasCredential) {
+    throw new Error("API key is missing in the local trusted layer.");
+  }
+}
+
 export async function deleteLocalTrustedAgent(agentId: string) {
   if (typeof window === "undefined") return;
 

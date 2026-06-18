@@ -222,21 +222,24 @@ async function sendProviderMessage(provider, { system, messages, maxTokens }, ti
 async function upsertProvider(provider) {
   if (provider.usesExistingAgent) return;
 
-  await postJson(`${appUrl}/agent-local/agents/upsert`, {
-    agent: {
-      id: provider.id,
-      name: provider.label,
-      role: "M9 provider regression",
-      officeRole: "operator",
-      location: "M9 regression",
-      endpoint: provider.endpoint,
-      a2aEndpoint: provider.a2aEndpoint,
-      agentCardUrl: provider.agentCardUrl,
-      model: provider.model,
-      runtimeProvider: provider.runtimeProvider,
-      apiKey: provider.apiKey,
-      tags: ["regression"],
-      status: "online",
+  await postJson(`${appUrl}/agent-local/registry-command`, {
+    command: "agent.upsert",
+    payload: {
+      agent: {
+        id: provider.id,
+        name: provider.label,
+        role: "M9 provider regression",
+        officeRole: "operator",
+        location: "M9 regression",
+        endpoint: provider.endpoint,
+        a2aEndpoint: provider.a2aEndpoint,
+        agentCardUrl: provider.agentCardUrl,
+        model: provider.model,
+        runtimeProvider: provider.runtimeProvider,
+        apiKey: provider.apiKey,
+        tags: ["regression"],
+        status: "online",
+      },
     },
   });
   createdProviderIds.add(provider.id);
@@ -247,7 +250,10 @@ async function cleanupCreatedProviders() {
 
   for (const agentId of createdProviderIds) {
     try {
-      await postJson(`${appUrl}/agent-local/agents/delete`, { agentId }, defaultTimeoutMs);
+      await postJson(`${appUrl}/agent-local/registry-command`, {
+        command: "agent.delete",
+        payload: { agentId },
+      }, defaultTimeoutMs);
     } catch (error) {
       console.warn(`Unable to clean up generated provider ${agentId}: ${sanitizeError(error)}`);
     }

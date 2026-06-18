@@ -2,7 +2,7 @@ import { createAgentFromHermesSetup, getProviderSetupIssue } from "../domain/her
 import type { AgentInstance } from "../domain/types";
 import { getUserFacingAgentError } from "./agentErrorText";
 import { HermesA2AAdapter } from "./hermesA2AAdapter";
-import { stripAgentCredential, upsertLocalTrustedAgent } from "./localTrustedAgentRegistry";
+import { assertLocalTrustedAgentCredential, stripAgentCredential, upsertLocalTrustedAgent } from "./localTrustedAgentRegistry";
 import { createA2ACompatibilityMetadata, type A2ACompatibilityMetadata, type ProviderConnectionTestResult } from "./providerTypes";
 
 export type AgentConnectionTestResult =
@@ -46,6 +46,7 @@ export async function runAgentConnectionTest({
   try {
     await persistAgent(agent);
     await onAgentPersisted?.(agent);
+    await assertLocalTrustedAgentCredential(agent);
     const result = await createAdapter(stripAgentCredential(agent)).testConnection();
 
     return {

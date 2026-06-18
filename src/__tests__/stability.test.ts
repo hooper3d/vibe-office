@@ -2516,6 +2516,58 @@ test("local trusted agent registry commands upsert, report status, and delete sa
   }
 });
 
+test("local trusted credential assertion rejects provider agents without saved keys", async () => {
+  const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {},
+  });
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        statuses: [
+          {
+            id: "agent-missing-key",
+            runtimeProvider: "openai",
+            model: "deepseek-chat",
+            hasCredential: false,
+            registered: true,
+            issues: ["API key is not saved in the local trusted layer."],
+          },
+        ],
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      },
+    );
+
+  try {
+    const { assertLocalTrustedAgentCredential } = await import("../services/localTrustedAgentRegistry");
+
+    await assert.rejects(
+      assertLocalTrustedAgentCredential({
+        ...agent,
+        id: "agent-missing-key",
+        endpoint: "https://api.deepseek.com",
+        a2aEndpoint: "https://api.deepseek.com/a2a",
+        agentCardUrl: "https://api.deepseek.com/.well-known/agent-card.json",
+        model: "deepseek-chat",
+        runtimeProvider: "openai",
+      }),
+      /API key is missing in the local trusted layer/,
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousWindowDescriptor) {
+      Object.defineProperty(globalThis, "window", previousWindowDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
+});
+
 test("local trusted provider commands stop missing provider keys before forwarding", async () => {
   const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
   const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
@@ -2780,6 +2832,16 @@ test("M9 provider regression script keeps Chinese context probes readable", asyn
   assert.match(source, /请记住暗号：海盐柠檬。只回复：记住了。/);
   assert.match(source, /刚才暗号是什么？请只回答暗号。/);
   assert.doesNotMatch(source, /鐢|璇|娴|鏌|銆\?/);
+});
+
+test("M9 provider regression uses command-shaped local trusted registry requests", async () => {
+  const source = await readFile(path.join(process.cwd(), "scripts", "run-provider-regression.mjs"), "utf8");
+
+  assert.match(source, /agent-local\/registry-command/);
+  assert.match(source, /command:\s*"agent\.upsert"/);
+  assert.match(source, /command:\s*"agent\.delete"/);
+  assert.doesNotMatch(source, /agent-local\/agents\/upsert/);
+  assert.doesNotMatch(source, /agent-local\/agents\/delete/);
 });
 
 test("M9 provider regression fails selected targets that are not ready", async () => {

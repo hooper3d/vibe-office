@@ -9,7 +9,8 @@ import {
   applyAgentDelete,
   applyAgentSetupSave,
 } from "./agentSetupState";
-import { deleteLocalTrustedAgent, upsertLocalTrustedAgent } from "./localTrustedAgentRegistry";
+import { getUserFacingAgentError } from "./agentErrorText";
+import { assertLocalTrustedAgentCredential, deleteLocalTrustedAgent, upsertLocalTrustedAgent } from "./localTrustedAgentRegistry";
 
 type AgentSetupDialogController = ReturnType<typeof useAgentSetupDialogState>;
 
@@ -55,9 +56,10 @@ export function useAgentSetupController({
   async function persistLocalTrustedAgent(agent: AgentInstance) {
     try {
       await upsertLocalTrustedAgent(agent);
+      await assertLocalTrustedAgentCredential(agent);
       return true;
-    } catch {
-      setupDialog.markConnectionFailed("Unable to update the local trusted agent registry.");
+    } catch (error) {
+      setupDialog.markConnectionFailed(getUserFacingAgentError(error));
       return false;
     }
   }
