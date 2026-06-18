@@ -148,9 +148,3 @@ export class OpenAIProvider {
   }
 
 }
-
-export function toOpenAIChatCompletionsUrl(endpoint: string) {
-  const trimmed = endpoint.trim().replace(/\/+$/, "");
-  if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
-  return `${trimmed}/chat/completions`;
-}

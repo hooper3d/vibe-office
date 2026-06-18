@@ -131,10 +131,3 @@ export class AnthropicProvider {
   }
 
 }
-
-export function toAnthropicMessagesUrl(endpoint: string) {
-  const trimmed = endpoint.trim().replace(/\/+$/, "");
-  if (/\/messages$/i.test(trimmed)) return trimmed;
-  if (/\/v1$/i.test(trimmed)) return `${trimmed}/messages`;
-  return `${trimmed}/v1/messages`;
-}

@@ -572,10 +572,12 @@ test("request runtime store keeps active request ids with the latest workspace s
 test("agent http transport delegates provider commands to the local trusted layer", async () => {
   const previousFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
-  const requestedBodies: Array<{ url?: string; agentId?: string; command?: string }> = [];
+  const requestedBodies: Array<Record<string, unknown>> = [];
+  const requestedHeaders: Array<Headers> = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     requestedUrls.push(String(url));
     requestedBodies.push(JSON.parse(String(init?.body || "{}")));
+    requestedHeaders.push(new Headers(init?.headers));
     if (String(init?.body).includes("fail")) {
       return new Response(JSON.stringify({ error: { message: "bad key" } }), {
         status: 401,
@@ -611,6 +613,11 @@ test("agent http transport delegates provider commands to the local trusted laye
     assert.equal(requestedUrls[0], "/agent-local/command");
     assert.equal(requestedBodies[0].agentId, "agent-lucy");
     assert.equal(requestedBodies[0].command, "openai.chatCompletions");
+    assert.equal("url" in requestedBodies[0], false);
+    assert.equal("endpoint" in requestedBodies[0], false);
+    assert.equal("apiKey" in requestedBodies[0], false);
+    assert.equal(requestedHeaders[0].has("Authorization"), false);
+    assert.equal(requestedHeaders[0].has("x-api-key"), false);
 
     await assert.rejects(
       () =>
