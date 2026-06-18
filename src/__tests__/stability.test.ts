@@ -3067,6 +3067,7 @@ test("app shell delegates main workspace rendering to a focused component", asyn
   assert.doesNotMatch(app, /<ConversationWorkspace/);
   assert.doesNotMatch(app, /<OutputPanel/);
   assert.doesNotMatch(app, /className="main-split"/);
+  assert.doesNotMatch(app, /showDirectoryPicker|DirectoryPickerHandle/);
   assert.match(mainWorkspace, /export function MainWorkspace/);
   assert.match(mainWorkspace, /<ConversationWorkspace/);
   assert.match(mainWorkspace, /<OutputPanel/);

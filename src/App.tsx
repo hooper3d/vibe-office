@@ -55,16 +55,6 @@ import {
   type WorkspaceFileAttachment,
 } from "./services/workspaceFileClient";
 
-type DirectoryPickerHandle = {
-  name: string;
-};
-
-declare global {
-  interface Window {
-    showDirectoryPicker?: () => Promise<DirectoryPickerHandle>;
-  }
-}
-
 export function App() {
   const [initialWorkspace] = useState(() => applyWorkspaceStateDefaults(loadWorkspaceState(), seedWorkspaceDefaults));
   const [initialUiState] = useState(() => loadUiState());

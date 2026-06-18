@@ -707,6 +707,7 @@ Implementation progress:
 - App, setup dialog state, request helpers, and tests now import provider metadata/history types from `src/services/providerTypes.ts` instead of using `HermesA2AAdapter` as a type barrel.
 - Provider split tests cover OpenAI-compatible free chat, Anthropic-compatible project chat, and Hermes native fallback to chat compatibility.
 - Browser smoke tests now exercise provider retry/recovery through the local trusted provider endpoint.
+- `App.tsx` no longer carries the unused directory-picker global type; workspace file/folder concerns stay owned by the workspace components and local trusted layer.
 - M7-3 Output Area organization continued.
 - Project Workspace now uses top-level `Workspace`, `Browser`, and `Outputs` tabs.
 - `Outputs` now uses an output index instead of a mixed all-agents stream: Browser preview is a project-level entry, and each agent with project work gets its own entry.
