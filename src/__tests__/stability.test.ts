@@ -2824,6 +2824,20 @@ test("local trusted middleware exposes command-only provider and workspace route
   assert.doesNotMatch(source, /workspace-local\/search/);
 });
 
+test("output workspace keeps browser preview and project outputs in focused components", async () => {
+  const outputWorkspace = await readFile(path.join(process.cwd(), "src", "components", "OutputWorkspace.tsx"), "utf8");
+  const browserPreview = await readFile(path.join(process.cwd(), "src", "components", "BrowserPreview.tsx"), "utf8");
+  const projectOutputs = await readFile(path.join(process.cwd(), "src", "components", "ProjectOutputs.tsx"), "utf8");
+
+  assert.match(outputWorkspace, /export \{ BrowserPreview \} from "\.\/BrowserPreview"/);
+  assert.match(outputWorkspace, /export \{ ProjectOutputs \} from "\.\/ProjectOutputs"/);
+  assert.doesNotMatch(outputWorkspace, /function BrowserPreview|function ProjectOutputs/);
+  assert.match(browserPreview, /export function BrowserPreview/);
+  assert.match(projectOutputs, /export function ProjectOutputs/);
+  assert.match(projectOutputs, /getOutputAgentGroups/);
+  assert.match(projectOutputs, /OutputTypeButton/);
+});
+
 test("M9 provider regression script keeps Chinese context probes readable", async () => {
   const source = await readFile(path.join(process.cwd(), "scripts", "run-provider-regression.mjs"), "utf8");
 
