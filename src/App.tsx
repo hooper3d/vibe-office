@@ -27,6 +27,7 @@ import { loadConfiguredAgents, syncConfiguredAgents } from "./services/agentStor
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { readAvatarFile } from "./services/avatarFile";
 import { runAgentConnectionTest } from "./services/agentConnectionTestState";
+import { useLocalTrustedAgentReadiness } from "./services/agentReadinessController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import {
   applyAgentAvatarUpdate,
@@ -35,13 +36,7 @@ import {
   normalizeChief,
   resolveSelectedAgent,
 } from "./services/agentSetupState";
-import {
-  deriveAgentReadinessIssues,
-  readLocalTrustedAgentReadinessRefresh,
-  removeAgentReadinessIssues,
-  removeAgentReadinessStatus,
-  type LocalTrustedAgentStatusById,
-} from "./services/agentReadinessState";
+import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
 import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
 import {
   applyActiveFreeChatConversation,
@@ -179,8 +174,12 @@ export function App() {
   const requestStoreRef = useRef(createRequestRuntimeStore({ conversations, messages, runs, tasks, artifacts }));
   const agentSetup = useAgentSetupDialogState();
   const projectDialog = useProjectDialogState({ freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID });
-  const [localTrustedAgentIssues, setLocalTrustedAgentIssues] = useState<Record<string, string[]>>({});
-  const [localTrustedAgentStatuses, setLocalTrustedAgentStatuses] = useState<LocalTrustedAgentStatusById>({});
+  const {
+    localTrustedAgentIssues,
+    localTrustedAgentStatuses,
+    refreshLocalTrustedAgentIssues,
+    removeLocalTrustedAgentReadiness,
+  } = useLocalTrustedAgentReadiness();
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
 
@@ -347,8 +346,7 @@ export function App() {
     let cancelled = false;
     const agentIds = agents.map((agent) => agent.id);
     if (agentIds.length === 0) {
-      setLocalTrustedAgentIssues({});
-      setLocalTrustedAgentStatuses({});
+      void refreshLocalTrustedAgentIssues([]);
       return () => {
         cancelled = true;
       };
@@ -481,30 +479,6 @@ export function App() {
     }
   }
 
-  async function refreshLocalTrustedAgentIssues(
-    agentIds: string[],
-    options: { replace?: boolean; isCancelled?: () => boolean } = {},
-  ) {
-    if (agentIds.length === 0) {
-      setLocalTrustedAgentIssues({});
-      setLocalTrustedAgentStatuses({});
-      return;
-    }
-
-    try {
-      const refresh = await readLocalTrustedAgentReadinessRefresh({ agentIds, replace: options.replace });
-      if (options.isCancelled?.()) return;
-      setLocalTrustedAgentStatuses((current) => refresh.applyStatuses(current));
-      setLocalTrustedAgentIssues((current) => refresh.applyIssues(current));
-    } catch {
-      if (options.isCancelled?.()) return;
-      if (options.replace) {
-        setLocalTrustedAgentIssues({});
-        setLocalTrustedAgentStatuses({});
-      }
-    }
-  }
-
   async function saveDemoAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (agentSetup.isSavingAgent) return;
@@ -547,8 +521,7 @@ export function App() {
     });
     const result = applyAgentDelete({ agentId, agents, selectedAgentId });
     setAgents(result.agents);
-    setLocalTrustedAgentIssues((current) => removeAgentReadinessIssues(current, agentId));
-    setLocalTrustedAgentStatuses((current) => removeAgentReadinessStatus(current, agentId));
+    removeLocalTrustedAgentReadiness(agentId);
     if (result.selectedAgentId !== selectedAgentId) setSelectedAgentId(result.selectedAgentId);
     projectDialog.clearConfirmAction();
   }
