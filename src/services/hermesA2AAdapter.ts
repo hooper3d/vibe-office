@@ -1,11 +1,8 @@
 import type { A2ATask } from "../domain/a2a";
 import type { AgentInstance, Project } from "../domain/types";
 import { createBrowserAgentHttpTransport, type AgentHttpTransport } from "./agentHttpTransport";
-import { AnthropicProvider } from "./anthropicProvider";
-import { NativeA2AProvider, shouldUseNativeA2A } from "./nativeA2AProvider";
-import { OpenAIProvider } from "./openaiProvider";
+import { ProviderRouter } from "./providerRouter";
 import {
-  createSyntheticAgentCard,
   type ChatHistoryMessage,
   type ProviderConnectionMode,
   type ProviderConnectionTestResult,
@@ -32,37 +29,13 @@ export type A2ACompatibilityMetadata = Pick<
 >;
 
 export class HermesA2AAdapter {
-  private agent: AgentInstance;
-  private nativeA2AProvider: NativeA2AProvider;
-  private openAIProvider: OpenAIProvider;
-  private hermesCompatibilityProvider: OpenAIProvider;
-  private anthropicProvider: AnthropicProvider;
+  private providerRouter: ProviderRouter;
 
   constructor(options: HermesA2AAdapterOptions) {
-    this.agent = options.agent;
     const timeoutMs = (options.agent.timeoutSeconds ?? 60) * 1000;
     const transport = options.transport ?? createBrowserAgentHttpTransport();
 
-    this.nativeA2AProvider = new NativeA2AProvider({
-      agent: options.agent,
-      timeoutMs,
-      transport,
-      useA2AVersionHeader: shouldUseNativeA2A(options.agent),
-    });
-    this.openAIProvider = new OpenAIProvider({
-      agent: options.agent,
-      timeoutMs,
-      transport,
-    });
-    this.hermesCompatibilityProvider = new OpenAIProvider({
-      agent: options.agent,
-      timeoutMs,
-      transport,
-      mode: "hermes-adapter",
-      adapterName: "hermes-openai-compatible",
-      providerLabel: "Hermes",
-    });
-    this.anthropicProvider = new AnthropicProvider({
+    this.providerRouter = new ProviderRouter({
       agent: options.agent,
       timeoutMs,
       transport,
@@ -70,71 +43,27 @@ export class HermesA2AAdapter {
   }
 
   async getAgentCard() {
-    try {
-      return await this.nativeA2AProvider.getAgentCard(this.agent.agentCardUrl);
-    } catch {
-      return createSyntheticAgentCard(this.agent);
-    }
+    return this.providerRouter.getAgentCard();
   }
 
   async testConnection(): Promise<HermesConnectionTestResult> {
-    if (this.runtimeProvider() === "openai") {
-      return this.openAIProvider.testConnection();
-    }
-
-    if (this.runtimeProvider() === "anthropic") {
-      return this.anthropicProvider.testConnection();
-    }
-
-    try {
-      return await this.nativeA2AProvider.testConnection();
-    } catch {
-      return this.hermesCompatibilityProvider.testConnection();
-    }
+    return this.providerRouter.testConnection();
   }
 
   async sendProjectMessage(project: Project, text: string, history: ChatHistoryMessage[] = []) {
-    if (this.runtimeProvider() === "openai") {
-      return this.openAIProvider.sendProjectMessage(project, text, history);
-    }
-
-    if (this.runtimeProvider() === "anthropic") {
-      return this.anthropicProvider.sendProjectMessage(project, text, history);
-    }
-
-    try {
-      return await this.nativeA2AProvider.sendProjectMessage(project, text, history);
-    } catch {
-      return this.hermesCompatibilityProvider.sendProjectMessage(project, text, history);
-    }
+    return this.providerRouter.sendProjectMessage(project, text, history);
   }
 
   async sendFreeChatMessage(text: string, history: ChatHistoryMessage[] = []) {
-    if (this.runtimeProvider() === "openai") {
-      return this.openAIProvider.sendFreeChatMessage(text, history);
-    }
-
-    if (this.runtimeProvider() === "anthropic") {
-      return this.anthropicProvider.sendFreeChatMessage(text, history);
-    }
-
-    try {
-      return await this.nativeA2AProvider.sendFreeChatMessage(text, history);
-    } catch {
-      return this.hermesCompatibilityProvider.sendFreeChatMessage(text, history);
-    }
+    return this.providerRouter.sendFreeChatMessage(text, history);
   }
 
   async getProjectTask(taskId: string, contextId: string): Promise<A2ATask> {
-    return this.nativeA2AProvider.getProjectTask(taskId, contextId);
+    return this.providerRouter.getProjectTask(taskId, contextId);
   }
 
   async cancelProjectTask(taskId: string, contextId: string): Promise<A2ATask> {
-    return this.nativeA2AProvider.cancelProjectTask(taskId, contextId);
-  }
-
-  private runtimeProvider() {
-    return this.agent.runtimeProvider ?? "hermes";
+    return this.providerRouter.cancelProjectTask(taskId, contextId);
   }
 }
 

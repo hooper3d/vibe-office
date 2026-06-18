@@ -87,6 +87,7 @@ Evidence:
 - The new `src/services/requestRecoverySubmissionState.ts` centralizes interrupted pending request recovery preparation and failure state for Direct Chat and Task Room.
 - The new `src/services/artifactBackfillState.ts` centralizes generated media artifact backfill and keeps task/run artifact links in sync with the request runtime store.
 - `App.tsx` now applies request workspace snapshots through one local `applyRequestWorkspaceState` path, including project delete cleanup, reducing drift between React state and the request runtime store.
+- `src/services/providerRouter.ts` now owns runtime-provider selection and Hermes native fallback, leaving `HermesA2AAdapter` as a thin unified entry plus compatibility metadata mapper.
 
 Impact:
 
