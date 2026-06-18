@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { AppSidebar } from "./components/AppSidebar";
 import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
@@ -66,7 +66,7 @@ import {
   toggleTaskParticipantSelection,
 } from "./services/taskParticipantSelectionState";
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
-import { getSplitPercentFromClientX, nudgeSplitPercent } from "./services/splitPaneState";
+import { useWorkspaceChromeController } from "./services/workspaceChromeController";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { attachWorkspaceFileState, detachWorkspaceFileState } from "./services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "./services/workspaceSelectionState";
@@ -329,6 +329,12 @@ export function App() {
     submitProjectDirectMessage: directChatController.submitProjectDirectMessage,
     submitTaskRoomMessage: taskRoomController.submitTaskRoomMessage,
   });
+  const workspaceChromeController = useWorkspaceChromeController({
+    browserUrl,
+    setOutputMode,
+    setPreviewUrl,
+    setSplitPercent,
+  });
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
@@ -529,41 +535,6 @@ export function App() {
     if (outputMode) setOutputMode(normalizeOutputMode(outputMode));
   }
 
-  function openPreview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPreviewUrl(browserUrl.trim());
-    setOutputMode("browser");
-  }
-
-  function updateSplitFromClientX(container: HTMLElement, clientX: number) {
-    const rect = container.getBoundingClientRect();
-    setSplitPercent(getSplitPercentFromClientX({ clientX, left: rect.left, width: rect.width }));
-  }
-
-  function startSplitDrag(event: PointerEvent<HTMLDivElement>) {
-    const container = event.currentTarget.parentElement;
-    if (!container) return;
-
-    event.preventDefault();
-    document.body.classList.add("is-resizing");
-
-    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
-      updateSplitFromClientX(container, moveEvent.clientX);
-    };
-    const stopDrag = () => {
-      document.body.classList.remove("is-resizing");
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stopDrag);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopDrag, { once: true });
-  }
-
-  function nudgeSplit(direction: "left" | "right") {
-    setSplitPercent((current) => nudgeSplitPercent(current, direction));
-  }
-
   return (
     <div className="app-shell">
       <AppSidebar
@@ -637,10 +608,10 @@ export function App() {
             aria-valuemax={70}
             aria-valuenow={Math.round(splitPercent)}
             tabIndex={0}
-            onPointerDown={startSplitDrag}
+            onPointerDown={workspaceChromeController.startSplitDrag}
             onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") nudgeSplit("left");
-              if (event.key === "ArrowRight") nudgeSplit("right");
+              if (event.key === "ArrowLeft") workspaceChromeController.nudgeSplit("left");
+              if (event.key === "ArrowRight") workspaceChromeController.nudgeSplit("right");
             }}
           >
             <span />
@@ -668,7 +639,7 @@ export function App() {
             onDetachFile={detachWorkspaceFile}
             onEditProject={projectDialog.openProjectEditor}
             onNewFreeChat={freeChatController.startNewConversation}
-            onOpenPreview={openPreview}
+            onOpenPreview={workspaceChromeController.openPreview}
             onOutputModeChange={setOutputMode}
             onRefreshTask={refreshTaskLifecycle}
             onRetryTask={retryTaskLifecycle}
