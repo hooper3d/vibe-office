@@ -5,7 +5,6 @@ import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { ConfirmDialog, ProjectDialog } from "./components/ProjectDialogs";
 import { SetupWizard } from "./components/SetupWizard";
-import type { A2ATask } from "./domain/a2a";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
 import {
   conversationMessages,
@@ -25,7 +24,6 @@ import type {
 import { markConversationMessageFailed } from "./domain/requestLifecycle";
 import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, syncConfiguredAgents } from "./services/agentStorage";
-import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { readAvatarFile } from "./services/avatarFile";
 import { runAgentConnectionTest } from "./services/agentConnectionTestState";
@@ -97,21 +95,12 @@ import {
   prepareProjectDirectSubmission,
   prepareTaskRoomSubmission,
 } from "./services/requestSubmissionState";
-import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
+import { useTaskLifecycleController } from "./services/taskLifecycleController";
 import {
-  applyTaskCancelUnsupportedToWorkspace,
-  applyTaskLifecycleUnsupportedToWorkspace,
-  applyTaskLifecycleRemoteUpdateToWorkspace,
-  applyTaskRetryFailureToWorkspace,
-  applyTaskRetrySubmittingToWorkspace,
   getPollableTasks,
-  resolveTaskLifecycleRequest,
-  resolveTaskRetryRequest,
 } from "./services/taskLifecycleRequestState";
 import {
-  getRemoteTaskWorkState,
   getTaskEventDisplayLabel,
-  getTaskLifecycleBusyId,
   isTaskTerminal,
 } from "./services/taskLifecycleState";
 import {
@@ -186,7 +175,6 @@ export function App() {
   const [attachedWorkspaceFiles, setAttachedWorkspaceFiles] = useState<WorkspaceFileAttachment[]>([]);
   const [taskParticipantIds, setTaskParticipantIds] = useState<string[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
-  const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
   const requestStoreRef = useRef(createRequestRuntimeStore({ conversations, messages, runs, tasks, artifacts }));
   const agentSetup = useAgentSetupDialogState();
@@ -284,6 +272,19 @@ export function App() {
   const activeComposerHasPendingRequest =
     conversationMode === "single" ? currentConversationHasPendingRequest : taskRoomHasPendingRequest;
   const respondingAgentIds = useMemo(() => getRespondingAgentIds(conversations, messages), [conversations, messages]);
+  const {
+    cancelTaskLifecycle,
+    refreshTaskLifecycle,
+    retryTaskLifecycle,
+    taskLifecycleBusyId,
+  } = useTaskLifecycleController({
+    agents,
+    applyRequestWorkspaceState,
+    getRequestWorkspaceState: () => requestStoreRef.current.snapshot(),
+    projects,
+    runs,
+    tasks,
+  });
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
@@ -452,128 +453,6 @@ export function App() {
 
   function toggleTheme() {
     setThemeMode((current) => (current === "dark" ? "light" : "dark"));
-  }
-
-  async function refreshTaskLifecycle(taskId: string, options: { silent?: boolean } = {}) {
-    const request = resolveTaskLifecycleRequest({ agents, runs, taskId, tasks });
-    if (request.kind === "ignore") return;
-    if (request.kind === "unsupported") {
-      recordLifecycleUnsupported(request.task, request.reason);
-      return;
-    }
-
-    if (!options.silent) setTaskLifecycleBusyId(getTaskLifecycleBusyId("refresh", taskId));
-
-    try {
-      const remoteTask = await refreshRemoteTaskLifecycle({ agent: request.owner, address: request.address });
-      applyLifecycleTaskUpdate(request.task, remoteTask, request.owner.id, "Task status refreshed.");
-    } catch (error) {
-      recordLifecycleUnsupported(request.task, getUserFacingAgentError(error));
-    } finally {
-      if (!options.silent) setTaskLifecycleBusyId("");
-    }
-  }
-
-  async function cancelTaskLifecycle(taskId: string) {
-    const request = resolveTaskLifecycleRequest({ agents, runs, taskId, tasks });
-    if (request.kind === "ignore") return;
-    if (request.kind === "unsupported") {
-      recordLifecycleUnsupported(request.task, request.reason);
-      return;
-    }
-
-    setTaskLifecycleBusyId(getTaskLifecycleBusyId("cancel", taskId));
-    try {
-      const remoteTask = await cancelRemoteTaskLifecycle({ agent: request.owner, address: request.address });
-      applyLifecycleTaskUpdate(request.task, remoteTask, request.owner.id, "Task cancel requested.");
-    } catch (error) {
-      recordCancelUnsupported(request.task, getUserFacingAgentError(error));
-    } finally {
-      setTaskLifecycleBusyId("");
-    }
-  }
-
-  async function retryTaskLifecycle(taskId: string) {
-    const request = resolveTaskRetryRequest({ agents, projects, taskId, tasks });
-    if (request.kind === "ignore") return false;
-    if (request.kind === "unsupported") {
-      recordLifecycleUnsupported(request.task, request.reason);
-      return false;
-    }
-
-    const retryAt = new Date().toISOString();
-    setTaskLifecycleBusyId(getTaskLifecycleBusyId("retry", taskId));
-    applyRequestWorkspaceState(
-      applyTaskRetrySubmittingToWorkspace({
-        state: requestStoreRef.current.snapshot(),
-        task: request.task,
-        ownerAgentId: request.owner.id,
-        retryAt,
-      }),
-    );
-
-    try {
-      const remoteTask = await retryRemoteProjectTask({
-        agent: request.owner,
-        project: request.project,
-        taskTitle: request.task.title,
-        previousFailure: request.task.summary,
-      });
-      applyLifecycleTaskUpdate(request.task, remoteTask, request.owner.id, "Retry returned a task update.");
-      return getRemoteTaskWorkState(remoteTask) !== "failed";
-    } catch (error) {
-      const failedAt = new Date().toISOString();
-      const errorText = getUserFacingAgentError(error);
-      applyRequestWorkspaceState(
-        applyTaskRetryFailureToWorkspace({
-          state: requestStoreRef.current.snapshot(),
-          task: request.task,
-          ownerAgentId: request.owner.id,
-          errorText,
-          failedAt,
-        }),
-      );
-      return false;
-    } finally {
-      setTaskLifecycleBusyId("");
-    }
-  }
-
-  function applyLifecycleTaskUpdate(task: ProjectTask, remoteTask: A2ATask, agentId: string, label: string) {
-    applyRequestWorkspaceState(
-      applyTaskLifecycleRemoteUpdateToWorkspace({
-        state: requestStoreRef.current.snapshot(),
-        task,
-        remoteTask,
-        agentId,
-        label,
-        now: () => new Date().toISOString(),
-      }),
-    );
-  }
-
-  function recordLifecycleUnsupported(task: ProjectTask, reason: string) {
-    const at = new Date().toISOString();
-    applyRequestWorkspaceState(
-      applyTaskLifecycleUnsupportedToWorkspace({
-        state: requestStoreRef.current.snapshot(),
-        task,
-        reason,
-        at,
-      }),
-    );
-  }
-
-  function recordCancelUnsupported(task: ProjectTask, reason: string) {
-    const at = new Date().toISOString();
-    applyRequestWorkspaceState(
-      applyTaskCancelUnsupportedToWorkspace({
-        state: requestStoreRef.current.snapshot(),
-        task,
-        reason,
-        at,
-      }),
-    );
   }
 
   async function runConnectionTest(form: FormData) {

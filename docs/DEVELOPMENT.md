@@ -823,6 +823,7 @@ Acceptance:
 - Agent setup state now also covers avatar updates for existing agents.
 - Task lifecycle request state now also covers pollable task list derivation for the App polling effect.
 - Task lifecycle state now also owns busy-action id generation and matching for refresh, retry, and cancel controls.
+- Task lifecycle refresh/cancel/retry control now lives in `src/services/taskLifecycleController.ts`, keeping remote lifecycle execution, busy ids, unsupported state recording, and retry failure state application out of `App.tsx`.
 - Workspace storage now also owns default collection fallback for first-run or partially empty persisted workspace state.
 - Generated media artifact backfill now lives in `src/services/artifactBackfillState.ts`, keeping artifacts plus task/run artifact links aligned in both React state and `requestRuntimeStore`.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
