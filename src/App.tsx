@@ -80,6 +80,7 @@ import {
 } from "./services/requestRecovery";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
+import { restoreWorkspaceAttachments } from "./services/workspaceContextRecovery";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
@@ -1246,29 +1247,6 @@ export function App() {
     } finally {
       activeRequestMessageIdsRef.current.delete(retry.message.id);
     }
-  }
-
-  async function restoreWorkspaceAttachments(project: Project, message: ConversationMessage) {
-    const references = message.workspaceContext ?? [];
-    if (references.length === 0) return [];
-    if (!project.directory) {
-      throw new Error("Project directory is not available.");
-    }
-
-    const restoredFiles = await Promise.all(
-      references.map(async (reference) => {
-        const file = await readWorkspaceFile(project.directory ?? "", reference.path);
-        return {
-          path: file.path,
-          content: file.content,
-          size: file.size,
-          updatedAt: file.updatedAt,
-          attachedAt: reference.attachedAt,
-        };
-      }),
-    );
-
-    return restoredFiles;
   }
 
   async function resumeProjectDirectRequest({
