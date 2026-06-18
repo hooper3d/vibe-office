@@ -47,6 +47,12 @@ import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/he
 import { A2AClient } from "../services/a2aClient";
 import { applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
 import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentStorage";
+import {
+  applyActiveFreeChatConversation,
+  buildFreeChatHistory,
+  resolveCurrentDirectConversation,
+  shouldReuseEmptyFreeChat,
+} from "../services/conversationSelectionState";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { applyProjectDelete, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
@@ -663,6 +669,110 @@ test("project delete clears scoped records and protects free chat entry", () => 
   assert.deepEqual(nextState.runs.map((item) => item.projectId), [otherProject.id]);
   assert.deepEqual(nextState.tasks.map((item) => item.projectId), [otherProject.id]);
   assert.deepEqual(nextState.artifacts.map((item) => item.projectId), [otherProject.id]);
+});
+
+test("free chat selection derives history and current conversation", () => {
+  const olderFreeConversation = conversation({
+    id: "free-older",
+    projectId: freeChatProjectId,
+    primaryAgentId: agent.id,
+    title: "Older chat",
+    updatedAt: "2026-06-18T10:01:00.000Z",
+  });
+  const newerFreeConversation = conversation({
+    id: "free-newer",
+    projectId: freeChatProjectId,
+    primaryAgentId: agent.id,
+    title: "Newer chat",
+    updatedAt: "2026-06-18T10:02:00.000Z",
+  });
+  const otherAgentConversation = conversation({
+    id: "free-other-agent",
+    projectId: freeChatProjectId,
+    primaryAgentId: participant.id,
+  });
+  const history = buildFreeChatHistory({
+    agent,
+    conversations: [olderFreeConversation, newerFreeConversation, otherAgentConversation, conversation()],
+    messages: [
+      userMessage({
+        id: "free-older-message",
+        conversationId: olderFreeConversation.id,
+        projectId: freeChatProjectId,
+        contentParts: [{ kind: "text", text: "older title" }],
+      }),
+      userMessage({
+        id: "free-newer-message",
+        conversationId: newerFreeConversation.id,
+        projectId: freeChatProjectId,
+        contentParts: [{ kind: "data", data: { title: "newer" } }],
+      }),
+    ],
+    freeChatProjectId,
+  });
+
+  assert.deepEqual(history.map((item) => item.conversation.id), ["free-newer", "free-older"]);
+  assert.equal(history[0].title, JSON.stringify({ title: "newer" }, null, 2));
+  assert.equal(history[1].title, "older title");
+  assert.equal(history[1].messageCount, 1);
+
+  assert.equal(
+    resolveCurrentDirectConversation({
+      agent,
+      activeFreeChatConversationId: olderFreeConversation.id,
+      chatScope: "free",
+      conversations: [olderFreeConversation, newerFreeConversation],
+      directConversationProjectId: project.id,
+      freeChatHistory: history,
+    })?.id,
+    olderFreeConversation.id,
+  );
+  assert.equal(
+    resolveCurrentDirectConversation({
+      agent,
+      chatScope: "free",
+      conversations: [olderFreeConversation, newerFreeConversation],
+      directConversationProjectId: project.id,
+      freeChatHistory: history,
+    })?.id,
+    newerFreeConversation.id,
+  );
+});
+
+test("free chat active map and empty-chat reuse are stable", () => {
+  const active = { [agent.id]: "conversation-1" };
+  assert.equal(
+    applyActiveFreeChatConversation({
+      activeConversationIds: active,
+      agentId: agent.id,
+      conversationId: "conversation-1",
+    }),
+    active,
+  );
+  assert.deepEqual(
+    applyActiveFreeChatConversation({
+      activeConversationIds: active,
+      agentId: agent.id,
+      conversationId: "conversation-2",
+    }),
+    { [agent.id]: "conversation-2" },
+  );
+  assert.equal(
+    shouldReuseEmptyFreeChat({
+      conversation: conversation({ projectId: freeChatProjectId }),
+      messageCount: 0,
+      freeChatProjectId,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldReuseEmptyFreeChat({
+      conversation: conversation({ projectId: project.id }),
+      messageCount: 0,
+      freeChatProjectId,
+    }),
+    false,
+  );
 });
 
 test("local trusted registry preserves credentials when metadata is rewritten without keys", async () => {

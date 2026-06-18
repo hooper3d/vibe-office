@@ -5,7 +5,7 @@ import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { ConfirmDialog, ProjectDialog, type ConfirmAction } from "./components/ProjectDialogs";
 import { SetupWizard, type ConnectionTestState } from "./components/SetupWizard";
-import type { A2APart, A2ATask } from "./domain/a2a";
+import type { A2ATask } from "./domain/a2a";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
 import {
   conversationMessages,
@@ -40,6 +40,12 @@ import {
 } from "./services/artifactState";
 import { buildAgentRequestText } from "./services/agentRequestText";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
+import {
+  applyActiveFreeChatConversation,
+  buildFreeChatHistory,
+  resolveCurrentDirectConversation,
+  shouldReuseEmptyFreeChat,
+} from "./services/conversationSelectionState";
 import {
   completeFreeChatRequestState,
   completeProjectDirectRequestState,
@@ -186,42 +192,28 @@ export function App() {
   );
   const directConversationProjectId = chatScope === "free" ? FREE_CHAT_PROJECT_ID : selectedWorkspaceProject?.id ?? "";
   const activeFreeChatConversationId = selectedAgent ? activeFreeChatConversationIds[selectedAgent.id] : undefined;
-  const freeChatHistory = useMemo(() => {
-    if (!selectedAgent) return [];
-    return conversations
-      .filter(
-        (conversation) =>
-          conversation.projectId === FREE_CHAT_PROJECT_ID &&
-          conversation.mode === "direct" &&
-          conversation.primaryAgentId === selectedAgent.id,
-      )
-      .map((conversation) => {
-        const conversationMessages = messages.filter((message) => message.conversationId === conversation.id);
-        const firstUserMessage = conversationMessages.find((message) => message.role === "user");
-        return {
-          conversation,
-          messageCount: conversationMessages.length,
-          title: firstUserMessage ? getPartText(firstUserMessage.contentParts) : conversation.title,
-        };
-      })
-      .sort((left, right) => right.conversation.updatedAt.localeCompare(left.conversation.updatedAt));
-  }, [conversations, messages, selectedAgent]);
-  const currentConversation = useMemo(() => {
-    if (!selectedAgent) return undefined;
-    if (chatScope === "free") {
-      return (
-        freeChatHistory.find((item) => item.conversation.id === activeFreeChatConversationId)?.conversation ??
-        freeChatHistory[0]?.conversation
-      );
-    }
-
-    return conversations.find(
-      (conversation) =>
-        conversation.projectId === directConversationProjectId &&
-        conversation.mode === "direct" &&
-        conversation.primaryAgentId === selectedAgent.id,
-    );
-  }, [activeFreeChatConversationId, chatScope, conversations, directConversationProjectId, freeChatHistory, selectedAgent]);
+  const freeChatHistory = useMemo(
+    () =>
+      buildFreeChatHistory({
+        agent: selectedAgent,
+        conversations,
+        messages,
+        freeChatProjectId: FREE_CHAT_PROJECT_ID,
+      }),
+    [conversations, messages, selectedAgent],
+  );
+  const currentConversation = useMemo(
+    () =>
+      resolveCurrentDirectConversation({
+        agent: selectedAgent,
+        activeFreeChatConversationId,
+        chatScope,
+        conversations,
+        directConversationProjectId,
+        freeChatHistory,
+      }),
+    [activeFreeChatConversationId, chatScope, conversations, directConversationProjectId, freeChatHistory, selectedAgent],
+  );
   const currentMessages = useMemo(() => {
     if (!currentConversation) return [];
     return messages.filter((message) => message.conversationId === currentConversation.id);
@@ -284,10 +276,13 @@ export function App() {
     if (chatScope !== "free" || !selectedAgent || !currentConversation) return;
     if (activeFreeChatConversationIds[selectedAgent.id] === currentConversation.id) return;
 
-    setActiveFreeChatConversationIds((current) => ({
-      ...current,
-      [selectedAgent.id]: currentConversation.id,
-    }));
+    setActiveFreeChatConversationIds((current) =>
+      applyActiveFreeChatConversation({
+        activeConversationIds: current,
+        agentId: selectedAgent.id,
+        conversationId: currentConversation.id,
+      }),
+    );
   }, [activeFreeChatConversationIds, chatScope, currentConversation, selectedAgent]);
 
   useEffect(() => {
@@ -925,10 +920,13 @@ export function App() {
   function selectFreeChatConversation(conversationId: string) {
     if (!selectedAgent) return;
 
-    setActiveFreeChatConversationIds((current) => ({
-      ...current,
-      [selectedAgent.id]: conversationId,
-    }));
+    setActiveFreeChatConversationIds((current) =>
+      applyActiveFreeChatConversation({
+        activeConversationIds: current,
+        agentId: selectedAgent.id,
+        conversationId,
+      }),
+    );
     setChatScope("free");
     setConversationMode("single");
     setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
@@ -936,8 +934,16 @@ export function App() {
 
   function startNewFreeChat() {
     if (!selectedAgent) return;
-    if (currentConversation && currentConversation.projectId === FREE_CHAT_PROJECT_ID && currentMessages.length === 0) {
-      selectFreeChatConversation(currentConversation.id);
+    const reusableConversation = currentConversation;
+    if (
+      reusableConversation &&
+      shouldReuseEmptyFreeChat({
+        conversation: reusableConversation,
+        messageCount: currentMessages.length,
+        freeChatProjectId: FREE_CHAT_PROJECT_ID,
+      })
+    ) {
+      selectFreeChatConversation(reusableConversation.id);
       return;
     }
 
@@ -953,10 +959,13 @@ export function App() {
     });
 
     setConversations((current) => [conversation, ...current]);
-    setActiveFreeChatConversationIds((current) => ({
-      ...current,
-      [selectedAgent.id]: conversation.id,
-    }));
+    setActiveFreeChatConversationIds((current) =>
+      applyActiveFreeChatConversation({
+        activeConversationIds: current,
+        agentId: selectedAgent.id,
+        conversationId: conversation.id,
+      }),
+    );
     setChatScope("free");
     setConversationMode("single");
     setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
@@ -1706,16 +1715,6 @@ function createConversation({
     createdAt,
     updatedAt: createdAt,
   };
-}
-
-function getPartText(parts: A2APart[]) {
-  return parts
-    .map((part) => {
-      if (part.kind === "text") return part.text;
-      if (part.kind === "data") return JSON.stringify(part.data, null, 2);
-      return part.file.name ?? part.file.uri ?? "File";
-    })
-    .join("\n");
 }
 
 function mergeLifecycleTaskUpdate(
