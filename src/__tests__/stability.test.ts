@@ -141,6 +141,7 @@ import {
   resolveOutputSelection,
   resolveOutputTypeFilter,
 } from "../services/outputSelectors";
+import { getTrackableTaskOutputItems } from "../services/projectTaskOutputItems";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import {
   applyTaskCancelUnsupportedToWorkspace,
@@ -2009,6 +2010,42 @@ test("output selectors keep chat records separate from trackable project outputs
 
   assert.deepEqual(getVisibleOutputRuns(runs).map((item) => item.id), ["run-direct-task", "run-chief"]);
   assert.deepEqual(getStandaloneOutputTasks(runs, tasks).map((item) => item.id), ["task-standalone"]);
+  assert.deepEqual(
+    getTrackableTaskOutputItems({ runs, tasks }).map((item) => ({
+      id: item.id,
+      source: item.source,
+      title: item.title,
+      ownerAgentId: item.ownerAgentId,
+      contextLabel: item.contextLabel,
+      lifecycleTaskId: item.lifecycleTask?.id,
+    })),
+    [
+      {
+        id: "run-direct-task",
+        source: "run",
+        title: "Task",
+        ownerAgentId: agent.id,
+        contextLabel: "direct message",
+        lifecycleTaskId: "task-direct",
+      },
+      {
+        id: "run-chief",
+        source: "run",
+        title: "Task",
+        ownerAgentId: agent.id,
+        contextLabel: "chief delegation",
+        lifecycleTaskId: "task-chief",
+      },
+      {
+        id: "task-standalone",
+        source: "task",
+        title: "Task",
+        ownerAgentId: participant.id,
+        contextLabel: "project-vibe-office",
+        lifecycleTaskId: "task-standalone",
+      },
+    ],
+  );
   assert.equal(countTrackableTaskOutputs(runs, tasks), 3);
   assert.deepEqual(getVisibleOutputAgentIds({ agents: [agent, participant], runs, tasks, artifacts: [artifact] }), [
     agent.id,
@@ -2940,6 +2977,7 @@ test("output workspace keeps browser preview and project outputs in focused comp
   const browserPreview = await readFile(path.join(process.cwd(), "src", "components", "BrowserPreview.tsx"), "utf8");
   const projectOutputs = await readFile(path.join(process.cwd(), "src", "components", "ProjectOutputs.tsx"), "utf8");
   const projectOutputPrimitives = await readFile(path.join(process.cwd(), "src", "components", "ProjectOutputPrimitives.tsx"), "utf8");
+  const projectTasks = await readFile(path.join(process.cwd(), "src", "components", "ProjectTasks.tsx"), "utf8");
 
   assert.match(outputWorkspace, /export \{ BrowserPreview \} from "\.\/BrowserPreview"/);
   assert.match(outputWorkspace, /export \{ ProjectOutputs \} from "\.\/ProjectOutputs"/);
@@ -2952,6 +2990,8 @@ test("output workspace keeps browser preview and project outputs in focused comp
   assert.doesNotMatch(projectOutputs, /function OutputTypeButton|function PreviewOutputSection/);
   assert.match(projectOutputPrimitives, /export function OutputTypeButton/);
   assert.match(projectOutputPrimitives, /export function PreviewOutputSection/);
+  assert.match(projectTasks, /getTrackableTaskOutputItems/);
+  assert.doesNotMatch(projectTasks, /getVisibleOutputRuns|getStandaloneOutputTasks/);
 });
 
 test("app shell delegates main workspace rendering to a focused component", async () => {

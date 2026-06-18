@@ -10,7 +10,11 @@ import {
   isTaskActive,
   isTaskTerminal,
 } from "../services/taskLifecycleState";
-import { getStandaloneOutputTasks, getVisibleOutputRuns } from "../services/outputSelectors";
+import {
+  getArtifactsForTaskOutputItem,
+  getTrackableTaskOutputItems,
+  type TrackableTaskOutputItem,
+} from "../services/projectTaskOutputItems";
 
 export function ProjectTasks({
   agents,
@@ -31,10 +35,9 @@ export function ProjectTasks({
   onRefreshTask: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
 }) {
-  const visibleRuns = getVisibleOutputRuns(runs);
-  const standaloneTasks = getStandaloneOutputTasks(runs, tasks);
+  const outputItems = getTrackableTaskOutputItems({ runs, tasks });
 
-  if (visibleRuns.length === 0 && standaloneTasks.length === 0) {
+  if (outputItems.length === 0) {
     return (
       <div className="empty-state tall">
         <MessageSquare size={32} />
@@ -46,81 +49,79 @@ export function ProjectTasks({
 
   return (
     <div className="output-list">
-      {visibleRuns.map((run) => {
-        const owner = agents.find((item) => item.id === run.ownerAgentId);
-        const runArtifacts = artifacts.filter((artifact) => run.artifactIds.includes(artifact.id));
-        const linkedTask = tasks.find((task) => task.id === run.taskId);
-        const lifecycleTask = linkedTask;
-        return (
-          <article className="output-item run-item" key={run.id}>
-            <div className="output-title-row">
-              <div>
-                <h3>{linkedTask?.title ?? (run.type === "direct_message" ? "Direct message" : "Chief delegation")}</h3>
-                <span>{owner?.name ?? "Agent"} / {run.type.replace("_", " ")}</span>
-              </div>
-              <span className={`status-badge ${run.state}`}>{run.state}</span>
-            </div>
-            {lifecycleTask ? (
-              <TaskLifecycleActions
-                busyActionId={busyActionId}
-                lifecycleLinked={Boolean(getTaskLifecycleAddress(lifecycleTask, runs))}
-                onCancelTask={onCancelTask}
-                onRefreshTask={onRefreshTask}
-                onRetryTask={onRetryTask}
-                owner={owner}
-                task={lifecycleTask}
-              />
-            ) : null}
-            <p>{linkedTask?.summary ?? run.summary ?? "Project-scoped run record."}</p>
-            {linkedTask ? <TaskEventList agents={agents} events={linkedTask.events} /> : null}
-            <div className="artifact-strip">
-              {runArtifacts.length > 0 ? (
-                runArtifacts.map((artifact) => (
-                  <span className="artifact-chip" key={artifact.id}>
-                    {artifact.name}
-                  </span>
-                ))
-              ) : (
-                <span className="artifact-chip muted">No artifact</span>
-              )}
-            </div>
-          </article>
-        );
-      })}
-      {standaloneTasks.map((task) => {
-        const owner = agents.find((item) => item.id === task.ownerAgentId);
-        const taskArtifacts = artifacts.filter((artifact) => task.artifactIds.includes(artifact.id));
-        return (
-          <article className="output-item" key={task.id}>
-            <div className="output-title-row">
-              <div>
-                <h3>{task.title}</h3>
-                <span>{owner?.name ?? "Agent"} / {task.contextId}</span>
-              </div>
-              <span className={`status-badge ${task.state}`}>{task.state}</span>
-            </div>
-            <TaskLifecycleActions
-              busyActionId={busyActionId}
-              lifecycleLinked={Boolean(getTaskLifecycleAddress(task, runs))}
-              onCancelTask={onCancelTask}
-              onRefreshTask={onRefreshTask}
-              onRetryTask={onRetryTask}
-              owner={owner}
-              task={task}
-            />
-            <p>{task.summary}</p>
-            <TaskEventList agents={agents} events={task.events} />
-            <div className="artifact-strip">
-              {taskArtifacts.map((artifact) => (
-                <span className="artifact-chip" key={artifact.id}>
-                  {artifact.name}
-                </span>
-              ))}
-            </div>
-          </article>
-        );
-      })}
+      {outputItems.map((item) => (
+        <TaskOutputItem
+          agents={agents}
+          artifacts={artifacts}
+          busyActionId={busyActionId}
+          item={item}
+          key={item.id}
+          onCancelTask={onCancelTask}
+          onRefreshTask={onRefreshTask}
+          onRetryTask={onRetryTask}
+          runs={runs}
+        />
+      ))}
     </div>
+  );
+}
+
+function TaskOutputItem({
+  agents,
+  artifacts,
+  busyActionId,
+  item,
+  onCancelTask,
+  onRefreshTask,
+  onRetryTask,
+  runs,
+}: {
+  agents: AgentInstance[];
+  artifacts: ProjectArtifact[];
+  busyActionId: string;
+  item: TrackableTaskOutputItem;
+  onCancelTask: (taskId: string) => void;
+  onRefreshTask: (taskId: string) => void;
+  onRetryTask: (taskId: string) => void;
+  runs: ProjectRun[];
+}) {
+  const owner = agents.find((agent) => agent.id === item.ownerAgentId);
+  const itemArtifacts = getArtifactsForTaskOutputItem(artifacts, item);
+
+  return (
+    <article className={`output-item ${item.source === "run" ? "run-item" : ""}`} key={item.id}>
+      <div className="output-title-row">
+        <div>
+          <h3>{item.title}</h3>
+          <span>{owner?.name ?? "Agent"} / {item.contextLabel}</span>
+        </div>
+        <span className={`status-badge ${item.state}`}>{item.state}</span>
+      </div>
+      {item.lifecycleTask ? (
+        <TaskLifecycleActions
+          busyActionId={busyActionId}
+          lifecycleLinked={Boolean(getTaskLifecycleAddress(item.lifecycleTask, runs))}
+          onCancelTask={onCancelTask}
+          onRefreshTask={onRefreshTask}
+          onRetryTask={onRetryTask}
+          owner={owner}
+          task={item.lifecycleTask}
+        />
+      ) : null}
+      <p>{item.summary}</p>
+      {item.events.length > 0 ? <TaskEventList agents={agents} events={item.events} /> : null}
+      <div className="artifact-strip">
+        {itemArtifacts.length > 0 ? (
+          itemArtifacts.map((artifact) => (
+            <span className="artifact-chip" key={artifact.id}>
+              {artifact.name}
+            </span>
+          ))
+        ) : (
+          <span className="artifact-chip muted">No artifact</span>
+        )}
+      </div>
+    </article>
   );
 }
 
