@@ -586,7 +586,7 @@ label > span:not(.field-label):not(.field-help),
 .primary-button {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #04111c;
+  color: #fff;
   padding: 0 16px;
 }
 
@@ -625,7 +625,7 @@ label > span:not(.field-label):not(.field-help),
 .primary-icon-button {
   border-color: var(--accent);
   background: var(--accent);
-  color: #04111c;
+  color: #fff;
 }
 
 .icon-button {
