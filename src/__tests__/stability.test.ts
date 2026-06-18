@@ -92,6 +92,7 @@ import {
   FREE_CHAT_ENTRY_PROJECT_ID,
   normalizeOutputMode,
 } from "../services/appBootstrapState";
+import { deriveAppAgentViewState } from "../services/appAgentViewState";
 import { deriveAppConversationViewState } from "../services/appConversationViewState";
 import {
   applyMissingProjectSelection,
@@ -1045,6 +1046,49 @@ test("agent readiness state merges local trusted and static setup issues", () =>
   assert.match(issues["agent-minimax"].join("\n"), /MiniMax M3 should be configured as Anthropic-compatible/);
   assert.match(issues["agent-minimax"].join("\n"), /API key is not saved/);
   assert.deepEqual(issues[participant.id], ["Transient local status issue."]);
+});
+
+test("app agent view state derives selected, readiness, participants, and responding agents", () => {
+  const chiefAgent: AgentInstance = {
+    ...agent,
+    isChief: true,
+  };
+  const offlineParticipant: AgentInstance = {
+    ...participant,
+    id: "agent-offline",
+    status: "offline",
+  };
+  const directConversation = conversation({
+    id: "responding-direct",
+    primaryAgentId: participant.id,
+  });
+  const taskConversation = conversation({
+    id: "responding-task",
+    mode: "task_room",
+    chiefAgentId: chiefAgent.id,
+  });
+  const view = deriveAppAgentViewState({
+    agents: [chiefAgent, participant, offlineParticipant],
+    conversations: [directConversation, taskConversation],
+    localTrustedAgentIssues: {
+      [participant.id]: ["Provider is missing a key."],
+    },
+    messages: [
+      userMessage({ id: "direct-pending", conversationId: directConversation.id, status: "sending" }),
+      userMessage({ id: "task-pending", conversationId: taskConversation.id, status: "sending" }),
+    ],
+    selectedAgentId: "missing-agent",
+    taskParticipantIds: [participant.id, offlineParticipant.id],
+  });
+
+  assert.equal(view.selectedAgent?.id, chiefAgent.id);
+  assert.equal(view.chiefAgent?.id, chiefAgent.id);
+  assert.deepEqual(view.availableTaskParticipants.map((item) => item.id), [participant.id]);
+  assert.deepEqual(view.selectedTaskParticipants.map((item) => item.id), [participant.id]);
+  assert.deepEqual(view.agentSetupIssues[participant.id], ["Provider is missing a key."]);
+  assert.equal(view.respondingAgentIds.has(chiefAgent.id), true);
+  assert.equal(view.respondingAgentIds.has(participant.id), true);
+  assert.equal(view.respondingAgentIds.has(offlineParticipant.id), false);
 });
 
 test("agent readiness state applies status refreshes and removes deleted agents", () => {

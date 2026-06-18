@@ -16,9 +16,9 @@ import { loadConfiguredAgents } from "./services/agentStorage";
 import { useLocalTrustedAgentReadiness } from "./services/agentReadinessController";
 import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
-import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
-import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
+import { normalizeChief } from "./services/agentSetupState";
 import { useAppActionController } from "./services/appActionController";
+import { deriveAppAgentViewState } from "./services/appAgentViewState";
 import {
   deriveInitialChatScope,
   FREE_CHAT_ENTRY_PROJECT_ID,
@@ -37,7 +37,6 @@ import { useProjectDialogState } from "./services/projectDialogState";
 import { useProjectSetupController } from "./services/projectSetupController";
 import { useFreeChatController } from "./services/freeChatController";
 import type { ProjectChatScope, ProjectConversationMode } from "./services/projectSetupState";
-import { getRespondingAgentIds } from "./services/requestRecovery";
 import { usePendingRecoveryController } from "./services/pendingRecoveryController";
 import {
   createRequestRuntimeStore,
@@ -49,10 +48,6 @@ import {
   isTaskTerminal,
 } from "./services/taskLifecycleState";
 import { useTaskRoomController } from "./services/taskRoomController";
-import {
-  getAvailableTaskParticipants,
-  getSelectedTaskParticipants,
-} from "./services/taskParticipantSelectionState";
 import { loadThemeMode, type ThemeMode } from "./services/themeStorage";
 import { useWorkspaceChromeController } from "./services/workspaceChromeController";
 import { loadUiState } from "./services/uiStateStorage";
@@ -113,22 +108,17 @@ export function App() {
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
 
-  const selectedAgent = useMemo(
-    () => resolveSelectedAgent({ agents, selectedAgentId }),
-    [agents, selectedAgentId],
-  );
-  const chiefAgent = useMemo(() => agents.find((agent) => agent.isChief), [agents]);
-  const availableTaskParticipants = useMemo(
-    () => getAvailableTaskParticipants({ agents, chiefAgentId: chiefAgent?.id }),
-    [agents, chiefAgent?.id],
-  );
-  const selectedTaskParticipants = useMemo(
+  const agentView = useMemo(
     () =>
-      getSelectedTaskParticipants({
-        availableParticipants: availableTaskParticipants,
-        selectedParticipantIds: taskParticipantIds,
+      deriveAppAgentViewState({
+        agents,
+        conversations,
+        localTrustedAgentIssues,
+        messages,
+        selectedAgentId,
+        taskParticipantIds,
       }),
-    [availableTaskParticipants, taskParticipantIds],
+    [agents, conversations, localTrustedAgentIssues, messages, selectedAgentId, taskParticipantIds],
   );
   const activeSetupAgentId = agentSetup.setupAgentId ?? agentSetup.setupDraftAgentId ?? "";
   const agentSetupController = useAgentSetupController({
@@ -179,31 +169,27 @@ export function App() {
     setSelectedProjectId,
     tasks,
   });
-  const agentSetupIssues = useMemo(
-    () => deriveAgentReadinessIssues({ agents, localTrustedIssues: localTrustedAgentIssues }),
-    [agents, localTrustedAgentIssues],
-  );
   const conversationView = useMemo(
     () =>
       deriveAppConversationViewState({
         activeFreeChatConversationIds,
         chatScope,
-        chiefAgent,
+        chiefAgent: agentView.chiefAgent,
         conversations,
         conversationMode,
         freeChatProjectId: FREE_CHAT_PROJECT_ID,
         messages,
-        selectedAgent,
+        selectedAgent: agentView.selectedAgent,
         selectedWorkspaceProject,
       }),
     [
       activeFreeChatConversationIds,
       chatScope,
-      chiefAgent,
+      agentView.chiefAgent,
       conversations,
       conversationMode,
       messages,
-      selectedAgent,
+      agentView.selectedAgent,
       selectedWorkspaceProject,
     ],
   );
@@ -215,7 +201,7 @@ export function App() {
     freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
     freeChatNamespace: FREE_CHAT_NAMESPACE,
     freeChatProjectId: FREE_CHAT_PROJECT_ID,
-    selectedAgent,
+    selectedAgent: agentView.selectedAgent,
     setActiveFreeChatConversationIds,
     setAttachedWorkspaceFiles,
     setChatScope,
@@ -233,13 +219,12 @@ export function App() {
     freeChatProjectId: FREE_CHAT_PROJECT_ID,
     projects,
     requestStore: requestStoreRef.current,
-    selectedAgent,
+    selectedAgent: agentView.selectedAgent,
     selectedWorkspaceProject,
     setActiveFreeChatConversationIds,
     setAttachedWorkspaceFiles,
     setMessageText,
   });
-  const respondingAgentIds = useMemo(() => getRespondingAgentIds(conversations, messages), [conversations, messages]);
   const {
     cancelTaskLifecycle,
     refreshTaskLifecycle,
@@ -256,10 +241,10 @@ export function App() {
   const taskRoomController = useTaskRoomController({
     applyRequestWorkspaceState,
     attachedWorkspaceFiles,
-    chiefAgent,
+    chiefAgent: agentView.chiefAgent,
     requestStore: requestStoreRef.current,
     retryTaskLifecycle,
-    selectedTaskParticipants,
+    selectedTaskParticipants: agentView.selectedTaskParticipants,
     selectedWorkspaceProject,
     setAttachedWorkspaceFiles,
     setMessageText,
@@ -268,11 +253,11 @@ export function App() {
   const composerController = useComposerController({
     chatScope,
     conversationMode,
-    hasChiefAgent: Boolean(chiefAgent),
-    hasSelectedAgent: Boolean(selectedAgent),
+    hasChiefAgent: Boolean(agentView.chiefAgent),
+    hasSelectedAgent: Boolean(agentView.selectedAgent),
     hasSelectedWorkspaceProject: Boolean(selectedWorkspaceProject),
     messageText,
-    selectedTaskParticipantCount: selectedTaskParticipants.length,
+    selectedTaskParticipantCount: agentView.selectedTaskParticipants.length,
     submitFreeChatMessage: directChatController.submitFreeChatMessage,
     submitProjectDirectMessage: directChatController.submitProjectDirectMessage,
     submitTaskRoomMessage: taskRoomController.submitTaskRoomMessage,
@@ -284,13 +269,13 @@ export function App() {
     setSplitPercent,
   });
   const appSelectionController = useAppSelectionController({
-    availableTaskParticipants,
+    availableTaskParticipants: agentView.availableTaskParticipants,
     chatScope,
-    chiefAgentId: chiefAgent?.id,
+    chiefAgentId: agentView.chiefAgent?.id,
     conversationMode,
     freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
     projects,
-    selectedAgent,
+    selectedAgent: agentView.selectedAgent,
     selectedAgentId,
     selectedProjectId,
     selectedWorkspaceProjectId: selectedWorkspaceProject?.id,
@@ -370,8 +355,8 @@ export function App() {
         selectedAgentId={selectedAgentId}
         selectedProjectId={selectedProjectId}
         freeChatEntryProjectId={FREE_CHAT_ENTRY_PROJECT_ID}
-        agentSetupIssues={agentSetupIssues}
-        respondingAgentIds={respondingAgentIds}
+        agentSetupIssues={agentView.agentSetupIssues}
+        respondingAgentIds={agentView.respondingAgentIds}
         themeMode={themeMode}
         onAddAgent={agentSetup.openAddAgentDialog}
         onCreateProject={projectDialog.openProjectDialog}
@@ -396,15 +381,15 @@ export function App() {
             agents={agents}
             attachedWorkspaceFiles={attachedWorkspaceFiles}
             chatScope={chatScope}
-            chiefAgent={chiefAgent}
+            chiefAgent={agentView.chiefAgent}
             conversationMode={conversationMode}
             currentConversationHasPendingRequest={conversationView.currentConversationHasPendingRequest}
             currentMessages={conversationView.currentMessages}
             isComposerSubmitting={composerController.isComposerSubmitting}
             latestChiefTask={latestChiefTask}
             messageText={messageText}
-            selectedAgent={selectedAgent}
-            selectedTaskParticipantCount={selectedTaskParticipants.length}
+            selectedAgent={agentView.selectedAgent}
+            selectedTaskParticipantCount={agentView.selectedTaskParticipants.length}
             selectedWorkspaceProject={selectedWorkspaceProject}
             taskParticipantIds={taskParticipantIds}
             taskRoomHasPendingRequest={conversationView.taskRoomHasPendingRequest}
@@ -445,7 +430,7 @@ export function App() {
             busyActionId={taskLifecycleBusyId}
             chatScope={chatScope}
             freeChatActiveConversationId={conversationView.currentConversation?.id}
-            freeChatAgent={selectedAgent}
+            freeChatAgent={agentView.selectedAgent}
             freeChatHistories={conversationView.freeChatHistory}
             outputMode={outputMode}
             previewUrl={previewUrl}
