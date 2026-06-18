@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import { getProviderSetupIssue } from "../src/domain/providerSetup";
-import { getLocalTrustedFilePath, readLocalTrustedCredentials, writeLocalTrustedCredentials } from "./credentialStore";
+import {
+  getLocalTrustedFilePath,
+  readLocalTrustedCredentials,
+  writeLocalTrustedCredentials,
+  writeLocalTrustedPrivateJsonFile,
+} from "./credentialStore";
 
 function getLocalTrustedAgentRegistryPath() {
   return getLocalTrustedFilePath("agent-registry.local.json");
@@ -137,11 +141,6 @@ export async function getLocalTrustedAgentSafeStatuses(agentIds?: string[]): Pro
 
 export async function writeLocalTrustedAgentRegistry(registry: Record<string, LocalTrustedAgentRecord>) {
   const registryPath = getLocalTrustedAgentRegistryPath();
-  const registryDirectory = path.dirname(registryPath);
-  const temporaryPath = path.join(
-    registryDirectory,
-    `agent-registry.local.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
-  );
   const metadataRegistry = Object.fromEntries(
     Object.entries(registry).map(([id, agent]) => [id, stripLocalTrustedCredential(agent)]),
   );
@@ -155,9 +154,7 @@ export async function writeLocalTrustedAgentRegistry(registry: Record<string, Lo
     Object.entries(existingCredentials).filter(([id]) => Object.prototype.hasOwnProperty.call(metadataRegistry, id)),
   );
 
-  await fs.mkdir(registryDirectory, { recursive: true });
-  await fs.writeFile(temporaryPath, JSON.stringify(metadataRegistry, null, 2), "utf8");
-  await fs.rename(temporaryPath, registryPath);
+  await writeLocalTrustedPrivateJsonFile(registryPath, metadataRegistry, "agent-registry.local");
   await writeLocalTrustedCredentials({
     ...nextCredentials,
     ...credentials,

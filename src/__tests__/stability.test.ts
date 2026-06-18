@@ -2412,6 +2412,21 @@ test("local trusted registry update sync keeps saved credentials while refreshin
   }
 });
 
+test("local trusted credential files use private atomic write helpers", async () => {
+  const credentialStore = await readFile(path.join(process.cwd(), "localTrusted", "credentialStore.ts"), "utf8");
+  const agentRegistry = await readFile(path.join(process.cwd(), "localTrusted", "agentRegistry.ts"), "utf8");
+  const credentialUpdater = await readFile(path.join(process.cwd(), "scripts", "update-local-agent-credential.mjs"), "utf8");
+
+  assert.match(credentialStore, /LOCAL_TRUSTED_DIRECTORY_MODE = 0o700/);
+  assert.match(credentialStore, /LOCAL_TRUSTED_PRIVATE_FILE_MODE = 0o600/);
+  assert.match(credentialStore, /writeLocalTrustedPrivateJsonFile/);
+  assert.match(credentialStore, /fs\.chmod/);
+  assert.match(agentRegistry, /writeLocalTrustedPrivateJsonFile\(registryPath/);
+  assert.match(credentialUpdater, /localTrustedDirectoryMode = 0o700/);
+  assert.match(credentialUpdater, /localTrustedPrivateFileMode = 0o600/);
+  assert.match(credentialUpdater, /fs\.chmod/);
+});
+
 test("local trusted registry exposes safe agent status without credentials", async () => {
   const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
   const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;

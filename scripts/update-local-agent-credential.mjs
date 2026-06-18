@@ -5,6 +5,8 @@ import path from "node:path";
 const localTrustedHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME || path.join(os.homedir(), ".vibe-office");
 const registryPath = path.join(localTrustedHome, "agent-registry.local.json");
 const credentialPath = path.join(localTrustedHome, "agent-credentials.local.json");
+const localTrustedDirectoryMode = 0o700;
+const localTrustedPrivateFileMode = 0o600;
 
 const agentId = readRequiredEnv("VIBE_AGENT_ID");
 const apiKey = readRequiredEnv("VIBE_AGENT_API_KEY");
@@ -34,7 +36,7 @@ const nextCredentials = {
   [agentId]: { apiKey },
 };
 
-await fs.mkdir(localTrustedHome, { recursive: true });
+await ensureLocalTrustedPrivateDirectory(localTrustedHome);
 await writeJsonAtomic(registryPath, {
   ...registry,
   [agentId]: nextAgent,
@@ -159,6 +161,25 @@ async function writeJsonAtomic(filePath, value) {
     path.dirname(filePath),
     `${path.basename(filePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
   );
-  await fs.writeFile(temporaryPath, JSON.stringify(value, null, 2), "utf8");
+  await ensureLocalTrustedPrivateDirectory(path.dirname(filePath));
+  await fs.writeFile(temporaryPath, JSON.stringify(value, null, 2), {
+    encoding: "utf8",
+    mode: localTrustedPrivateFileMode,
+  });
+  await chmodLocalTrustedPath(temporaryPath, localTrustedPrivateFileMode);
   await fs.rename(temporaryPath, filePath);
+  await chmodLocalTrustedPath(filePath, localTrustedPrivateFileMode);
+}
+
+async function ensureLocalTrustedPrivateDirectory(directory) {
+  await fs.mkdir(directory, { recursive: true, mode: localTrustedDirectoryMode });
+  await chmodLocalTrustedPath(directory, localTrustedDirectoryMode);
+}
+
+async function chmodLocalTrustedPath(targetPath, mode) {
+  try {
+    await fs.chmod(targetPath, mode);
+  } catch {
+    // chmod is best effort on some Windows filesystems; the credential repair command should still succeed.
+  }
 }
