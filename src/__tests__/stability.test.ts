@@ -1477,6 +1477,24 @@ test("provider setup detects obvious runtime endpoint mismatches", () => {
     }),
     null,
   );
+
+  assert.match(
+    getProviderSetupIssue({
+      endpoint: "https://api.minimaxi.com/v1",
+      model: "MiniMax-M3",
+      runtimeProvider: "openai",
+    }) ?? "",
+    /Anthropic-compatible/,
+  );
+
+  assert.equal(
+    getProviderSetupIssue({
+      endpoint: "https://api.minimaxi.com/anthropic",
+      model: "MiniMax-M3",
+      runtimeProvider: "anthropic",
+    }),
+    null,
+  );
 });
 
 test("provider adapter routes OpenAI-compatible free chat through local provider commands", async () => {

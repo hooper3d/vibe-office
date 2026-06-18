@@ -126,6 +126,7 @@ Working-tree update:
 
 - Add/Edit Agent now labels provider types as Hermes, OpenAI-compatible, and Anthropic-compatible.
 - The app blocks obvious endpoint/provider mismatches before connection tests or saves, such as an OpenAI-compatible record pointing at an `/anthropic` or `/messages` endpoint.
+- The app now also blocks the M9-specific MiniMax M3 + OpenAI-compatible mismatch and directs users to configure MiniMax M3 as Anthropic-compatible.
 
 ### P1-3 Historical Handoff Docs Had Stale Credential Statements
 
