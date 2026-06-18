@@ -199,7 +199,7 @@ export class HermesA2AAdapter {
         model: this.agent.model,
         messages,
       }),
-    }, this.timeoutMs, "Hermes chat completion timed out.");
+    }, this.timeoutMs, "Agent did not respond before the timeout.");
 
     if (!response.ok) {
       throw new Error(`Hermes chat completion failed: ${response.status}${await readErrorSuffix(response)}`);
@@ -251,7 +251,7 @@ export class HermesA2AAdapter {
         ],
         max_tokens: 8,
       }),
-    }, this.timeoutMs, "Hermes chat completion auth timed out.");
+    }, this.timeoutMs, "Agent connection test timed out.");
 
     if (!response.ok) {
       throw new Error(`Hermes chat completion auth failed: ${response.status}${await readErrorSuffix(response)}`);

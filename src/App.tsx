@@ -981,7 +981,7 @@ export function App() {
           projectId: FREE_CHAT_PROJECT_ID,
           role: "system",
           agentId: targetAgent.id,
-          contentParts: createTextParts(error instanceof Error ? error.message : "Agent request failed."),
+          contentParts: createTextParts(getUserFacingAgentError(error)),
           status: "sent",
           createdAt: failedAt,
         },
@@ -1226,7 +1226,7 @@ export function App() {
             projectId: selectedWorkspaceProject.id,
             role: "system",
             agentId: targetAgent.id,
-            contentParts: createTextParts(error instanceof Error ? error.message : "Agent request failed."),
+            contentParts: createTextParts(getUserFacingAgentError(error)),
             runId,
             status: "sent",
             createdAt: failedAt,
@@ -2756,14 +2756,37 @@ function NoProjectState({ onSelectProject }: { onSelectProject: () => void }) {
   );
 }
 
+function getDisplayMessageText(message: ConversationMessage) {
+  const text = getPartText(message.contentParts);
+  return message.role === "system" ? sanitizeAgentErrorText(text) : text;
+}
+
+function getUserFacingAgentError(error: unknown) {
+  return sanitizeAgentErrorText(error instanceof Error ? error.message : "Agent request failed.");
+}
+
+function sanitizeAgentErrorText(text: string) {
+  if (text.includes("Hermes chat completion timed out")) {
+    return "Agent did not respond before the timeout. You can retry, or increase this agent's timeout in Advanced settings.";
+  }
+  if (text.includes("Hermes chat completion failed")) {
+    return text.replace("Hermes chat completion failed", "Agent request failed");
+  }
+  if (text.includes("Hermes chat completion auth failed")) {
+    return text.replace("Hermes chat completion auth failed", "Agent authentication failed");
+  }
+  return text;
+}
+
 function MessageRows({ messages }: { messages: ConversationMessage[] }) {
   return messages.map((message) => {
     const isUser = message.role === "user";
     const isSystem = message.role === "system";
+    const content = getDisplayMessageText(message);
     return (
       <div className={`message-row ${isUser ? "user-message" : "agent-message"}`} key={message.id}>
         <div className={`${isUser ? "message-bubble" : "agent-output"} ${message.status} ${isSystem ? "system" : ""}`}>
-          {isUser ? <p>{getPartText(message.contentParts)}</p> : <MarkdownContent content={getPartText(message.contentParts)} />}
+          {isUser ? <p>{content}</p> : <MarkdownContent content={content} />}
           {message.workspaceContext && message.workspaceContext.length > 0 ? (
             <div className="message-context-strip" aria-label="Workspace files sent with this message">
               {message.workspaceContext.map((file) => (
