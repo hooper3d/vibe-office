@@ -10,6 +10,7 @@ import {
   isSameOutputSelection,
   resolveOutputSelection,
   resolveOutputTypeFilter,
+  assignPreviewToOutputGroups,
   type OutputSelection,
   type OutputTypeFilter,
 } from "../services/outputSelectors";
@@ -40,18 +41,25 @@ export function ProjectOutputs({
   onShowBrowser: () => void;
 }) {
   const [typeFilter, setTypeFilter] = useState<OutputTypeFilter>("all");
-  const outputGroups = useMemo(
+  const rawOutputGroups = useMemo(
     () => getOutputAgentGroups({ agents, runs, tasks, artifacts }),
     [agents, runs, tasks, artifacts],
   );
   const hasPreview = previewUrl.trim().length > 0;
+  const outputGroups = useMemo(
+    () => assignPreviewToOutputGroups(rawOutputGroups, hasPreview),
+    [rawOutputGroups, hasPreview],
+  );
   const [selection, setSelection] = useState<OutputSelection>(() => getInitialOutputSelection(outputGroups));
   const selectedGroup = getSelectedOutputAgentGroup(outputGroups, selection);
   const hasAgentOutputs = outputGroups.length > 0;
   const hasAnyOutput = hasAgentOutputs || hasPreview;
+  const selectedGroupHasPreview = Boolean(selectedGroup?.previewCount);
   const showTasks = selection.kind === "agent" && (typeFilter === "all" || typeFilter === "tasks");
   const showArtifacts = selection.kind === "agent" && (typeFilter === "all" || typeFilter === "artifacts");
-  const showPreview = selection.kind === "preview";
+  const showPreview =
+    selection.kind === "preview" ||
+    (selection.kind === "agent" && selectedGroupHasPreview && (typeFilter === "all" || typeFilter === "preview"));
 
   useEffect(() => {
     const nextSelection = resolveOutputSelection({ groups: outputGroups, hasPreview, selection });
@@ -59,9 +67,9 @@ export function ProjectOutputs({
   }, [hasPreview, outputGroups, selection]);
 
   useEffect(() => {
-    const nextTypeFilter = resolveOutputTypeFilter(selection, typeFilter);
+    const nextTypeFilter = resolveOutputTypeFilter(selection, typeFilter, selectedGroup);
     if (typeFilter !== nextTypeFilter) setTypeFilter(nextTypeFilter);
-  }, [selection, typeFilter]);
+  }, [selectedGroup, selection, typeFilter]);
 
   if (!hasAnyOutput) {
     return (
@@ -76,10 +84,10 @@ export function ProjectOutputs({
   return (
     <div className="project-outputs">
       <div className="output-agent-index" aria-label="Output agents">
-        {hasPreview ? (
+        {!hasAgentOutputs && hasPreview ? (
           <OutputIndexButton
             active={selection.kind === "preview"}
-            label="Browser preview"
+            label="Project preview"
             meta="Project preview"
             onClick={() => setSelection({ kind: "preview" })}
           />
@@ -89,7 +97,7 @@ export function ProjectOutputs({
             active={selection.kind === "agent" && selection.agentId === group.agent.id}
             key={group.agent.id}
             label={group.agent.name}
-            meta={`${group.taskCount} tasks / ${group.artifactCount} artifacts`}
+            meta={getOutputSelectionMeta({ group, hasPreview, selection: { kind: "agent", agentId: group.agent.id } })}
             onClick={() => setSelection({ kind: "agent", agentId: group.agent.id })}
           />
         ))}
@@ -110,6 +118,9 @@ export function ProjectOutputs({
                 <OutputTypeButton active={typeFilter === "all"} label="All" onClick={() => setTypeFilter("all")} />
                 <OutputTypeButton active={typeFilter === "tasks"} label="Tasks" onClick={() => setTypeFilter("tasks")} />
                 <OutputTypeButton active={typeFilter === "artifacts"} label="Artifacts" onClick={() => setTypeFilter("artifacts")} />
+                {selectedGroupHasPreview ? (
+                  <OutputTypeButton active={typeFilter === "preview"} label="Preview" onClick={() => setTypeFilter("preview")} />
+                ) : null}
               </>
             )}
           </div>

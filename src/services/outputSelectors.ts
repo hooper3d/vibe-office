@@ -8,6 +8,7 @@ export type OutputAgentGroup = {
   artifacts: ProjectArtifact[];
   taskCount: number;
   artifactCount: number;
+  previewCount: number;
 };
 
 export type OutputTypeFilter = "all" | "tasks" | "artifacts" | "preview";
@@ -87,9 +88,15 @@ export function getOutputAgentGroups({
         artifacts: agentArtifacts,
         taskCount: countTrackableTaskOutputs(agentRuns, agentTasks),
         artifactCount: agentArtifacts.length,
+        previewCount: 0,
       };
     })
     .filter((group): group is OutputAgentGroup => Boolean(group));
+}
+
+export function assignPreviewToOutputGroups(groups: OutputAgentGroup[], hasPreview: boolean): OutputAgentGroup[] {
+  if (!hasPreview || groups.length === 0) return groups;
+  return groups.map((group, index) => (index === 0 ? { ...group, previewCount: 1 } : group));
 }
 
 export function filterRunsByAgent(runs: ProjectRun[], agentId: string) {
@@ -129,9 +136,13 @@ export function resolveOutputSelection({
   return groups[0] ? { kind: "agent", agentId: groups[0].agent.id } : { kind: "preview" };
 }
 
-export function resolveOutputTypeFilter(selection: OutputSelection, typeFilter: OutputTypeFilter): OutputTypeFilter {
+export function resolveOutputTypeFilter(
+  selection: OutputSelection,
+  typeFilter: OutputTypeFilter,
+  group?: OutputAgentGroup,
+): OutputTypeFilter {
   if (selection.kind === "preview") return "preview";
-  if (typeFilter === "preview") return "all";
+  if (typeFilter === "preview" && !group?.previewCount) return "all";
   return typeFilter;
 }
 
@@ -151,7 +162,11 @@ export function getOutputSelectionMeta({
 }) {
   if (selection.kind === "preview") return hasPreview ? "1 project preview" : "No preview opened";
   if (!group) return "No outputs";
-  return `${formatOutputCount(group.taskCount, "task")} / ${formatOutputCount(group.artifactCount, "artifact")}`;
+  return [
+    formatOutputCount(group.taskCount, "task"),
+    formatOutputCount(group.artifactCount, "artifact"),
+    ...(group.previewCount > 0 ? [formatOutputCount(group.previewCount, "preview")] : []),
+  ].join(" / ");
 }
 
 export function isSameOutputSelection(left: OutputSelection, right: OutputSelection) {

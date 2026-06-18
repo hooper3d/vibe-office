@@ -800,6 +800,7 @@ Acceptance:
 - M7-1 structure slimming continues: project task output rendering now lives in `src/components/ProjectTasks.tsx`, and project artifact browsing/preview/copy/download rendering now lives in `src/components/ProjectArtifacts.tsx`.
 - Workspace file browsing/list/read/search/attach rendering now lives in `src/components/WorkspaceFiles.tsx`.
 - Browser preview rendering now lives in `src/components/BrowserPreview.tsx`, and grouped project output rendering now lives in `src/components/ProjectOutputs.tsx`; `OutputWorkspace.tsx` remains a compatibility export only.
+- Browser preview links are now assigned into grouped project outputs as a Preview type when agent outputs exist, so the Output Area lookup path is group first, then Tasks / Artifacts / Preview.
 - Direct Chat, Free Chat history, no-agent/no-project states, Task Room transcript rendering, Markdown message rendering, retry affordances, and the typing indicator now live in `src/components/ConversationViews.tsx`, leaving `App.tsx` closer to state and request orchestration.
 - Project create/edit and delete confirmation dialogs now live in `src/components/ProjectDialogs.tsx`.
 - Output tab rendering now lives in `src/components/OutputTabs.tsx`.

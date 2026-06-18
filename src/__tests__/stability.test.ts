@@ -125,6 +125,7 @@ import {
 import { createRequestRuntimeStore, syncRequestRuntimeWorkspaceState } from "../services/requestRuntimeStore";
 import { getSplitPercentFromClientX, nudgeSplitPercent } from "../services/splitPaneState";
 import {
+  assignPreviewToOutputGroups,
   countTrackableTaskOutputs,
   filterArtifactsByAgent,
   filterRunsByAgent,
@@ -2023,10 +2024,23 @@ test("output selectors keep chat records separate from trackable project outputs
       agentId: group.agent.id,
       taskCount: group.taskCount,
       artifactCount: group.artifactCount,
+      previewCount: group.previewCount,
     })),
     [
-      { agentId: agent.id, taskCount: 2, artifactCount: 0 },
-      { agentId: participant.id, taskCount: 3, artifactCount: 1 },
+      { agentId: agent.id, taskCount: 2, artifactCount: 0, previewCount: 0 },
+      { agentId: participant.id, taskCount: 3, artifactCount: 1, previewCount: 0 },
+    ],
+  );
+
+  const groupsWithPreview = assignPreviewToOutputGroups(groups, true);
+  assert.deepEqual(
+    groupsWithPreview.map((group) => ({
+      agentId: group.agent.id,
+      previewCount: group.previewCount,
+    })),
+    [
+      { agentId: agent.id, previewCount: 1 },
+      { agentId: participant.id, previewCount: 0 },
     ],
   );
 });
@@ -2088,6 +2102,11 @@ test("output selection state recovers when preview or agent outputs change", () 
   assert.deepEqual(initialSelection, { kind: "agent", agentId: agent.id });
   assert.equal(getSelectedOutputAgentGroup(groups, initialSelection)?.agent.id, agent.id);
   assert.equal(getOutputSelectionMeta({ group: groups[0], hasPreview: false, selection: initialSelection }), "1 task / 0 artifacts");
+  const groupsWithPreview = assignPreviewToOutputGroups(groups, true);
+  assert.equal(
+    getOutputSelectionMeta({ group: groupsWithPreview[0], hasPreview: true, selection: initialSelection }),
+    "1 task / 0 artifacts / 1 preview",
+  );
 
   assert.deepEqual(resolveOutputSelection({ groups, hasPreview: false, selection: { kind: "preview" } }), {
     kind: "agent",
@@ -2104,6 +2123,8 @@ test("output selection state recovers when preview or agent outputs change", () 
   assert.deepEqual(resolveOutputSelection({ groups: [], hasPreview: true, selection: initialSelection }), { kind: "preview" });
   assert.equal(resolveOutputTypeFilter({ kind: "preview" }, "all"), "preview");
   assert.equal(resolveOutputTypeFilter(initialSelection, "preview"), "all");
+  assert.equal(resolveOutputTypeFilter(initialSelection, "preview", groupsWithPreview[0]), "preview");
+  assert.equal(resolveOutputTypeFilter(initialSelection, "preview", groupsWithPreview[1]), "all");
   assert.equal(resolveOutputTypeFilter(initialSelection, "tasks"), "tasks");
   assert.equal(isSameOutputSelection(initialSelection, { kind: "agent", agentId: agent.id }), true);
   assert.equal(isSameOutputSelection(initialSelection, { kind: "preview" }), false);
@@ -2835,6 +2856,7 @@ test("output workspace keeps browser preview and project outputs in focused comp
   assert.match(browserPreview, /export function BrowserPreview/);
   assert.match(projectOutputs, /export function ProjectOutputs/);
   assert.match(projectOutputs, /getOutputAgentGroups/);
+  assert.match(projectOutputs, /assignPreviewToOutputGroups/);
   assert.match(projectOutputs, /OutputTypeButton/);
 });
 
