@@ -12,7 +12,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { getOfficeRoleLabel } from "../domain/agentProfile";
-import { getProviderSetupIssue } from "../domain/hermesSetup";
 import type { AgentInstance, Project } from "../domain/types";
 import type { ThemeMode } from "../services/themeStorage";
 import { AgentAvatar, StatusDot } from "./AgentPrimitives";
@@ -23,6 +22,7 @@ export function AppSidebar({
   selectedAgentId,
   selectedProjectId,
   freeChatEntryProjectId,
+  agentSetupIssues,
   respondingAgentIds,
   themeMode,
   onAddAgent,
@@ -39,6 +39,7 @@ export function AppSidebar({
   selectedAgentId: string;
   selectedProjectId: string;
   freeChatEntryProjectId: string;
+  agentSetupIssues: Record<string, string[]>;
   respondingAgentIds: Set<string>;
   themeMode: ThemeMode;
   onAddAgent: () => void;
@@ -83,7 +84,9 @@ export function AppSidebar({
           {agents.map((agent) => {
             const isActive = selectedAgentId === agent.id;
             const isResponding = respondingAgentIds.has(agent.id);
-            const setupIssue = getProviderSetupIssue(agent);
+            const setupIssues = agentSetupIssues[agent.id] ?? [];
+            const setupIssue = setupIssues[0];
+            const setupIssueLabel = setupIssue ? getSetupIssueLabel(setupIssues) : "";
             return (
               <div className={`agent-row ${isActive ? "active" : ""}`} key={agent.id}>
                 <button className="nav-item agent-item" onClick={() => onSelectAgent(agent.id)}>
@@ -93,7 +96,7 @@ export function AppSidebar({
                       <span className="nav-item-name">{agent.name}</span>
                       <span className="nav-item-badges">
                         {setupIssue ? (
-                          <span className="setup-warning-pill" title={setupIssue} aria-label={`Setup issue: ${setupIssue}`}>
+                          <span className="setup-warning-pill" title={setupIssues.join("\n")} aria-label={`Setup issue: ${setupIssues.join(" ")}`}>
                             <AlertTriangle size={11} />
                           </span>
                         ) : null}
@@ -102,7 +105,7 @@ export function AppSidebar({
                     </span>
                     <span className="nav-item-meta">
                       <StatusDot status={isResponding ? "checking" : agent.status} />
-                      {isResponding ? "responding" : setupIssue ? "setup issue" : agent.tags.slice(0, 2).join(" / ")}
+                      {isResponding ? "responding" : setupIssue ? setupIssueLabel : agent.tags.slice(0, 2).join(" / ")}
                     </span>
                   </span>
                 </button>
@@ -191,4 +194,9 @@ export function AppSidebar({
       </button>
     </aside>
   );
+}
+
+function getSetupIssueLabel(issues: string[]) {
+  if (issues.some((issue) => issue.toLowerCase().includes("api key"))) return "missing key";
+  return "setup issue";
 }

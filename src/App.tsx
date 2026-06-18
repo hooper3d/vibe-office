@@ -43,7 +43,12 @@ import {
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter, type A2ACompatibilityMetadata } from "./services/hermesA2AAdapter";
-import { deleteLocalTrustedAgent, stripAgentCredential, upsertLocalTrustedAgent } from "./services/localTrustedAgentRegistry";
+import {
+  deleteLocalTrustedAgent,
+  getLocalTrustedAgentStatuses,
+  stripAgentCredential,
+  upsertLocalTrustedAgent,
+} from "./services/localTrustedAgentRegistry";
 import { applyProjectDelete, applyProjectSave, canDeleteProject } from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
 import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
@@ -161,6 +166,7 @@ export function App() {
   const [testState, setTestState] = useState<ConnectionTestState>("idle");
   const [testMessage, setTestMessage] = useState("");
   const [lastConnectionMetadata, setLastConnectionMetadata] = useState<A2ACompatibilityMetadata | null>(null);
+  const [localTrustedAgentIssues, setLocalTrustedAgentIssues] = useState<Record<string, string[]>>({});
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
 
@@ -178,6 +184,16 @@ export function App() {
     [availableTaskParticipants, taskParticipantIds],
   );
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  const agentSetupIssues = useMemo(() => {
+    return Object.fromEntries(
+      agents.map((agent) => {
+        const issues = [...(localTrustedAgentIssues[agent.id] ?? [])];
+        const setupIssue = getProviderSetupIssue(agent);
+        if (setupIssue && !issues.includes(setupIssue)) issues.unshift(setupIssue);
+        return [agent.id, issues];
+      }),
+    );
+  }, [agents, localTrustedAgentIssues]);
   const selectedWorkspaceProject = selectedProject?.id === FREE_CHAT_ENTRY_PROJECT_ID ? undefined : selectedProject;
   const scopedTasks = useMemo(
     () => (selectedWorkspaceProject ? tasks.filter((task) => task.projectId === selectedWorkspaceProject.id) : []),
@@ -317,6 +333,32 @@ export function App() {
       });
     });
     saveConfiguredAgents(agents);
+  }, [agents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const agentIds = agents.map((agent) => agent.id);
+    if (agentIds.length === 0) {
+      setLocalTrustedAgentIssues({});
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void getLocalTrustedAgentStatuses(agentIds)
+      .then((statuses) => {
+        if (cancelled) return;
+        setLocalTrustedAgentIssues(
+          Object.fromEntries(statuses.map((status) => [status.id, status.issues])),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setLocalTrustedAgentIssues({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [agents]);
 
   useEffect(() => {
@@ -1191,6 +1233,7 @@ export function App() {
         selectedAgentId={selectedAgentId}
         selectedProjectId={selectedProjectId}
         freeChatEntryProjectId={FREE_CHAT_ENTRY_PROJECT_ID}
+        agentSetupIssues={agentSetupIssues}
         respondingAgentIds={respondingAgentIds}
         themeMode={themeMode}
         onAddAgent={openAddAgentDialog}
