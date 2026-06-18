@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { AppSidebar } from "./components/AppSidebar";
 import { ConversationWorkspace } from "./components/ConversationWorkspace";
@@ -22,12 +22,12 @@ import type {
 } from "./domain/projectScope";
 import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents } from "./services/agentStorage";
-import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { useLocalTrustedAgentReadiness } from "./services/agentReadinessController";
 import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
+import { useAppMaintenanceController } from "./services/appMaintenanceController";
 import { useAppSelectionController } from "./services/appSelectionController";
 import { useAppSyncController } from "./services/appSyncController";
 import { useComposerController } from "./services/composerController";
@@ -49,9 +49,6 @@ import {
   type RequestWorkspaceState,
 } from "./services/requestRuntimeStore";
 import { useTaskLifecycleController } from "./services/taskLifecycleController";
-import {
-  getPollableTasks,
-} from "./services/taskLifecycleRequestState";
 import {
   getTaskEventDisplayLabel,
   isTaskTerminal,
@@ -379,25 +376,18 @@ export function App() {
     tasks,
     themeMode,
   });
-
-  useEffect(() => {
-    const backfilled = applyMediaArtifactBackfillState(requestStoreRef.current.snapshot());
-    if (backfilled.changed) applyRequestWorkspaceState(backfilled.state);
-  }, [artifacts, messages, runs, tasks]);
-
-  useEffect(() => {
-    if (!selectedWorkspaceProject) return;
-    const pollableTasks = getPollableTasks({ runs: scopedRuns, tasks: scopedTasks });
-    if (pollableTasks.length === 0) return;
-
-    const interval = window.setInterval(() => {
-      pollableTasks.forEach((task) => {
-        void refreshTaskLifecycle(task.id, { silent: true });
-      });
-    }, 15000);
-
-    return () => window.clearInterval(interval);
-  }, [agents, scopedRuns, scopedTasks, selectedWorkspaceProject]);
+  useAppMaintenanceController({
+    artifacts,
+    applyRequestWorkspaceState,
+    getRequestWorkspaceState: () => requestStoreRef.current.snapshot(),
+    messages,
+    refreshTaskLifecycle,
+    runs,
+    scopedRuns,
+    scopedTasks,
+    selectedWorkspaceProject,
+    tasks,
+  });
 
   function toggleTheme() {
     setThemeMode((current) => (current === "dark" ? "light" : "dark"));
