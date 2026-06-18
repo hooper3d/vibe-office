@@ -198,6 +198,7 @@ export function App() {
   const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
   const activeRequestMessageIdsRef = useRef(new Set<string>());
+  const messagesRef = useRef(messages);
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
@@ -346,6 +347,10 @@ export function App() {
       [selectedAgent.id]: currentConversation.id,
     }));
   }, [activeFreeChatConversationIds, chatScope, currentConversation, selectedAgent]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     saveConfiguredAgents(agents);
@@ -1086,7 +1091,7 @@ export function App() {
   }) {
     try {
       const chatHistory = buildChatCompletionHistory({
-        messages,
+        messages: messagesRef.current,
         conversationId: conversation.id,
         pendingMessageId: userMessageId,
       });
@@ -1342,7 +1347,7 @@ export function App() {
   }) {
     try {
       const chatHistory = buildChatCompletionHistory({
-        messages,
+        messages: messagesRef.current,
         conversationId: conversation.id,
         pendingMessageId: userMessageId,
       });
