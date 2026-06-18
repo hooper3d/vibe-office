@@ -24,7 +24,7 @@ import type {
 } from "./domain/projectScope";
 import { markConversationMessageFailed } from "./domain/requestLifecycle";
 import type { AgentInstance, Project } from "./domain/types";
-import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
+import { loadConfiguredAgents, syncConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { readAvatarFile } from "./services/avatarFile";
@@ -345,12 +345,7 @@ export function App() {
   }, [artifacts]);
 
   useEffect(() => {
-    agents.forEach((agent) => {
-      void upsertLocalTrustedAgent(agent).catch(() => {
-        // Local registry sync is recoverable; connection tests and requests surface actionable errors.
-      });
-    });
-    saveConfiguredAgents(agents);
+    syncConfiguredAgents({ agents });
   }, [agents]);
 
   useEffect(() => {

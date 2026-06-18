@@ -755,6 +755,7 @@ Implementation progress:
 - Add/Edit Agent now reuses the same setup agent id for connection testing and saving, then refreshes local trusted readiness immediately after a test writes provider metadata.
 - Agent connection testing now lives in `src/services/agentConnectionTestState.ts`, so App only applies UI state while the service owns setup validation, local trusted credential persistence, stripped-agent provider testing, and compatibility metadata creation.
 - Local trusted agent readiness refresh now lives in `src/services/agentReadinessState.ts`, keeping App focused on applying the returned status/issue maps instead of fetching and merging provider diagnostics itself.
+- Configured agent sync now lives in `src/services/agentStorage.ts`, pairing local trusted registry upserts with browser-safe metadata persistence while keeping provider credentials out of localStorage.
 - Agent avatar file validation and data URL conversion now lives in `src/services/avatarFile.ts`, keeping `App.tsx` focused on state orchestration instead of file-reading details.
 - Split-pane pointer and keyboard resize calculations now live in `src/services/splitPaneState.ts`, keeping App focused on event wiring instead of UI math.
 - Local trusted registry regression coverage now verifies that metadata refreshes from the UI cannot erase a previously saved provider credential.

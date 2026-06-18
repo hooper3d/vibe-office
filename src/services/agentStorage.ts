@@ -1,5 +1,5 @@
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "../domain/types";
-import { stripAgentCredential } from "./localTrustedAgentRegistry";
+import { stripAgentCredential, upsertLocalTrustedAgent } from "./localTrustedAgentRegistry";
 
 const STORAGE_KEY = "vibe-office.configured-agents";
 
@@ -62,6 +62,23 @@ export function saveConfiguredAgents(agents: AgentInstance[]) {
   } catch {
     // Agent settings are recoverable in prototype mode; storage failures should not interrupt the active workspace.
   }
+}
+
+export function syncConfiguredAgents({
+  agents,
+  saveAgents = saveConfiguredAgents,
+  upsertAgent = upsertLocalTrustedAgent,
+}: {
+  agents: AgentInstance[];
+  saveAgents?: (agents: AgentInstance[]) => void;
+  upsertAgent?: (agent: AgentInstance) => Promise<void> | void;
+}) {
+  agents.forEach((agent) => {
+    void Promise.resolve(upsertAgent(agent)).catch(() => {
+      // Local registry sync is recoverable; connection tests and requests surface actionable errors.
+    });
+  });
+  saveAgents(agents);
 }
 
 function normalizeAgentInstance(value: unknown): AgentInstance | null {

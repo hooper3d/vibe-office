@@ -76,7 +76,7 @@ import {
   removeAgentReadinessIssues,
   removeAgentReadinessStatus,
 } from "../services/agentReadinessState";
-import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentStorage";
+import { loadConfiguredAgents, saveConfiguredAgents, syncConfiguredAgents } from "../services/agentStorage";
 import {
   applyActiveFreeChatConversation,
   buildFreeChatHistory,
@@ -705,6 +705,29 @@ test("configured agent storage keeps provider credentials out of browser localSt
 
     const raw = window.localStorage.getItem("vibe-office.configured-agents") ?? "";
     assert.equal(raw.includes("local-secret-value"), false);
+    assert.equal(JSON.parse(raw)[0].apiKey, undefined);
+  });
+});
+
+test("configured agent sync keeps local trusted credentials separate from browser metadata", () => {
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    const syncedAgents: AgentInstance[] = [];
+    const agentWithCredential = {
+      ...agent,
+      id: "agent-sync-secret",
+      apiKey: "local-trusted-secret",
+    };
+
+    syncConfiguredAgents({
+      agents: [agentWithCredential],
+      upsertAgent(agentToSync) {
+        syncedAgents.push(agentToSync);
+      },
+    });
+
+    const raw = window.localStorage.getItem("vibe-office.configured-agents") ?? "";
+    assert.equal(syncedAgents[0].apiKey, "local-trusted-secret");
+    assert.equal(raw.includes("local-trusted-secret"), false);
     assert.equal(JSON.parse(raw)[0].apiKey, undefined);
   });
 });
