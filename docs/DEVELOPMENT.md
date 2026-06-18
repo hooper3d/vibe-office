@@ -388,6 +388,7 @@ Completed:
 - Project Direct Chat completion/failure now uses state reducers for messages, runs, tasks, and artifacts.
 - Task Room Chief plan, participant result, Chief aggregation, and request-failure state writes now use state reducers for messages, tasks, runs, artifacts, and conversation timestamps.
 - Artifact/media mapping helpers are centralized outside the React component.
+- A service-level stability regression harness now covers pending request recovery, direct/task-room retry routing, request attempt lifecycle fields, and Task Room state reducers.
 
 Still open:
 
