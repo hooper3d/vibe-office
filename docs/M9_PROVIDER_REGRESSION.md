@@ -38,6 +38,20 @@ Readiness lines include an `action=` hint:
 - `edit-agent-switch-to-openai-compatible-and-save`: open the agent, set Provider type to OpenAI-compatible, use an OpenAI-compatible `/v1` endpoint, save, then run the list again.
 - `add-openai-compatible-agent` / `add-anthropic-compatible-agent`: add a matching provider-backed agent before running the M9 matrix.
 
+If the UI state looks correct but the local trusted readiness still reports `MISSING_KEY`, update the local trusted credential record from environment variables. The command never prints the key:
+
+```bash
+VIBE_AGENT_ID=agent-deepseek VIBE_AGENT_API_KEY=... npm run local-agent:credential
+```
+
+For a provider mismatch, the same command can update safe metadata while saving the credential:
+
+```bash
+VIBE_AGENT_ID=agent-minimax VIBE_AGENT_RUNTIME_PROVIDER=anthropic VIBE_AGENT_BASE_URL=https://api.minimax.io/anthropic VIBE_AGENT_MODEL=MiniMax-M3 VIBE_AGENT_API_KEY=... npm run local-agent:credential
+```
+
+Do not paste real keys into source files, docs, screenshots, shell scripts, or committed logs.
+
 ## Providers
 
 The script runs any provider whose existing agent ID, ready local trusted registry match, or endpoint/model variables are present.
