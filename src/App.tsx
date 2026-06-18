@@ -5,7 +5,6 @@ import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { ConfirmDialog, ProjectDialog } from "./components/ProjectDialogs";
 import { SetupWizard } from "./components/SetupWizard";
-import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
 import {
   conversationMessages,
   conversations as seedConversations,
@@ -25,17 +24,10 @@ import { markConversationMessageFailed } from "./domain/requestLifecycle";
 import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, syncConfiguredAgents } from "./services/agentStorage";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
-import { readAvatarFile } from "./services/avatarFile";
-import { runAgentConnectionTest } from "./services/agentConnectionTestState";
 import { useLocalTrustedAgentReadiness } from "./services/agentReadinessController";
+import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
-import {
-  applyAgentAvatarUpdate,
-  applyAgentDelete,
-  applyAgentSetupSave,
-  normalizeChief,
-  resolveSelectedAgent,
-} from "./services/agentSetupState";
+import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
 import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
 import {
@@ -54,10 +46,6 @@ import {
   type DirectRequestResult,
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
-import {
-  deleteLocalTrustedAgent,
-  upsertLocalTrustedAgent,
-} from "./services/localTrustedAgentRegistry";
 import { useProjectDialogState } from "./services/projectDialogState";
 import {
   applyMissingProjectSelection,
@@ -201,6 +189,17 @@ export function App() {
     [availableTaskParticipants, taskParticipantIds],
   );
   const activeSetupAgentId = agentSetup.setupAgentId ?? agentSetup.setupDraftAgentId ?? "";
+  const agentSetupController = useAgentSetupController({
+    activeSetupAgentId,
+    agents,
+    clearConfirmAction: projectDialog.clearConfirmAction,
+    refreshLocalTrustedAgentIssues,
+    removeLocalTrustedAgentReadiness,
+    selectedAgentId,
+    setAgents,
+    setSelectedAgentId,
+    setupDialog: agentSetup,
+  });
   const {
     selectedProject,
     selectedWorkspaceProject,
@@ -453,90 +452,8 @@ export function App() {
     setThemeMode((current) => (current === "dark" ? "light" : "dark"));
   }
 
-  async function runConnectionTest(form: FormData) {
-    agentSetup.markConnectionRunning();
-
-    const result = await runAgentConnectionTest({
-      form,
-      agentId: activeSetupAgentId || undefined,
-      onAgentPersisted: (agent) => refreshLocalTrustedAgentIssues([agent.id]),
-    });
-
-    if (result.status === "passed") {
-      agentSetup.markConnectionPassed(result.metadata, result.message);
-    } else {
-      agentSetup.markConnectionFailed(result.message);
-    }
-  }
-
-  async function persistLocalTrustedAgent(agent: AgentInstance) {
-    try {
-      await upsertLocalTrustedAgent(agent);
-      return true;
-    } catch {
-      agentSetup.markConnectionFailed("Unable to update the local trusted agent registry.");
-      return false;
-    }
-  }
-
-  async function saveDemoAgent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (agentSetup.isSavingAgent) return;
-    const form = new FormData(event.currentTarget);
-    const newAgent = createAgentFromHermesSetup(form, { id: activeSetupAgentId || undefined });
-    const setupIssue = getProviderSetupIssue(newAgent);
-    if (setupIssue) {
-      agentSetup.markConnectionFailed(setupIssue);
-      return;
-    }
-
-    agentSetup.setIsSavingAgent(true);
-    try {
-      const saveResult = applyAgentSetupSave({
-        agents,
-        submittedAgent: newAgent,
-        editingAgentId: agentSetup.setupAgentId,
-        metadata: agentSetup.lastConnectionMetadata,
-      });
-
-      if (!(await persistLocalTrustedAgent(saveResult.trustedAgent))) return;
-      await refreshLocalTrustedAgentIssues([saveResult.trustedAgent.id]);
-      setAgents(saveResult.agents);
-      if (saveResult.selectedAgentId) {
-        setSelectedAgentId(saveResult.selectedAgentId);
-      }
-      agentSetup.closeSetup();
-    } finally {
-      agentSetup.setIsSavingAgent(false);
-    }
-  }
-
   function requestDeleteAgent(agentId: string) {
     projectDialog.requestDeleteAgent(agentId);
-  }
-
-  function deleteAgent(agentId: string) {
-    void deleteLocalTrustedAgent(agentId).catch(() => {
-      // A stale local registry entry is less harmful than interrupting the delete UI flow.
-    });
-    const result = applyAgentDelete({ agentId, agents, selectedAgentId });
-    setAgents(result.agents);
-    removeLocalTrustedAgentReadiness(agentId);
-    if (result.selectedAgentId !== selectedAgentId) setSelectedAgentId(result.selectedAgentId);
-    projectDialog.clearConfirmAction();
-  }
-
-  function updateAgentAvatar(agentId: string, avatarUrl?: string) {
-    setAgents((current) => applyAgentAvatarUpdate({ agents: current, agentId, avatarUrl }));
-  }
-
-  async function handleExistingAgentAvatar(agentId: string, file?: File) {
-    const result = await readAvatarFile(file);
-    if (result.error) {
-      agentSetup.markConnectionFailed(result.error);
-      return;
-    }
-    updateAgentAvatar(agentId, result.dataUrl);
   }
 
   function saveProject(event: FormEvent<HTMLFormElement>) {
@@ -602,7 +519,7 @@ export function App() {
     if (action.kind === "delete-project") {
       deleteProject(action.projectId);
     } else {
-      deleteAgent(action.agentId);
+      agentSetupController.deleteAgent(action.agentId);
     }
   }
 
@@ -1171,13 +1088,13 @@ export function App() {
           testMessage={agentSetup.testMessage}
           isSaving={agentSetup.isSavingAgent}
           onClose={agentSetup.closeSetup}
-          onRunTest={runConnectionTest}
+          onRunTest={agentSetupController.runConnectionTest}
           onResetTest={agentSetup.resetConnectionTest}
-          onSaveAgent={saveDemoAgent}
+          onSaveAgent={agentSetupController.saveAgent}
           agent={agentSetup.setupAgentId ? agents.find((agent) => agent.id === agentSetup.setupAgentId) : undefined}
           localTrustedStatus={activeSetupAgentId ? localTrustedAgentStatuses[activeSetupAgentId] : undefined}
           onDeleteAgent={requestDeleteAgent}
-          onAgentAvatarFile={handleExistingAgentAvatar}
+          onAgentAvatarFile={agentSetupController.updateExistingAgentAvatar}
         />
       ) : null}
       {projectDialog.showProjectDialog ? (

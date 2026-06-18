@@ -754,6 +754,7 @@ Implementation progress:
 - Local trusted agent status now reports safe `registered` and `hasCredential` diagnostics, and Add/Edit Agent shows local registry and API key readiness without exposing credentials.
 - Add/Edit Agent now reuses the same setup agent id for connection testing and saving, then refreshes local trusted readiness immediately after a test writes provider metadata.
 - Agent connection testing now lives in `src/services/agentConnectionTestState.ts`, so App only applies UI state while the service owns setup validation, local trusted credential persistence, stripped-agent provider testing, and compatibility metadata creation.
+- Agent setup control now lives in `src/services/agentSetupController.ts`, keeping Add/Edit Agent connection testing, saving, local trusted upsert/delete, selected-agent fallback, and avatar updates out of `App.tsx`.
 - Local trusted agent readiness refresh now lives in `src/services/agentReadinessState.ts`, keeping App focused on applying the returned status/issue maps instead of fetching and merging provider diagnostics itself.
 - Local trusted agent readiness UI state now lives in `src/services/agentReadinessController.ts`, keeping readiness issue/status storage, refresh, replacement, and deletion cleanup out of `App.tsx`.
 - Configured agent sync now lives in `src/services/agentStorage.ts`, pairing local trusted registry upserts with browser-safe metadata persistence while keeping provider credentials out of localStorage.
