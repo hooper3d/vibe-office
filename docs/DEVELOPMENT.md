@@ -722,6 +722,7 @@ Implementation progress:
 - Native A2A capability and task lifecycle calls now use the same local trusted command boundary for `getAgentCard`, `message/send`, `tasks/get`, and `tasks/cancel`.
 - The local trusted command endpoint now owns A2A JSON-RPC envelope construction and A2A version header injection.
 - Workspace list/read/search/media remains on `/workspace-local/*`.
+- Local trusted provider, credential registry, workspace-file, and generated-media dev middleware now lives in `localTrusted/vitePlugin.ts` instead of `vite.config.ts`, making Vite configuration a thin mount point and preparing the trusted layer for a later native/local service move.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
 - M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.
 - M9 provider regression harness started.
