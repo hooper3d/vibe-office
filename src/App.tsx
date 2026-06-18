@@ -339,7 +339,7 @@ export function App() {
     if (!task) return;
     const address = getTaskLifecycleAddress(task, runs);
     if (!address) {
-      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote A2A task.");
+      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote task.");
       return;
     }
 
@@ -366,7 +366,7 @@ export function App() {
     if (!task) return;
     const address = getTaskLifecycleAddress(task, runs);
     if (!address) {
-      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote A2A task.");
+      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote task.");
       return;
     }
 
@@ -560,11 +560,11 @@ export function App() {
 
       setTestState("passed");
       setLastConnectionMetadata(createA2ACompatibilityMetadata(result));
-      setTestMessage(`${result.card.name || agent.name} connected through ${result.mode}.`);
+      setTestMessage(`${result.card.name || agent.name} provider connection verified.`);
     } catch (error) {
       setTestState("failed");
       setLastConnectionMetadata(null);
-      setTestMessage(error instanceof Error ? error.message : "Unable to load A2A Agent Card.");
+      setTestMessage(error instanceof Error ? error.message : "Unable to verify provider connection.");
     }
   }
 
@@ -929,7 +929,7 @@ export function App() {
 
       try {
         const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, agentRequestText);
-        const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned an A2A task state.`;
+        const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a task update.`;
         const mediaArtifact = createMediaArtifactFromText({
           projectId: selectedProject.id,
           taskId: remoteTask.id || runId,
@@ -998,7 +998,7 @@ export function App() {
                 id: `${taskId}-accepted`,
                 taskId,
                 agentId: targetAgent.id,
-                label: "Agent returned an A2A task.",
+                label: "Agent returned a task.",
                 state: mappedState,
                 timestamp: completedAt,
               },
@@ -1066,7 +1066,7 @@ export function App() {
             projectId: selectedProject.id,
             role: "system",
             agentId: targetAgent.id,
-            contentParts: createTextParts(error instanceof Error ? error.message : "A2A message/send failed."),
+            contentParts: createTextParts(error instanceof Error ? error.message : "Agent request failed."),
             runId,
             status: "sent",
             createdAt: failedAt,
@@ -1926,7 +1926,7 @@ function mapA2AArtifacts(task: A2ATask, projectId: string, agentId: string): Pro
       agentId,
       name: artifact.name ?? `Artifact ${index + 1}`,
       kind: hasFile ? "file" : text ? "text" : "json",
-      summary: artifact.description ?? text ?? "A2A artifact returned by the agent.",
+      summary: artifact.description ?? text ?? "Artifact returned by the agent.",
       contentParts,
       createdAt: task.status.timestamp ?? new Date().toISOString(),
     };
@@ -2356,6 +2356,10 @@ function hasLifecycleUnsupportedEvent(task: ProjectTask) {
 
 function hasCancelUnsupportedEvent(task: ProjectTask) {
   return task.events.some((event) => event.state === "unsupported" && event.label.startsWith("Cancel unsupported:"));
+}
+
+function getTaskEventDisplayLabel(label: string) {
+  return label.replace("Agent returned an A2A task.", "Agent returned a task.").replace("A2A request failed", "Agent task request failed");
 }
 
 function mergeIds(first: string[], second: string[]) {
@@ -3035,7 +3039,7 @@ function TaskEventList({ agents, events }: { agents: AgentInstance[]; events: Pr
           <div className="task-event" key={event.id}>
             <span className={`status-dot ${event.state === "completed" ? "online" : event.state === "failed" ? "offline" : "checking"}`} />
             <span>{agent?.name ?? "Agent"}</span>
-            <strong>{event.label}</strong>
+            <strong>{getTaskEventDisplayLabel(event.label)}</strong>
           </div>
         );
       })}
@@ -3121,25 +3125,26 @@ function TaskLifecycleMetadata({
   owner?: AgentInstance;
   task: ProjectTask;
 }) {
-  const binding = owner?.a2aTransportBinding ?? (lifecycleLinked ? "unknown transport" : "local orchestration");
-  const version = owner?.a2aProtocolVersion ? `A2A ${owner.a2aProtocolVersion}` : lifecycleLinked ? "A2A version unknown" : "local";
-  const selectedInterface = owner?.a2aSelectedInterface ?? (lifecycleLinked ? "remote task lifecycle" : "no remote lifecycle");
-  const taskReference = task.remoteTaskId ? "remote task linked" : "local task";
+  const taskReference = task.remoteTaskId ? "Remote task" : "Local task";
+  const trackingState =
+    owner?.supportsTaskLifecycle === false || hasLifecycleUnsupportedEvent(task)
+      ? "Status tracking unavailable"
+      : lifecycleLinked
+        ? "Status tracking"
+        : "Local progress";
   const cancelState =
     owner?.supportsCancel === false || hasCancelUnsupportedEvent(task)
-      ? "cancel unsupported"
+      ? "Cancel unavailable"
       : owner?.supportsCancel === true
-        ? "cancel supported"
+        ? "Cancel available"
         : lifecycleLinked
-          ? "cancel unknown"
-          : "cancel unavailable";
+          ? "Cancel unknown"
+          : "Cancel unavailable";
 
   return (
-    <div className="lifecycle-meta" aria-label="A2A lifecycle metadata">
-      <span>{version}</span>
-      <span>{binding}</span>
-      <span>{selectedInterface}</span>
+    <div className="lifecycle-meta" aria-label="Task lifecycle metadata">
       <span>{taskReference}</span>
+      <span>{trackingState}</span>
       <span>{cancelState}</span>
     </div>
   );
@@ -3165,7 +3170,7 @@ function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[]; arti
       <div className="empty-state tall">
         <MessageSquare size={32} />
         <h3>No artifacts in this project</h3>
-        <p>A2A task artifacts stay scoped to the selected Project.</p>
+        <p>Agent outputs stay scoped to the selected Project.</p>
       </div>
     );
   }
@@ -3785,21 +3790,21 @@ function SetupWizard({
                 </div>
               </section>
 
-              <section className="profile-block runtime-block" aria-label="Runtime instance">
+              <section className="profile-block runtime-block" aria-label="Provider connection">
                 <div className="profile-block-title">
                   <span className="profile-title-line">
                     <span className="profile-block-icon">
                       <Server size={18} />
                     </span>
-                    <span>Runtime instance</span>
+                    <span>Provider connection</span>
                   </span>
                 </div>
                 <div className="profile-block-content runtime-content">
                   <div className="runtime-group">
-                    <span className="runtime-group-title">User-provided</span>
+                    <span className="runtime-group-title">Connection</span>
                     <div className="form-grid runtime-user-fields">
                       <label>
-                        Runtime type
+                        Provider type
                         <select defaultValue="hermes" aria-label="Runtime type">
                           <option value="hermes">Hermes</option>
                         </select>
@@ -3809,7 +3814,7 @@ function SetupWizard({
                         <input name="model" defaultValue={profileAgent?.model ?? ""} placeholder="Remote model or agent id" required />
                       </label>
                       <label>
-                        API base URL
+                        Base URL
                         <input
                           name="endpoint"
                           value={runtimeBaseUrl}
@@ -3821,20 +3826,6 @@ function SetupWizard({
                       <label>
                         API key
                         <input name="apiKey" type="password" defaultValue={profileAgent?.apiKey ?? ""} placeholder="Optional API key" />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="runtime-group">
-                    <span className="runtime-group-title">Generated from API base URL</span>
-                    <div className="form-grid technical-fields">
-                      <label>
-                        A2A endpoint
-                        <input name="a2aEndpoint" value={generatedA2AEndpoint} placeholder="Generated after API base URL" readOnly required />
-                      </label>
-                      <label>
-                        Agent Card URL
-                        <input name="agentCardUrl" value={generatedAgentCardUrl} placeholder="Generated after API base URL" readOnly required />
                       </label>
                     </div>
                   </div>
@@ -3853,6 +3844,23 @@ function SetupWizard({
                     </div>
                   </div>
 
+                  <details className="advanced-runtime-settings">
+                    <summary>Advanced integration</summary>
+                    <div className="runtime-group">
+                      <span className="runtime-group-title">Generated integration endpoints</span>
+                      <div className="form-grid technical-fields">
+                        <label>
+                          Task endpoint
+                          <input name="a2aEndpoint" value={generatedA2AEndpoint} placeholder="Generated after Base URL" readOnly required />
+                        </label>
+                        <label>
+                          Capability URL
+                          <input name="agentCardUrl" value={generatedAgentCardUrl} placeholder="Generated after Base URL" readOnly required />
+                        </label>
+                      </div>
+                    </div>
+                  </details>
+
                   <div className="runtime-status-row">
                     <button
                       type="button"
@@ -3865,14 +3873,14 @@ function SetupWizard({
                       disabled={testState === "running"}
                     >
                       {testState === "running" ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
-                      Load Agent Card
+                      Test connection
                     </button>
                   </div>
 
                   <div className="diagnostics">
-                    <DiagnosticRow label="Agent Card reachable" state={testState} />
-                    <DiagnosticRow label="A2A endpoint configured" state={testState} />
-                    <DiagnosticRow label="Capability discovery ready" state={testState} />
+                    <DiagnosticRow label="Provider reachable" state={testState} />
+                    <DiagnosticRow label="Task interface ready" state={testState} />
+                    <DiagnosticRow label="Capabilities discovered" state={testState} />
                     {testMessage ? <div className={`test-message ${testState}`}>{testMessage}</div> : null}
                   </div>
                 </div>

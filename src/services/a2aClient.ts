@@ -33,10 +33,10 @@ export class A2AClient {
   async getAgentCard(agentCardUrl = `${this.endpoint}/.well-known/agent-card.json`) {
     const response = await fetchWithTimeout(toHermesProxyUrl(agentCardUrl), {
       headers: this.buildHeaders(false),
-    }, this.timeoutMs, "A2A Agent Card request timed out.");
+    }, this.timeoutMs, "Provider capability request timed out.");
 
     if (!response.ok) {
-      throw new Error(`Unable to load A2A Agent Card: ${response.status}`);
+      throw new Error(`Unable to load provider capabilities: ${response.status}`);
     }
 
     return (await response.json()) as A2AAgentCard;
@@ -80,10 +80,10 @@ export class A2AClient {
       method: "POST",
       headers: this.buildHeaders(true),
       body: JSON.stringify(request),
-    }, this.timeoutMs, `A2A ${method} request timed out.`);
+    }, this.timeoutMs, `Agent task request timed out.`);
 
     if (!response.ok) {
-      throw new Error(`A2A request failed: ${response.status}`);
+      throw new Error(`Agent task request failed: ${response.status}`);
     }
 
     const payload = (await response.json()) as A2AJsonRpcResponse<TResult>;
@@ -92,7 +92,7 @@ export class A2AClient {
     }
 
     if (!payload.result) {
-      throw new Error("A2A response did not include a result.");
+      throw new Error("Agent response did not include a result.");
     }
 
     return payload.result;

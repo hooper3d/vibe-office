@@ -321,7 +321,7 @@ Validated in browser:
 - Generated `MEDIA:/...` image references can become project-scoped artifacts through the local trusted layer.
 - Copy, open URL, and download controls are available from the artifact detail view.
 - Tasks tab exposes refresh, retry, and cancel lifecycle controls.
-- Tasks tab shows A2A protocol, transport, selected interface, remote link, and cancel capability metadata.
+- Tasks tab shows simplified task metadata such as local/remote task, status tracking, and cancel availability.
 - Local Chief-led orchestration tasks are marked as local when they do not have a remote A2A lifecycle link.
 - Unsupported lifecycle and cancel capabilities are marked without granting remote agents local file access.
 - Temporary local mock A2A server verification on `127.0.0.1:8765` confirmed:
@@ -566,7 +566,7 @@ Completed:
 - Compatibility adapter calls do not fake native A2A version support.
 - Repeated lifecycle polling does not add duplicate task events when the remote task state is unchanged.
 - `tasks/get` unsupported and `tasks/cancel` unsupported are tracked separately.
-- Tasks tab shows protocol/interface metadata so the selected A2A binding is visible to the user.
+- Tasks tab shows simplified task metadata while protocol/interface details stay in the background.
 
 Scope:
 
@@ -606,6 +606,8 @@ Scope:
 - Keep Project Workspace as the context for files, outputs, previews, and multi-agent coordination.
 - Start reorganizing Output Area around agent/type grouping.
 - Treat A2A as an integration layer, not a user-facing product concept.
+- Make default agent onboarding feel like adding an LLM provider.
+- Move A2A-specific fields to advanced integration settings.
 
 Acceptance:
 

@@ -2242,6 +2242,24 @@ textarea::placeholder {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.advanced-runtime-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.advanced-runtime-settings summary {
+  width: fit-content;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.advanced-runtime-settings[open] summary {
+  color: var(--text-primary);
+}
+
 .runtime-content input[readonly] {
   background: rgba(148, 163, 184, 0.08);
   color: var(--text-secondary);

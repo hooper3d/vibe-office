@@ -54,7 +54,7 @@ Task cards now show:
 - retry failed task action
 - cancel task action
 - lifecycle capability note when unsupported
-- protocol / transport / selected interface metadata
+- simplified task capability metadata
 - remote task link status
 - cancel capability status
 
@@ -75,7 +75,8 @@ Validated on 2026-06-18:
   - `message/send` returned `submitted`.
   - automatic polling through `tasks/get` updated the task to `working`.
   - the next automatic poll updated the task to `completed`.
-  - task metadata showed `A2A 1.0`, `json-rpc/http`, `message/send + tasks/get`, and `remote task linked`.
+  - internal task metadata recorded `A2A 1.0`, `json-rpc/http`, `message/send + tasks/get`, and `remote task linked`.
+  - frontend task metadata was later simplified to user-facing labels such as `Remote task`, `Status tracking`, and `Cancel unknown`.
 - Mock cancel verification:
   - a second mock task returned `submitted`.
   - clicking Cancel called `tasks/cancel`.

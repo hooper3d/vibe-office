@@ -222,6 +222,28 @@ User-facing product language should focus on:
 
 A2A remains useful for remote or external agent runtimes, but users should not need to understand A2A servers to use Vibe Office.
 
+Default agent setup should feel like adding an LLM provider:
+
+```txt
+Agent name
+Role
+Capabilities
+Base URL
+Model / Agent ID
+API key
+```
+
+A2A-specific fields belong in advanced integration settings:
+
+```txt
+Task endpoint
+Capability URL
+Protocol version
+Transport binding
+```
+
+The frontend should stay simple and explicit. It should show whether an agent is connected, whether task status tracking is available, and whether cancel is available, without exposing protocol names as primary UI copy.
+
 ## Proposed M7
 
 ### Milestone 7: IA Reset - Agent Free Chat + Project Workspace
@@ -238,6 +260,8 @@ Scope:
 - Remove or downgrade `Direct chat / Task room` as primary header choices.
 - Keep Project Workspace as the context for files, outputs, previews, and multi-agent coordination.
 - Start reorganizing Output Area around agent/type grouping.
+- Make default agent onboarding feel like adding an LLM provider.
+- Move A2A-specific fields to advanced integration settings.
 
 Acceptance:
 
