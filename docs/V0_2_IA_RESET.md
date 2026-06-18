@@ -42,6 +42,8 @@ Rules:
 - No project output pressure.
 - Free Chat is the default fixed entry in the Project list.
 - Switching to Free Chat selects that fixed entry and removes project workspace scope.
+- Free Chat should not show mode buttons in the conversation header.
+- The right panel should show the selected agent's free chat history.
 - Keep per-agent conversation history.
 - Support New Chat.
 - Support continuing an existing chat.

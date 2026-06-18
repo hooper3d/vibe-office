@@ -608,6 +608,7 @@ Scope:
   - Project Workspace activates only after the user selects a real Project.
   - Switching back to Free Chat selects the Free Chat entry.
   - Free Chat messages persist separately from project runs, tasks, artifacts, and file context.
+  - Free Chat keeps the conversation header minimal and uses the right panel for chat history.
 - Add per-agent free chat history.
 - Add New Chat for each agent.
 - Keep free chat outside Project Scope.
@@ -625,6 +626,7 @@ Acceptance:
 - Fresh app load highlights the Free Chat entry.
 - Selecting a Project activates Project Workspace tabs and project-scoped composer copy.
 - Free Chat does not create ProjectRun, ProjectTask, or ProjectArtifact records.
+- Free Chat does not show mode-switch buttons in the conversation header.
 - User can select Lucy and see Lucy's free chat history.
 - User can create a new Lucy free chat.
 - Free chat does not show project folder, project badge, or project outputs as primary chrome.

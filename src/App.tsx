@@ -222,6 +222,26 @@ export function App() {
     if (!currentConversation) return [];
     return messages.filter((message) => message.conversationId === currentConversation.id);
   }, [currentConversation, messages]);
+  const freeChatHistory = useMemo(() => {
+    if (!selectedAgent) return [];
+    return conversations
+      .filter(
+        (conversation) =>
+          conversation.projectId === FREE_CHAT_PROJECT_ID &&
+          conversation.mode === "direct" &&
+          conversation.primaryAgentId === selectedAgent.id,
+      )
+      .map((conversation) => {
+        const conversationMessages = messages.filter((message) => message.conversationId === conversation.id);
+        const firstUserMessage = conversationMessages.find((message) => message.role === "user");
+        return {
+          conversation,
+          messageCount: conversationMessages.length,
+          title: firstUserMessage ? getPartText(firstUserMessage.contentParts) : conversation.title,
+        };
+      })
+      .sort((left, right) => right.conversation.updatedAt.localeCompare(left.conversation.updatedAt));
+  }, [conversations, messages, selectedAgent]);
   const taskRoomConversation = useMemo(() => {
     if (!chiefAgent || !selectedWorkspaceProject) return undefined;
     return conversations.find(
@@ -1859,43 +1879,6 @@ export function App() {
               <div>
                 <h2>{conversationMode === "task-room" ? "Coordinate agents" : selectedAgent?.name ?? "No agent connected"}</h2>
               </div>
-              <div className="panel-actions">
-                <span className="namespace-pill">{chatScope === "free" ? "free chat" : selectedWorkspaceProject?.namespace ?? "no project"}</span>
-                <button
-                  className={`secondary-button compact-button ${chatScope === "free" ? "active" : ""}`}
-                  onClick={() => {
-                    setChatScope("free");
-                    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
-                    setConversationMode("single");
-                  }}
-                >
-                  Free chat
-                </button>
-                <button
-                  className={`secondary-button compact-button ${chatScope === "project" && conversationMode === "single" ? "active" : ""}`}
-                  onClick={() => {
-                    if (!selectedWorkspaceProject) return;
-                    setChatScope("project");
-                    setConversationMode("single");
-                  }}
-                  disabled={!selectedWorkspaceProject}
-                  title={selectedWorkspaceProject ? "Use the selected project scope" : "Select a project first"}
-                >
-                  Project workspace
-                </button>
-                <button
-                  className={`secondary-button compact-button ${chatScope === "project" && conversationMode === "task-room" ? "active" : ""}`}
-                  onClick={() => {
-                    if (!selectedWorkspaceProject) return;
-                    setChatScope("project");
-                    setConversationMode("task-room");
-                  }}
-                  disabled={agents.length === 0 || !selectedWorkspaceProject}
-                  title={selectedWorkspaceProject ? "Coordinate selected agents in this project" : "Select a project first"}
-                >
-                  Coordinate
-                </button>
-              </div>
             </div>
 
             {conversationMode === "single" && selectedAgent ? (
@@ -2000,7 +1983,11 @@ export function App() {
 
           <aside className="output-panel" aria-label="Output Workspace">
             {chatScope === "free" ? (
-              <FreeChatPanel agent={selectedAgent} messageCount={currentMessages.length} />
+              <FreeChatHistoryPanel
+                agent={selectedAgent}
+                activeConversationId={currentConversation?.id}
+                histories={freeChatHistory}
+              />
             ) : selectedWorkspaceProject ? (
               <>
                 <div className="tabs" role="tablist" aria-label="Output modes">
@@ -2691,41 +2678,44 @@ function DirectChat({ messages, scope }: { messages: ConversationMessage[]; scop
   );
 }
 
-function FreeChatPanel({ agent, messageCount }: { agent?: AgentInstance; messageCount: number }) {
+function FreeChatHistoryPanel({
+  agent,
+  activeConversationId,
+  histories,
+}: {
+  agent?: AgentInstance;
+  activeConversationId?: string;
+  histories: Array<{
+    conversation: Conversation;
+    messageCount: number;
+    title: string;
+  }>;
+}) {
   return (
-    <section className="free-chat-panel" aria-label="Free chat context">
+    <section className="free-chat-panel" aria-label="Chat history">
       <div className="free-chat-header">
         <span className="profile-block-icon">
           <MessageSquare size={18} />
         </span>
         <div>
-          <h3>Free chat</h3>
-          <p>No project scope, files, tasks, or outputs are attached.</p>
+          <h3>Chat history</h3>
+          <p>{agent ? `${agent.name} free chats` : "Select an agent"}</p>
         </div>
       </div>
-      {agent ? (
-        <div className="free-chat-agent">
-          <AgentAvatar agent={agent} size="small" />
-          <div>
-            <strong>{agent.name}</strong>
-            <span>{getOfficeRoleLabel(agent.officeRole, agent.isChief)}</span>
-          </div>
-          <span className={agent.status === "online" ? "status-badge success" : "status-badge danger"}>{agent.status}</span>
-        </div>
-      ) : null}
-      <div className="free-chat-facts">
-        <div>
-          <span>History</span>
-          <strong>{messageCount}</strong>
-        </div>
-        <div>
-          <span>Project</span>
-          <strong>None</strong>
-        </div>
-        <div>
-          <span>Workspace files</span>
-          <strong>Off</strong>
-        </div>
+      <div className="free-chat-history-list">
+        {histories.length > 0 ? (
+          histories.map((item) => (
+            <div
+              className={`free-chat-history-item ${item.conversation.id === activeConversationId ? "active" : ""}`}
+              key={item.conversation.id}
+            >
+              <strong>{item.title}</strong>
+              <span>{item.messageCount} messages</span>
+            </div>
+          ))
+        ) : (
+          <div className="inline-empty">No free chat history yet.</div>
+        )}
       </div>
     </section>
   );
