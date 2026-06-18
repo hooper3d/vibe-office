@@ -125,6 +125,7 @@ import {
 } from "../services/outputSelectors";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import {
+  applyTaskLifecycleRemoteUpdateToWorkspace,
   applyTaskLifecycleWorkspaceUpdate,
   getPollableTasks,
   isTaskLifecyclePollable,
@@ -1574,6 +1575,33 @@ test("task lifecycle reducer syncs remote task updates into tasks, runs, and art
   assert.deepEqual(next.runs[0].artifactIds, ["existing-artifact", "artifact-remote"]);
   assert.equal(next.artifacts[0].id, "artifact-remote");
   assert.equal(next.artifacts[0].summary, "Returned artifact.");
+});
+
+test("task lifecycle workspace update preserves non-lifecycle workspace collections", () => {
+  const localConversation = conversation({ id: "conversation-keep" });
+  const localMessage = userMessage({ id: "message-keep" });
+  const lifecycleTask = task({ id: "task-workspace-update", remoteTaskId: "remote-task" });
+  const lifecycleRun = run({ id: "run-workspace-update", taskId: lifecycleTask.id });
+
+  const next = applyTaskLifecycleRemoteUpdateToWorkspace({
+    state: {
+      conversations: [localConversation],
+      messages: [localMessage],
+      runs: [lifecycleRun],
+      tasks: [lifecycleTask],
+      artifacts: [],
+    },
+    task: lifecycleTask,
+    remoteTask: a2aTask("Done.", "remote-task"),
+    agentId: agent.id,
+    label: "Task status refreshed.",
+    now: () => "2026-06-18T10:20:00.000Z",
+  });
+
+  assert.equal(next.conversations[0].id, localConversation.id);
+  assert.equal(next.messages[0].id, localMessage.id);
+  assert.equal(next.tasks[0].state, "completed");
+  assert.equal(next.runs[0].state, "completed");
 });
 
 test("task lifecycle request state resolves ready, unsupported, and retry contexts", () => {

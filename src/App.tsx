@@ -99,7 +99,7 @@ import {
 } from "./services/requestSubmissionState";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import {
-  applyTaskLifecycleWorkspaceUpdate,
+  applyTaskLifecycleRemoteUpdateToWorkspace,
   getPollableTasks,
   resolveTaskLifecycleRequest,
   resolveTaskRetryRequest,
@@ -535,27 +535,16 @@ export function App() {
   }
 
   function applyLifecycleTaskUpdate(task: ProjectTask, remoteTask: A2ATask, agentId: string, label: string) {
-    const snapshot = requestStoreRef.current.snapshot();
-    const nextState = applyTaskLifecycleWorkspaceUpdate({
-      state: {
-        artifacts: snapshot.artifacts,
-        runs: snapshot.runs,
-        tasks: snapshot.tasks,
-      },
-      task,
-      remoteTask,
-      agentId,
-      label,
-      now: () => new Date().toISOString(),
-    });
-    requestStoreRef.current.sync({
-      artifacts: nextState.artifacts,
-      runs: nextState.runs,
-      tasks: nextState.tasks,
-    });
-    setArtifacts(nextState.artifacts);
-    setTasks(nextState.tasks);
-    setRuns(nextState.runs);
+    applyRequestWorkspaceState(
+      applyTaskLifecycleRemoteUpdateToWorkspace({
+        state: requestStoreRef.current.snapshot(),
+        task,
+        remoteTask,
+        agentId,
+        label,
+        now: () => new Date().toISOString(),
+      }),
+    );
   }
 
   function recordLifecycleUnsupported(task: ProjectTask, reason: string) {

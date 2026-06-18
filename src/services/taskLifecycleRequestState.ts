@@ -1,6 +1,7 @@
 import type { A2ATask } from "../domain/a2a";
 import type { ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance, Project } from "../domain/types";
+import type { RequestWorkspaceState } from "./requestRuntimeStore";
 import {
   applyTaskLifecycleRemoteUpdate,
   getTaskLifecycleAddress,
@@ -141,4 +142,40 @@ export function applyTaskLifecycleWorkspaceUpdate({
     label,
     now,
   });
+}
+
+export function applyTaskLifecycleRemoteUpdateToWorkspace({
+  agentId,
+  label,
+  now,
+  remoteTask,
+  state,
+  task,
+}: {
+  agentId: string;
+  label: string;
+  now: () => string;
+  remoteTask: A2ATask;
+  state: RequestWorkspaceState;
+  task: ProjectTask;
+}): RequestWorkspaceState {
+  const taskLifecycleState = applyTaskLifecycleWorkspaceUpdate({
+    state: {
+      artifacts: state.artifacts,
+      runs: state.runs,
+      tasks: state.tasks,
+    },
+    task,
+    remoteTask,
+    agentId,
+    label,
+    now,
+  });
+
+  return {
+    ...state,
+    artifacts: taskLifecycleState.artifacts,
+    runs: taskLifecycleState.runs,
+    tasks: taskLifecycleState.tasks,
+  };
 }
