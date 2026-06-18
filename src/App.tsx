@@ -1882,7 +1882,11 @@ export function App() {
             </div>
 
             {conversationMode === "single" && selectedAgent ? (
-              <DirectChat messages={currentMessages} scope={chatScope} />
+              <DirectChat
+                messages={currentMessages}
+                scope={chatScope}
+                isResponding={isComposerSubmitting}
+              />
             ) : conversationMode === "single" ? (
               <NoAgentState onAddAgent={() => setShowSetup(true)} />
             ) : selectedWorkspaceProject ? (
@@ -1892,6 +1896,7 @@ export function App() {
                 messages={taskRoomMessages}
                 participantIds={taskParticipantIds}
                 projectTask={latestChiefTask}
+                isResponding={isComposerSubmitting}
                 onToggleParticipant={toggleTaskParticipant}
               />
             ) : (
@@ -2655,24 +2660,35 @@ function TabButton({
   );
 }
 
-function DirectChat({ messages, scope }: { messages: ConversationMessage[]; scope: ChatScope }) {
+function DirectChat({
+  messages,
+  scope,
+  isResponding,
+}: {
+  messages: ConversationMessage[];
+  scope: ChatScope;
+  isResponding: boolean;
+}) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const latestMessageId = messages[messages.length - 1]?.id;
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
-  }, [latestMessageId]);
+  }, [latestMessageId, isResponding]);
 
   return (
     <div className="conversation-body" ref={bodyRef}>
-      {messages.length === 0 ? (
+      {messages.length === 0 && !isResponding ? (
         <div className="empty-state compact-empty">
           <MessageSquare size={32} />
           <h3>No messages yet</h3>
           <p>{scope === "free" ? "Start a free chat with this agent. No project context is attached." : "Start a project-scoped chat with this connected agent."}</p>
         </div>
       ) : (
-        <MessageRows messages={messages} />
+        <>
+          <MessageRows messages={messages} />
+          {isResponding ? <TypingIndicator /> : null}
+        </>
       )}
     </div>
   );
@@ -2803,6 +2819,18 @@ function MessageRows({ messages }: { messages: ConversationMessage[] }) {
   });
 }
 
+function TypingIndicator() {
+  return (
+    <div className="message-row agent-message typing-row" role="status" aria-label="Agent is responding">
+      <div className="agent-output typing-indicator" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  );
+}
+
 function NoAgentState({ onAddAgent }: { onAddAgent: () => void }) {
   return (
     <div className="conversation-body">
@@ -2824,6 +2852,7 @@ function TaskRoom({
   messages,
   participantIds,
   projectTask,
+  isResponding,
   onToggleParticipant,
 }: {
   agents: AgentInstance[];
@@ -2831,6 +2860,7 @@ function TaskRoom({
   messages: ConversationMessage[];
   participantIds: string[];
   projectTask?: ProjectTask;
+  isResponding: boolean;
   onToggleParticipant: (agentId: string, checked: boolean) => void;
 }) {
   const participants = agents.filter((agent) => agent.id !== chief?.id && agent.status === "online");
@@ -2839,7 +2869,7 @@ function TaskRoom({
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
-  }, [latestMessageId, projectTask?.updatedAt]);
+  }, [latestMessageId, projectTask?.updatedAt, isResponding]);
 
   return (
     <div className="conversation-body" ref={bodyRef}>
@@ -2885,7 +2915,14 @@ function TaskRoom({
         )}
       </div>
       <div className="task-room-transcript">
-        {messages.length > 0 ? <MessageRows messages={messages} /> : <div className="inline-empty">Task Room messages will appear here after you submit a Chief-led task.</div>}
+        {messages.length > 0 || isResponding ? (
+          <>
+            <MessageRows messages={messages} />
+            {isResponding ? <TypingIndicator /> : null}
+          </>
+        ) : (
+          <div className="inline-empty">Task Room messages will appear here after you submit a Chief-led task.</div>
+        )}
       </div>
     </div>
   );
