@@ -628,6 +628,11 @@ label > span:not(.field-label):not(.field-help),
   color: #fff;
 }
 
+.primary-icon-button svg {
+  color: currentColor;
+  stroke: currentColor;
+}
+
 .icon-button {
   background: var(--surface);
   color: var(--text-secondary);
@@ -703,7 +708,7 @@ label > span:not(.field-label):not(.field-help),
 
 .output-panel {
   background: var(--surface);
-  padding: 20px 16px 20px 20px;
+  padding: 20px 18px;
 }
 
 .splitter {
@@ -1350,8 +1355,8 @@ textarea::placeholder {
   display: grid;
   min-height: 0;
   flex: 1;
-  gap: 16px;
-  margin-top: 16px;
+  gap: 0;
+  margin-top: 14px;
 }
 
 .workspace-mode {
@@ -1359,8 +1364,8 @@ textarea::placeholder {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 10px;
+  margin-top: 14px;
   overflow: hidden;
 }
 
@@ -1406,7 +1411,7 @@ textarea::placeholder {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1444,7 +1449,7 @@ textarea::placeholder {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1452,7 +1457,7 @@ textarea::placeholder {
   display: grid;
   flex: 1 1 auto;
   grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1.15fr);
-  gap: 12px;
+  gap: 0;
   min-height: 0;
 }
 
@@ -1461,7 +1466,7 @@ textarea::placeholder {
 .workspace-search-results {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 0;
   min-width: 0;
 }
 
@@ -1473,10 +1478,14 @@ textarea::placeholder {
   padding-top: 0;
 }
 
+.workspace-file-list {
+  padding-right: 10px;
+}
+
 .workspace-preview {
   grid-template-rows: auto minmax(0, 1fr);
   border-left: 1px solid var(--border);
-  padding-left: 12px;
+  padding-left: 14px;
 }
 
 .workspace-path-row {
@@ -1517,10 +1526,10 @@ textarea::placeholder {
   align-items: flex-start;
   gap: 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--text-primary);
-  padding: 8px 6px;
+  padding: 9px 4px;
   text-align: left;
 }
 
@@ -1588,7 +1597,7 @@ textarea::placeholder {
   max-height: 180px;
   overflow: auto;
   border-top: 1px solid var(--border);
-  padding-top: 10px;
+  padding-top: 8px;
 }
 
 .attached-context-row,
@@ -1687,7 +1696,7 @@ textarea::placeholder {
 }
 
 .output-item {
-  padding: 14px 0;
+  padding: 16px 0;
   border-top: 0;
   border-right: 0;
   border-bottom: 1px solid var(--border);
