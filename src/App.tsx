@@ -27,6 +27,7 @@ import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
+import { useAppActionController } from "./services/appActionController";
 import { useAppMaintenanceController } from "./services/appMaintenanceController";
 import { useAppSelectionController } from "./services/appSelectionController";
 import { useAppSyncController } from "./services/appSyncController";
@@ -61,12 +62,10 @@ import {
 import { loadThemeMode, type ThemeMode } from "./services/themeStorage";
 import { useWorkspaceChromeController } from "./services/workspaceChromeController";
 import { loadUiState } from "./services/uiStateStorage";
-import { attachWorkspaceFileState, detachWorkspaceFileState } from "./services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "./services/workspaceSelectionState";
 import { applyWorkspaceStateDefaults, loadWorkspaceState } from "./services/workspaceStorage";
 import {
   type WorkspaceFileAttachment,
-  type WorkspaceFileReadResult,
 } from "./services/workspaceFileClient";
 
 type ConversationMode = "single" | "task-room";
@@ -388,34 +387,14 @@ export function App() {
     selectedWorkspaceProject,
     tasks,
   });
-
-  function toggleTheme() {
-    setThemeMode((current) => (current === "dark" ? "light" : "dark"));
-  }
-
-  function requestDeleteAgent(agentId: string) {
-    projectDialog.requestDeleteAgent(agentId);
-  }
-
-  function confirmPendingAction() {
-    const action = projectDialog.confirmAction;
-    if (!action) return;
-    if (action.kind === "delete-project") {
-      projectSetupController.deleteProject(action.projectId);
-    } else {
-      agentSetupController.deleteAgent(action.agentId);
-    }
-  }
-
-  function attachWorkspaceFile(file: WorkspaceFileReadResult) {
-    setAttachedWorkspaceFiles((current) =>
-      attachWorkspaceFileState({ attachments: current, file, attachedAt: new Date().toISOString() }),
-    );
-  }
-
-  function detachWorkspaceFile(path: string) {
-    setAttachedWorkspaceFiles((current) => detachWorkspaceFileState({ attachments: current, path }));
-  }
+  const appActionController = useAppActionController({
+    confirmAction: projectDialog.confirmAction,
+    deleteAgent: agentSetupController.deleteAgent,
+    deleteProject: projectSetupController.deleteProject,
+    requestDeleteAgent: projectDialog.requestDeleteAgent,
+    setAttachedWorkspaceFiles,
+    setThemeMode,
+  });
 
   function applyRequestWorkspaceState(state: RequestWorkspaceState, outputMode?: OutputMode) {
     requestStoreRef.current.replace(state);
@@ -445,7 +424,7 @@ export function App() {
         onEditProject={projectDialog.openProjectEditor}
         onSelectAgent={appSelectionController.selectAgent}
         onSelectProject={appSelectionController.selectProject}
-        onToggleTheme={toggleTheme}
+        onToggleTheme={appActionController.toggleTheme}
       />
 
       <main className="workspace">
@@ -475,7 +454,7 @@ export function App() {
             taskRoomHasPendingRequest={taskRoomHasPendingRequest}
             taskRoomMessages={taskRoomMessages}
             onAddAgent={agentSetup.openAddAgentDialog}
-            onDetachWorkspaceFile={detachWorkspaceFile}
+            onDetachWorkspaceFile={appActionController.detachWorkspaceFile}
             onMessageTextChange={setMessageText}
             onRetryDirectMessage={directChatController.retryDirectMessage}
             onRetryTaskRoomMessage={taskRoomController.retryTaskRoomMessage}
@@ -517,11 +496,11 @@ export function App() {
             project={selectedWorkspaceProject}
             runs={scopedRuns}
             tasks={scopedTasks}
-            onAttachFile={attachWorkspaceFile}
+            onAttachFile={appActionController.attachWorkspaceFile}
             onBrowserUrlChange={setBrowserUrl}
             onCancelTask={cancelTaskLifecycle}
             onCreateProject={projectDialog.openProjectDialog}
-            onDetachFile={detachWorkspaceFile}
+            onDetachFile={appActionController.detachWorkspaceFile}
             onEditProject={projectDialog.openProjectEditor}
             onNewFreeChat={freeChatController.startNewConversation}
             onOpenPreview={workspaceChromeController.openPreview}
@@ -544,7 +523,7 @@ export function App() {
           onSaveAgent={agentSetupController.saveAgent}
           agent={agentSetup.setupAgentId ? agents.find((agent) => agent.id === agentSetup.setupAgentId) : undefined}
           localTrustedStatus={activeSetupAgentId ? localTrustedAgentStatuses[activeSetupAgentId] : undefined}
-          onDeleteAgent={requestDeleteAgent}
+          onDeleteAgent={appActionController.requestDeleteAgent}
           onAgentAvatarFile={agentSetupController.updateExistingAgentAvatar}
         />
       ) : null}
@@ -562,7 +541,7 @@ export function App() {
           agents={agents}
           projects={projects}
           onCancel={projectDialog.clearConfirmAction}
-          onConfirm={confirmPendingAction}
+          onConfirm={appActionController.confirmPendingAction}
         />
       ) : null}
     </div>
