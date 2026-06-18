@@ -7,6 +7,7 @@ let registryUpdateQueue = Promise.resolve();
 
 export type LocalTrustedAgentRecord = {
   id: string;
+  name?: string;
   endpoint: string;
   a2aEndpoint: string;
   agentCardUrl: string;
@@ -23,6 +24,7 @@ export function getVerifiedTrustedAgentRecord(value: unknown): LocalTrustedAgent
 
   const agent = value as Record<string, unknown>;
   const id = String(agent.id || "").trim();
+  const name = typeof agent.name === "string" && agent.name.trim() ? agent.name.trim() : undefined;
   const endpoint = String(agent.endpoint || "").trim().replace(/\/+$/, "");
   const a2aEndpoint = String(agent.a2aEndpoint || "").trim().replace(/\/+$/, "");
   const agentCardUrl = String(agent.agentCardUrl || "").trim();
@@ -39,6 +41,7 @@ export function getVerifiedTrustedAgentRecord(value: unknown): LocalTrustedAgent
 
   return {
     id,
+    name,
     endpoint,
     a2aEndpoint,
     agentCardUrl,

@@ -731,12 +731,14 @@ Implementation progress:
 - Controlled generated-media serving for local temp images and WSL media roots now lives in `localTrusted/generatedMedia.ts`.
 - Shared local trusted JSON parsing, JSON/binary responses, safe error text, and provider HTTP forwarding now live in `localTrusted/http.ts`, keeping `localTrusted/vitePlugin.ts` focused on route registration.
 - Local trusted agent registry updates are now serialized and written through a temporary file before replacement, preventing concurrent upsert/delete requests from corrupting the local provider registry during browser smoke cleanup or rapid agent edits.
+- Local trusted agent registry now preserves non-sensitive display names so provider diagnostics can identify registered agents without exposing credentials.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
 - M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.
 - M9 provider regression harness started.
 - `npm run regression:providers` runs real-provider checks through `/agent-local/command` for configured Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible providers.
 - `npm run regression:providers:list` prints safe local trusted agent IDs for M9 without exposing API keys.
 - `npm run regression:providers:list` also reports M9 readiness for Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible, including missing keys and provider-type mismatches before the real matrix is run.
+- M9 provider listing derives readable display names from safe metadata for older local trusted records that predate registry display names.
 - The M9 matrix covers connection, free chat, project chat, forced timeout, retry after timeout, and Chinese context continuity.
 - M9 can reuse existing local trusted agent IDs, or create temporary `m9-*` agents from shell-provided endpoint/model/key variables; see `docs/M9_PROVIDER_REGRESSION.md`.
 

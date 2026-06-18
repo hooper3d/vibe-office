@@ -362,8 +362,9 @@ async function printRegisteredAgents() {
 
   console.log("Registered local trusted agents:");
   for (const agent of agents) {
+    const displayName = agent.name || inferAgentDisplayName(agent);
     console.log(
-      `- ${agent.id} | ${agent.name || "Unnamed"} | provider=${agent.runtimeProvider} | model=${agent.model || "unknown"} | hasKey=${agent.hasKey} | endpoint=${sanitizeUrlForDisplay(agent.endpoint) || "unknown"}`,
+      `- ${agent.id} | ${displayName} | provider=${agent.runtimeProvider} | model=${agent.model || "unknown"} | hasKey=${agent.hasKey} | endpoint=${sanitizeUrlForDisplay(agent.endpoint) || "unknown"}`,
     );
   }
   console.log("\nM9 readiness:");
@@ -421,6 +422,15 @@ function getTargetReadiness(target, agents) {
 function matchesTargetHints(agent, target) {
   const haystack = [agent.id, agent.name, agent.model, agent.endpoint].join(" ").toLowerCase();
   return target.hints.some((hint) => haystack.includes(hint));
+}
+
+function inferAgentDisplayName(agent) {
+  const model = agent.model || "";
+  const endpoint = agent.endpoint || "";
+  if (/deepseek/i.test(`${model} ${endpoint}`)) return "DeepSeek";
+  if (/minimax|minimaxi/i.test(`${model} ${endpoint}`)) return "MiniMax";
+  if (/hermes|8642|hooper\.ink/i.test(`${model} ${endpoint}`)) return "Hermes";
+  return model || "Unnamed";
 }
 
 function sanitizeUrlForDisplay(value) {
