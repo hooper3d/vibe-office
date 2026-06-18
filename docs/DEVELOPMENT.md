@@ -716,6 +716,8 @@ Implementation progress:
 - Agent profile saves now upsert provider connection details into the local trusted agent registry.
 - Browser agent storage strips API keys before writing `localStorage`; legacy browser-stored keys are migrated into the local trusted registry on the next agent sync.
 - Provider adapters now pass `agentId` to the local trusted layer and no longer assemble provider credential headers in browser code.
+- Add/Edit Agent connection tests now persist credentials to the local trusted registry first, then test with a credential-stripped agent object so browser adapters do not retain API keys.
+- Browser agent loading no longer restores legacy `apiKey` fields from old localStorage records.
 - The local trusted provider endpoint validates that an agent-scoped request targets that registered agent before injecting credentials.
 - OpenAI-compatible and Anthropic-compatible adapters now call `POST /agent-local/command` with `agentId`, provider action, and semantic message payloads.
 - The local trusted command endpoint owns provider URL construction, model selection, JSON body assembly, and credential injection for OpenAI-compatible and Anthropic-compatible chat.

@@ -732,9 +732,8 @@ export function App() {
 
     try {
       const agent = createAgentFromHermesSetup(form);
-      const apiKey = String(form.get("apiKey") || "");
-      if (!(await persistLocalTrustedAgent({ ...agent, apiKey: apiKey || agent.apiKey }))) return;
-      const result = await new HermesA2AAdapter({ agent, apiKey }).testConnection();
+      if (!(await persistLocalTrustedAgent(agent))) return;
+      const result = await new HermesA2AAdapter({ agent: stripAgentCredential(agent) }).testConnection();
 
       setTestState("passed");
       setLastConnectionMetadata(createA2ACompatibilityMetadata(result));

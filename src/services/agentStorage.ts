@@ -90,7 +90,7 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     ...safeAgent,
     a2aEndpoint,
     agentCardUrl,
-    apiKey: typeof safeAgent.apiKey === "string" ? safeAgent.apiKey : undefined,
+    apiKey: undefined,
     avatarUrl: typeof safeAgent.avatarUrl === "string" ? safeAgent.avatarUrl : undefined,
     ipAddress: typeof safeAgent.ipAddress === "string" ? safeAgent.ipAddress : undefined,
     runtimeProvider: normalizeRuntimeProvider(safeAgent.runtimeProvider, safeAgent),

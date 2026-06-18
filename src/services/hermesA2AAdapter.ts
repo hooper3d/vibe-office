@@ -15,7 +15,6 @@ export type { ChatHistoryMessage } from "./providerTypes";
 
 export type HermesA2AAdapterOptions = {
   agent: AgentInstance;
-  apiKey?: string;
   transport?: AgentHttpTransport;
 };
 
@@ -46,7 +45,6 @@ export class HermesA2AAdapter {
 
     this.nativeA2AProvider = new NativeA2AProvider({
       agent: options.agent,
-      apiKey: options.apiKey,
       timeoutMs,
       transport,
       useA2AVersionHeader: shouldUseNativeA2A(options.agent),

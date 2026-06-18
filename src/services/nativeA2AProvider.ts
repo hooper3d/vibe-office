@@ -10,13 +10,11 @@ export class NativeA2AProvider {
 
   constructor({
     agent,
-    apiKey,
     timeoutMs,
     transport,
     useA2AVersionHeader,
   }: {
     agent: AgentInstance;
-    apiKey?: string;
     timeoutMs: number;
     transport: AgentHttpTransport;
     useA2AVersionHeader: boolean;
@@ -25,7 +23,6 @@ export class NativeA2AProvider {
     this.client = new A2AClient({
       endpoint: agent.a2aEndpoint,
       agentId: agent.id,
-      apiKey: apiKey ?? agent.apiKey,
       protocolVersion: useA2AVersionHeader ? agent.a2aProtocolVersion : undefined,
       timeoutMs,
       useA2AVersionHeader,

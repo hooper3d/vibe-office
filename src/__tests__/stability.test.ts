@@ -41,7 +41,7 @@ import {
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { A2AClient } from "../services/a2aClient";
-import { saveConfiguredAgents } from "../services/agentStorage";
+import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentStorage";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
@@ -457,6 +457,26 @@ test("configured agent storage keeps provider credentials out of browser localSt
     const raw = window.localStorage.getItem("vibe-office.configured-agents") ?? "";
     assert.equal(raw.includes("local-secret-value"), false);
     assert.equal(JSON.parse(raw)[0].apiKey, undefined);
+  });
+});
+
+test("configured agent storage does not restore legacy browser credentials", () => {
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    window.localStorage.setItem(
+      "vibe-office.configured-agents",
+      JSON.stringify([
+        {
+          ...agent,
+          a2aEndpoint: "http://127.0.0.1:8642/a2a",
+          agentCardUrl: "http://127.0.0.1:8642/.well-known/agent-card.json",
+          apiKey: "legacy-browser-secret",
+        },
+      ]),
+    );
+
+    const [loadedAgent] = loadConfiguredAgents();
+
+    assert.equal(loadedAgent.apiKey, undefined);
   });
 });
 
