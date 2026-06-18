@@ -62,6 +62,7 @@ import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStor
 import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, getA2ATaskTimestamp, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
+import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
@@ -525,7 +526,7 @@ export function App() {
     if (!options.silent) setTaskLifecycleBusyId(`refresh:${taskId}`);
 
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: owner }).getProjectTask(address.taskId, address.contextId);
+      const remoteTask = await refreshRemoteTaskLifecycle({ agent: owner, address });
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task status refreshed.");
     } catch (error) {
       recordLifecycleUnsupported(task, error instanceof Error ? error.message : "Task lifecycle refresh is unsupported.");
@@ -551,7 +552,7 @@ export function App() {
 
     setTaskLifecycleBusyId(`cancel:${taskId}`);
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: owner }).cancelProjectTask(address.taskId, address.contextId);
+      const remoteTask = await cancelRemoteTaskLifecycle({ agent: owner, address });
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task cancel requested.");
     } catch (error) {
       recordCancelUnsupported(task, error instanceof Error ? error.message : "Task cancel is unsupported by this provider.");
@@ -599,10 +600,12 @@ export function App() {
     );
 
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: owner }).sendProjectMessage(
-        taskProject,
-        ["Retry this failed project task.", "", `Task title: ${task.title}`, "", "Previous failure:", task.summary].join("\n"),
-      );
+      const remoteTask = await retryRemoteProjectTask({
+        agent: owner,
+        project: taskProject,
+        taskTitle: task.title,
+        previousFailure: task.summary,
+      });
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Retry returned a task update.");
       return mapA2AState(remoteTask.status.state) !== "failed";
     } catch (error) {
