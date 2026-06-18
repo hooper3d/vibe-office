@@ -27,6 +27,7 @@ import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
+import { readAvatarFile } from "./services/avatarFile";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
 import {
@@ -111,7 +112,6 @@ type DirectoryPickerHandle = {
 const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
-const MAX_AVATAR_BYTES = 512 * 1024;
 
 function normalizeOutputMode(mode?: string): OutputMode {
   if (mode === "workspace" || mode === "browser" || mode === "outputs") return mode;
@@ -1357,38 +1357,4 @@ export function App() {
       ) : null}
     </div>
   );
-}
-
-async function readAvatarFile(file?: File): Promise<{ dataUrl?: string; error?: string }> {
-  if (!file || file.size === 0) return {};
-
-  if (!file.type.startsWith("image/")) {
-    return { error: "Avatar must be an image file." };
-  }
-
-  if (file.size > MAX_AVATAR_BYTES) {
-    return { error: "Avatar image must be 512 KB or smaller." };
-  }
-
-  try {
-    const dataUrl = await fileToDataUrl(file);
-    return { dataUrl };
-  } catch {
-    return { error: "Unable to read avatar image." };
-  }
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-      } else {
-        reject(new Error("Avatar reader returned a non-text result."));
-      }
-    });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Avatar reader failed.")));
-    reader.readAsDataURL(file);
-  });
 }

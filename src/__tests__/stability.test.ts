@@ -9,6 +9,7 @@ import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "../domain/hermesSetup";
 import { applyMediaArtifactBackfillState } from "../services/artifactBackfillState";
+import { readAvatarFile } from "../services/avatarFile";
 import { resolveComposerSubmissionIntent } from "../services/composerSubmissionState";
 import {
   getPendingRequestMessages,
@@ -662,6 +663,17 @@ test("configured agent storage does not restore legacy browser credentials", () 
     const [loadedAgent] = loadConfiguredAgents();
 
     assert.equal(loadedAgent.apiKey, undefined);
+  });
+});
+
+test("avatar file reader validates empty, non-image, and oversized files", async () => {
+  assert.deepEqual(await readAvatarFile(), {});
+  assert.deepEqual(await readAvatarFile(new File([""], "empty.png", { type: "image/png" })), {});
+  assert.deepEqual(await readAvatarFile(new File(["text"], "notes.txt", { type: "text/plain" })), {
+    error: "Avatar must be an image file.",
+  });
+  assert.deepEqual(await readAvatarFile(new File([new Uint8Array(512 * 1024 + 1)], "huge.png", { type: "image/png" })), {
+    error: "Avatar image must be 512 KB or smaller.",
   });
 });
 
