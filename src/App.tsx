@@ -47,22 +47,10 @@ import {
 import { getRespondingAgentIds } from "./services/requestRecovery";
 import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
 import {
-  completeTaskRoomRetrySubmission,
-  prepareTaskRoomRetrySubmission,
-} from "./services/requestRetrySubmissionState";
-import {
   createRequestRuntimeStore,
   syncRequestRuntimeWorkspaceState,
   type RequestWorkspaceState,
 } from "./services/requestRuntimeStore";
-import {
-  executeTaskRoomRequestState,
-  type TaskRoomRequestState,
-  type TaskRoomRequestStep,
-} from "./services/taskRoomOrchestrator";
-import {
-  prepareTaskRoomSubmission,
-} from "./services/requestSubmissionState";
 import { useTaskLifecycleController } from "./services/taskLifecycleController";
 import {
   getPollableTasks,
@@ -71,6 +59,7 @@ import {
   getTaskEventDisplayLabel,
   isTaskTerminal,
 } from "./services/taskLifecycleState";
+import { useTaskRoomController } from "./services/taskRoomController";
 import {
   getAvailableTaskParticipants,
   getSelectedTaskParticipants,
@@ -318,6 +307,18 @@ export function App() {
     runs,
     tasks,
   });
+  const taskRoomController = useTaskRoomController({
+    applyRequestWorkspaceState,
+    attachedWorkspaceFiles,
+    chiefAgent,
+    requestStore: requestStoreRef.current,
+    retryTaskLifecycle,
+    selectedTaskParticipants,
+    selectedWorkspaceProject,
+    setAttachedWorkspaceFiles,
+    setMessageText,
+    setOutputMode,
+  });
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
@@ -518,37 +519,6 @@ export function App() {
     if (outputMode) setOutputMode(normalizeOutputMode(outputMode));
   }
 
-  function getTaskRoomRequestState(): TaskRoomRequestState {
-    return requestStoreRef.current.snapshot();
-  }
-
-  function applyTaskRoomRequestStep(step: TaskRoomRequestStep) {
-    applyRequestWorkspaceState(step.state, step.outputMode);
-  }
-
-  async function retryTaskRoomMessage(messageId: string) {
-    const retry = prepareTaskRoomRetrySubmission({
-      state: requestStoreRef.current.snapshot(),
-      messageId,
-    });
-    if (retry.kind === "ignore") return;
-
-    const trackedRequestId = requestStoreRef.current.begin(retry.retry.message);
-    applyRequestWorkspaceState(retry.state);
-
-    try {
-      const succeeded = await retryTaskLifecycle(retry.retry.taskId);
-      const completedState = completeTaskRoomRetrySubmission({
-        state: requestStoreRef.current.snapshot(),
-        messageId: retry.retry.message.id,
-        succeeded,
-      });
-      applyRequestWorkspaceState(completedState);
-    } finally {
-      requestStoreRef.current.end(trackedRequestId);
-    }
-  }
-
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const intent = resolveComposerSubmissionIntent({
@@ -568,7 +538,7 @@ export function App() {
       composerSubmittingRef.current = true;
       setIsComposerSubmitting(true);
       try {
-        await submitTaskRoomMessage(intent.text);
+        await taskRoomController.submitTaskRoomMessage(intent.text);
       } finally {
         composerSubmittingRef.current = false;
         setIsComposerSubmitting(false);
@@ -598,47 +568,6 @@ export function App() {
     } finally {
       composerSubmittingRef.current = false;
       setIsComposerSubmitting(false);
-    }
-  }
-
-  async function submitTaskRoomMessage(text: string) {
-    if (!selectedWorkspaceProject || !chiefAgent) return;
-
-    const targetAgent = chiefAgent;
-    const participants = selectedTaskParticipants;
-    const taskFiles = [...attachedWorkspaceFiles];
-    const submission = prepareTaskRoomSubmission({
-      state: requestStoreRef.current.snapshot(),
-      project: selectedWorkspaceProject,
-      chief: targetAgent,
-      participants,
-      text,
-      files: taskFiles,
-    });
-    const { conversation, requestId, runId, taskId, userMessageId } = submission;
-
-    requestStoreRef.current.begin(requestId);
-    applyRequestWorkspaceState(submission.state);
-    setMessageText("");
-    setAttachedWorkspaceFiles([]);
-    setOutputMode("outputs");
-
-    try {
-      await executeTaskRoomRequestState({
-        state: getTaskRoomRequestState(),
-        conversation,
-        project: selectedWorkspaceProject,
-        chief: targetAgent,
-        participants,
-        text,
-        files: taskFiles,
-        taskId,
-        runId,
-        userMessageId,
-        onStep: applyTaskRoomRequestStep,
-      });
-    } finally {
-      requestStoreRef.current.end(requestId);
     }
   }
 
@@ -735,7 +664,7 @@ export function App() {
             onDetachWorkspaceFile={detachWorkspaceFile}
             onMessageTextChange={setMessageText}
             onRetryDirectMessage={directChatController.retryDirectMessage}
-            onRetryTaskRoomMessage={retryTaskRoomMessage}
+            onRetryTaskRoomMessage={taskRoomController.retryTaskRoomMessage}
             onSelectFreeChat={() => setChatScope("free")}
             onSubmitMessage={submitMessage}
             onToggleTaskParticipant={toggleTaskParticipant}
