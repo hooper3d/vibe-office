@@ -526,9 +526,32 @@ Acceptance:
 
 ### Milestone 6: A2A Task Lifecycle
 
+Status: foundation in progress.
+
 Goal:
 
 Support longer-running agent tasks.
+
+M6 foundation progress:
+
+- A2A client exposes `tasks/get`.
+- A2A client exposes `tasks/cancel`.
+- Provider adapter exposes project task refresh and cancel calls.
+- Project tasks persist remote A2A task/context references separately from local task ids.
+- Tasks tab shows lifecycle actions:
+  - refresh status
+  - retry failed task
+  - cancel task
+- Active tasks are polled without a full browser refresh.
+- Local Chief-led orchestration tasks are not auto-polled as remote A2A tasks unless a remote task link exists.
+- Unsupported lifecycle operations are recorded as task events instead of failing silently.
+- Agent profile data can track:
+  - protocol version
+  - transport binding
+  - selected interface
+  - last compatibility check time
+  - task lifecycle support
+  - cancel support
 
 Scope:
 

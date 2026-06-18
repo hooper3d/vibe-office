@@ -76,6 +76,14 @@ export class HermesA2AAdapter {
     }
   }
 
+  async getProjectTask(taskId: string, contextId: string) {
+    return this.client.getTask(taskId, contextId);
+  }
+
+  async cancelProjectTask(taskId: string, contextId: string) {
+    return this.client.cancelTask(taskId, contextId);
+  }
+
   private async getHermesBackedAgentCard(): Promise<A2AAgentCard> {
     return {
       name: this.agent.name,

@@ -52,6 +52,13 @@ export class A2AClient {
     });
   }
 
+  async cancelTask(taskId: string, contextId: string) {
+    return this.rpc<{ id: string; contextId: string }, A2ATask>("tasks/cancel", {
+      id: taskId,
+      contextId,
+    });
+  }
+
   private async rpc<TParams, TResult>(method: string, params: TParams) {
     const request: A2AJsonRpcRequest<TParams> = {
       jsonrpc: "2.0",

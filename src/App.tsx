@@ -51,7 +51,7 @@ import {
 import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "./domain/projectScope";
 import type { AgentInstance, AgentOfficeRole, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
-import { HermesA2AAdapter } from "./services/hermesA2AAdapter";
+import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
@@ -75,6 +75,15 @@ type ParticipantTaskResult = {
   state: WorkState;
   summary: string;
 };
+type A2ACompatibilityMetadata = Pick<
+  AgentInstance,
+  | "a2aLastCompatibilityCheckAt"
+  | "a2aProtocolVersion"
+  | "a2aSelectedInterface"
+  | "a2aTransportBinding"
+  | "supportsCancel"
+  | "supportsTaskLifecycle"
+>;
 type DirectoryPickerHandle = {
   name: string;
 };
@@ -145,6 +154,7 @@ export function App() {
   const [attachedWorkspaceFiles, setAttachedWorkspaceFiles] = useState<WorkspaceFileAttachment[]>([]);
   const [taskParticipantIds, setTaskParticipantIds] = useState<string[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
+  const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
@@ -154,6 +164,7 @@ export function App() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [testState, setTestState] = useState<ConnectionTestState>("idle");
   const [testMessage, setTestMessage] = useState("");
+  const [lastConnectionMetadata, setLastConnectionMetadata] = useState<A2ACompatibilityMetadata | null>(null);
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
@@ -300,8 +311,235 @@ export function App() {
     window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
   }, [themeMode]);
 
+  useEffect(() => {
+    const pollableTasks = scopedTasks.filter(
+      (task) =>
+        isTaskActive(task.state) &&
+        Boolean(getTaskLifecycleAddress(task, scopedRuns)) &&
+        !hasLifecycleUnsupportedEvent(task),
+    );
+    if (pollableTasks.length === 0) return;
+
+    const interval = window.setInterval(() => {
+      pollableTasks.forEach((task) => {
+        void refreshTaskLifecycle(task.id, { silent: true });
+      });
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [agents, scopedTasks, selectedProject.id]);
+
   function toggleTheme() {
     setThemeMode((current) => (current === "dark" ? "light" : "dark"));
+  }
+
+  async function refreshTaskLifecycle(taskId: string, options: { silent?: boolean } = {}) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    const address = getTaskLifecycleAddress(task, runs);
+    if (!address) {
+      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote A2A task.");
+      return;
+    }
+
+    const owner = agents.find((agent) => agent.id === task.ownerAgentId);
+    if (!owner) {
+      recordLifecycleUnsupported(task, "Task owner is no longer connected.");
+      return;
+    }
+
+    if (!options.silent) setTaskLifecycleBusyId(`refresh:${taskId}`);
+
+    try {
+      const remoteTask = await new HermesA2AAdapter({ agent: owner }).getProjectTask(address.taskId, address.contextId);
+      applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task status refreshed.");
+    } catch (error) {
+      recordLifecycleUnsupported(task, error instanceof Error ? error.message : "Task lifecycle refresh is unsupported.");
+    } finally {
+      if (!options.silent) setTaskLifecycleBusyId("");
+    }
+  }
+
+  async function cancelTaskLifecycle(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    const address = getTaskLifecycleAddress(task, runs);
+    if (!address) {
+      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote A2A task.");
+      return;
+    }
+
+    const owner = agents.find((agent) => agent.id === task.ownerAgentId);
+    if (!owner) {
+      recordLifecycleUnsupported(task, "Task owner is no longer connected.");
+      return;
+    }
+
+    setTaskLifecycleBusyId(`cancel:${taskId}`);
+    try {
+      const remoteTask = await new HermesA2AAdapter({ agent: owner }).cancelProjectTask(address.taskId, address.contextId);
+      applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task cancel requested.");
+    } catch (error) {
+      recordLifecycleUnsupported(task, error instanceof Error ? error.message : "Task cancel is unsupported by this provider.");
+    } finally {
+      setTaskLifecycleBusyId("");
+    }
+  }
+
+  async function retryTaskLifecycle(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+
+    const owner = agents.find((agent) => agent.id === task.ownerAgentId);
+    if (!owner) {
+      recordLifecycleUnsupported(task, "Task owner is no longer connected.");
+      return;
+    }
+
+    const retryAt = new Date().toISOString();
+    setTaskLifecycleBusyId(`retry:${taskId}`);
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              state: "submitting",
+              summary: "Retry submitted.",
+              events: [
+                ...item.events,
+                {
+                  id: `${task.id}-retry-${retryAt}`,
+                  taskId: task.id,
+                  agentId: owner.id,
+                  label: "Retry submitted.",
+                  state: "submitting",
+                  timestamp: retryAt,
+                },
+              ],
+              updatedAt: retryAt,
+            }
+          : item,
+      ),
+    );
+
+    try {
+      const remoteTask = await new HermesA2AAdapter({ agent: owner }).sendProjectMessage(
+        selectedProject,
+        ["Retry this failed project task.", "", `Task title: ${task.title}`, "", "Previous failure:", task.summary].join("\n"),
+      );
+      applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Retry returned a task update.");
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === task.id
+            ? {
+                ...item,
+                state: "failed",
+                summary: error instanceof Error ? error.message : "Retry failed.",
+                events: [
+                  ...item.events,
+                  {
+                    id: `${task.id}-retry-failed-${failedAt}`,
+                    taskId: task.id,
+                    agentId: owner.id,
+                    label: "Retry failed.",
+                    state: "failed",
+                    timestamp: failedAt,
+                  },
+                ],
+                updatedAt: failedAt,
+              }
+            : item,
+        ),
+      );
+    } finally {
+      setTaskLifecycleBusyId("");
+    }
+  }
+
+  function applyLifecycleTaskUpdate(task: ProjectTask, remoteTask: A2ATask, agentId: string, label: string) {
+    const updatedAt = remoteTask.status.timestamp ?? new Date().toISOString();
+    const eventId = `${task.id}-lifecycle-${updatedAt}`;
+    const mappedState = mapA2AState(remoteTask.status.state);
+    const summary = extractA2ATaskText(remoteTask) ?? task.summary;
+    const returnedArtifacts = mapA2AArtifacts(remoteTask, task.projectId, agentId);
+    const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
+
+    if (returnedArtifacts.length > 0) {
+      setArtifacts((current) => [
+        ...returnedArtifacts.filter((artifact) => !current.some((item) => item.id === artifact.id)),
+        ...current,
+      ]);
+    }
+
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              state: mappedState,
+              remoteTaskId: remoteTask.id || item.remoteTaskId,
+              remoteContextId: remoteTask.contextId || item.remoteContextId,
+              summary,
+              events: [
+                ...item.events,
+                {
+                  id: eventId,
+                  taskId: task.id,
+                  agentId,
+                  label,
+                  state: mappedState,
+                  timestamp: updatedAt,
+                },
+              ],
+              artifactIds: mergeIds(item.artifactIds, returnedArtifactIds),
+              updatedAt,
+            }
+          : item,
+      ),
+    );
+
+    setRuns((current) =>
+      current.map((run) =>
+        run.taskId === task.id
+          ? {
+              ...run,
+              state: mappedState,
+              eventIds: mergeIds(run.eventIds, [eventId]),
+              artifactIds: mergeIds(run.artifactIds, returnedArtifactIds),
+              updatedAt,
+            }
+          : run,
+      ),
+    );
+  }
+
+  function recordLifecycleUnsupported(task: ProjectTask, reason: string) {
+    const at = new Date().toISOString();
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              events: hasLifecycleUnsupportedEvent(item)
+                ? item.events
+                : [
+                    ...item.events,
+                    {
+                      id: `${task.id}-lifecycle-unsupported`,
+                      taskId: task.id,
+                      agentId: task.ownerAgentId,
+                      label: `Lifecycle unsupported: ${reason}`,
+                      state: "unsupported",
+                      timestamp: at,
+                    },
+                  ],
+              updatedAt: at,
+            }
+          : item,
+      ),
+    );
   }
 
   async function runConnectionTest(form: FormData) {
@@ -314,9 +552,11 @@ export function App() {
       const result = await new HermesA2AAdapter({ agent, apiKey }).testConnection();
 
       setTestState("passed");
+      setLastConnectionMetadata(createA2ACompatibilityMetadata(result));
       setTestMessage(`${result.card.name || agent.name} connected through ${result.mode}.`);
     } catch (error) {
       setTestState("failed");
+      setLastConnectionMetadata(null);
       setTestMessage(error instanceof Error ? error.message : "Unable to load A2A Agent Card.");
     }
   }
@@ -326,6 +566,7 @@ export function App() {
       setTestState("idle");
     }
     setTestMessage("");
+    setLastConnectionMetadata(null);
   }
 
   function closeSetup() {
@@ -333,12 +574,14 @@ export function App() {
     setSetupAgentId(null);
     setTestState("idle");
     setTestMessage("");
+    setLastConnectionMetadata(null);
   }
 
   function openAddAgentDialog() {
     setSetupAgentId(null);
     setTestState("idle");
     setTestMessage("");
+    setLastConnectionMetadata(null);
     setShowSetup(true);
   }
 
@@ -346,6 +589,7 @@ export function App() {
     setSetupAgentId(agentId);
     setTestState("idle");
     setTestMessage("");
+    setLastConnectionMetadata(null);
     setShowSetup(true);
   }
 
@@ -366,6 +610,7 @@ export function App() {
                 avatarUrl: agent.avatarUrl,
                 isChief: newAgent.officeRole === "chief",
                 status: agent.status,
+                ...(lastConnectionMetadata ?? {}),
               }
             : newAgent.officeRole === "chief"
               ? { ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole }
@@ -394,6 +639,7 @@ export function App() {
                 avatarUrl: agent.avatarUrl,
                 isChief: newAgent.officeRole === "chief",
                 status: agent.status,
+                ...(lastConnectionMetadata ?? {}),
               }
             : newAgent.officeRole === "chief"
               ? { ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole }
@@ -405,7 +651,7 @@ export function App() {
     }
 
     setAgents((current) => {
-      const addedAgent = { ...newAgent, isChief: newAgent.officeRole === "chief" };
+      const addedAgent = { ...newAgent, ...(lastConnectionMetadata ?? {}), isChief: newAgent.officeRole === "chief" };
       if (newAgent.officeRole !== "chief") return [...current, addedAgent];
       return [...current.map((agent) => ({ ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole })), addedAgent];
     });
@@ -733,6 +979,8 @@ export function App() {
             id: taskId,
             projectId: selectedProject.id,
             contextId: remoteTask.contextId || selectedProject.namespace,
+            remoteTaskId: remoteTask.id || taskId,
+            remoteContextId: remoteTask.contextId || selectedProject.namespace,
             title: text.length > 56 ? `${text.slice(0, 56)}...` : text,
             ownerAgentId: targetAgent.id,
             participantAgentIds,
@@ -1589,7 +1837,16 @@ export function App() {
               />
             ) : null}
             {outputMode === "runs" ? (
-              <ProjectTasks agents={agents} runs={scopedRuns} tasks={scopedTasks} artifacts={scopedArtifacts} />
+              <ProjectTasks
+                agents={agents}
+                runs={scopedRuns}
+                tasks={scopedTasks}
+                artifacts={scopedArtifacts}
+                busyActionId={taskLifecycleBusyId}
+                onCancelTask={cancelTaskLifecycle}
+                onRefreshTask={refreshTaskLifecycle}
+                onRetryTask={retryTaskLifecycle}
+              />
             ) : null}
             {outputMode === "artifacts" ? (
               <ProjectArtifacts agents={agents} artifacts={scopedArtifacts} />
@@ -1998,6 +2255,53 @@ function mapA2AState(state: A2ATaskState): WorkState {
   if (state === "input-required") return "input_required";
   if (state === "rejected" || state === "auth-required" || state === "unknown") return "failed";
   return state;
+}
+
+function createA2ACompatibilityMetadata(result: HermesConnectionTestResult): A2ACompatibilityMetadata {
+  const nativeA2A = result.mode === "native-a2a";
+  return {
+    a2aProtocolVersion: result.card.protocolVersion ?? (nativeA2A ? "unknown" : "compatibility"),
+    a2aTransportBinding: nativeA2A ? "json-rpc/http" : "openai-compatible-http",
+    a2aSelectedInterface: nativeA2A ? "message/send + tasks/get" : "chat/completions compatibility",
+    a2aLastCompatibilityCheckAt: new Date().toISOString(),
+    supportsTaskLifecycle: nativeA2A,
+    supportsCancel: nativeA2A ? undefined : false,
+  };
+}
+
+function getTaskLifecycleAddress(task: ProjectTask, runs: ProjectRun[]) {
+  if (task.remoteTaskId) {
+    return {
+      taskId: task.remoteTaskId,
+      contextId: task.remoteContextId ?? task.contextId,
+    };
+  }
+
+  const linkedRun = runs.find((run) => run.taskId === task.id);
+  if (linkedRun?.type === "direct_message") {
+    return {
+      taskId: task.id,
+      contextId: task.contextId,
+    };
+  }
+
+  return null;
+}
+
+function isTaskActive(state: WorkState) {
+  return state === "submitting" || state === "submitted" || state === "working" || state === "input_required";
+}
+
+function isTaskTerminal(state: WorkState) {
+  return state === "completed" || state === "failed" || state === "canceled" || state === "unsupported";
+}
+
+function hasLifecycleUnsupportedEvent(task: ProjectTask) {
+  return task.events.some((event) => event.state === "unsupported" || event.label.startsWith("Lifecycle unsupported:"));
+}
+
+function mergeIds(first: string[], second: string[]) {
+  return Array.from(new Set([...first, ...second]));
 }
 
 function isDirectMessageResponse(task: A2ATask) {
@@ -2554,11 +2858,19 @@ function ProjectTasks({
   runs,
   tasks,
   artifacts,
+  busyActionId,
+  onCancelTask,
+  onRefreshTask,
+  onRetryTask,
 }: {
   agents: AgentInstance[];
   runs: ProjectRun[];
   tasks: ProjectTask[];
   artifacts: ProjectArtifact[];
+  busyActionId: string;
+  onCancelTask: (taskId: string) => void;
+  onRefreshTask: (taskId: string) => void;
+  onRetryTask: (taskId: string) => void;
 }) {
   const visibleRuns = runs.filter(
     (run) => run.type !== "direct_message" || run.state !== "completed" || run.artifactIds.length > 0 || Boolean(run.taskId),
@@ -2582,6 +2894,7 @@ function ProjectTasks({
         const owner = agents.find((item) => item.id === run.ownerAgentId);
         const runArtifacts = artifacts.filter((artifact) => run.artifactIds.includes(artifact.id));
         const linkedTask = tasks.find((task) => task.id === run.taskId);
+        const lifecycleTask = linkedTask;
         return (
           <article className="output-item run-item" key={run.id}>
             <div className="output-title-row">
@@ -2591,6 +2904,17 @@ function ProjectTasks({
               </div>
               <span className={`status-badge ${run.state}`}>{run.state}</span>
             </div>
+            {lifecycleTask ? (
+              <TaskLifecycleActions
+                busyActionId={busyActionId}
+                lifecycleLinked={Boolean(getTaskLifecycleAddress(lifecycleTask, runs))}
+                onCancelTask={onCancelTask}
+                onRefreshTask={onRefreshTask}
+                onRetryTask={onRetryTask}
+                owner={owner}
+                task={lifecycleTask}
+              />
+            ) : null}
             <p>{linkedTask?.summary ?? "Project-scoped run record."}</p>
             {linkedTask ? <TaskEventList agents={agents} events={linkedTask.events} /> : null}
             <div className="artifact-strip">
@@ -2619,6 +2943,15 @@ function ProjectTasks({
               </div>
               <span className={`status-badge ${task.state}`}>{task.state}</span>
             </div>
+            <TaskLifecycleActions
+              busyActionId={busyActionId}
+              lifecycleLinked={Boolean(getTaskLifecycleAddress(task, runs))}
+              onCancelTask={onCancelTask}
+              onRefreshTask={onRefreshTask}
+              onRetryTask={onRetryTask}
+              owner={owner}
+              task={task}
+            />
             <p>{task.summary}</p>
             <TaskEventList agents={agents} events={task.events} />
             <div className="artifact-strip">
@@ -2648,6 +2981,72 @@ function TaskEventList({ agents, events }: { agents: AgentInstance[]; events: Pr
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function TaskLifecycleActions({
+  busyActionId,
+  lifecycleLinked,
+  onCancelTask,
+  onRefreshTask,
+  onRetryTask,
+  owner,
+  task,
+}: {
+  busyActionId: string;
+  lifecycleLinked: boolean;
+  onCancelTask: (taskId: string) => void;
+  onRefreshTask: (taskId: string) => void;
+  onRetryTask: (taskId: string) => void;
+  owner?: AgentInstance;
+  task: ProjectTask;
+}) {
+  const active = isTaskActive(task.state);
+  const failed = task.state === "failed";
+  const terminal = isTaskTerminal(task.state);
+  const unsupported = hasLifecycleUnsupportedEvent(task);
+  const lifecycleKnownUnsupported = !lifecycleLinked || unsupported || owner?.supportsTaskLifecycle === false;
+  const cancelKnownUnsupported = lifecycleKnownUnsupported || owner?.supportsCancel === false;
+  const refreshBusy = busyActionId === `refresh:${task.id}`;
+  const retryBusy = busyActionId === `retry:${task.id}`;
+  const cancelBusy = busyActionId === `cancel:${task.id}`;
+
+  return (
+    <div className="task-lifecycle-actions" aria-label="Task lifecycle actions">
+      <button
+        aria-label="Refresh task status"
+        className="icon-button mini-button"
+        disabled={terminal || lifecycleKnownUnsupported || Boolean(busyActionId)}
+        onClick={() => onRefreshTask(task.id)}
+        title={!lifecycleLinked ? "No remote lifecycle link" : lifecycleKnownUnsupported ? "Lifecycle unsupported" : "Refresh status"}
+        type="button"
+      >
+        {refreshBusy ? <Loader2 size={14} /> : <RefreshCw size={14} />}
+      </button>
+      <button
+        aria-label="Retry failed task"
+        className="icon-button mini-button"
+        disabled={!failed || Boolean(busyActionId)}
+        onClick={() => onRetryTask(task.id)}
+        title="Retry failed task"
+        type="button"
+      >
+        {retryBusy ? <Loader2 size={14} /> : <ArrowRight size={14} />}
+      </button>
+      <button
+        aria-label="Cancel task"
+        className="icon-button mini-button danger-button"
+        disabled={!active || cancelKnownUnsupported || Boolean(busyActionId)}
+        onClick={() => onCancelTask(task.id)}
+        title={cancelKnownUnsupported ? "Cancel unsupported" : "Cancel task"}
+        type="button"
+      >
+        {cancelBusy ? <Loader2 size={14} /> : <XCircle size={14} />}
+      </button>
+      {lifecycleKnownUnsupported ? (
+        <span className="lifecycle-note">{lifecycleLinked ? "Lifecycle unsupported" : "No remote lifecycle link"}</span>
+      ) : null}
     </div>
   );
 }

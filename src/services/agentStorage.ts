@@ -88,6 +88,13 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     avatarUrl: typeof safeAgent.avatarUrl === "string" ? safeAgent.avatarUrl : undefined,
     ipAddress: typeof safeAgent.ipAddress === "string" ? safeAgent.ipAddress : undefined,
     officeRole: normalizeOfficeRole(safeAgent.officeRole, safeAgent.isChief),
+    a2aProtocolVersion: typeof safeAgent.a2aProtocolVersion === "string" ? safeAgent.a2aProtocolVersion : undefined,
+    a2aTransportBinding: typeof safeAgent.a2aTransportBinding === "string" ? safeAgent.a2aTransportBinding : undefined,
+    a2aSelectedInterface: typeof safeAgent.a2aSelectedInterface === "string" ? safeAgent.a2aSelectedInterface : undefined,
+    a2aLastCompatibilityCheckAt:
+      typeof safeAgent.a2aLastCompatibilityCheckAt === "string" ? safeAgent.a2aLastCompatibilityCheckAt : undefined,
+    supportsTaskLifecycle: typeof safeAgent.supportsTaskLifecycle === "boolean" ? safeAgent.supportsTaskLifecycle : undefined,
+    supportsCancel: typeof safeAgent.supportsCancel === "boolean" ? safeAgent.supportsCancel : undefined,
   };
 }
 

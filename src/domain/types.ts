@@ -17,6 +17,12 @@ export type AgentInstance = {
   tags: string[];
   status: AgentStatus;
   isChief?: boolean;
+  a2aProtocolVersion?: string;
+  a2aTransportBinding?: string;
+  a2aSelectedInterface?: string;
+  a2aLastCompatibilityCheckAt?: string;
+  supportsTaskLifecycle?: boolean;
+  supportsCancel?: boolean;
 };
 
 export type Project = {

@@ -1480,6 +1480,25 @@ textarea::placeholder {
   margin-top: 14px;
 }
 
+.task-lifecycle-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.task-lifecycle-actions .mini-button {
+  width: 30px;
+  height: 30px;
+}
+
+.lifecycle-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .task-event {
   display: grid;
   grid-template-columns: auto auto 1fr;

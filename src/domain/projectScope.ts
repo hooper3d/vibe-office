@@ -77,6 +77,8 @@ export type ProjectTask = {
   id: string;
   projectId: string;
   contextId: string;
+  remoteTaskId?: string;
+  remoteContextId?: string;
   title: string;
   ownerAgentId: string;
   participantAgentIds: string[];
