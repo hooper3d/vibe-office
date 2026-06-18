@@ -4,9 +4,6 @@ import { createBrowserAgentHttpTransport, type AgentHttpTransport } from "./agen
 import { ProviderRouter } from "./providerRouter";
 import { type ChatHistoryMessage, type ProviderConnectionTestResult } from "./providerTypes";
 
-export { createA2ACompatibilityMetadata } from "./providerTypes";
-export type { A2ACompatibilityMetadata, ChatHistoryMessage } from "./providerTypes";
-
 export type HermesA2AAdapterOptions = {
   agent: AgentInstance;
   transport?: AgentHttpTransport;

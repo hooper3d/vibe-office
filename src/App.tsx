@@ -61,13 +61,14 @@ import {
   type DirectRequestResult,
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
-import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "./services/hermesA2AAdapter";
+import { HermesA2AAdapter } from "./services/hermesA2AAdapter";
 import {
   deleteLocalTrustedAgent,
   getLocalTrustedAgentStatuses,
   stripAgentCredential,
   upsertLocalTrustedAgent,
 } from "./services/localTrustedAgentRegistry";
+import { createA2ACompatibilityMetadata } from "./services/providerTypes";
 import { useProjectDialogState } from "./services/projectDialogState";
 import {
   applyMissingProjectSelection,

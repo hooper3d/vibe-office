@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { A2ACompatibilityMetadata } from "./hermesA2AAdapter";
+import type { A2ACompatibilityMetadata } from "./providerTypes";
 
 export type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 

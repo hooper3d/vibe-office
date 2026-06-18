@@ -57,7 +57,8 @@ import {
   type AgentHttpTransport,
   type LocalTrustedProviderCommand,
 } from "../services/agentHttpTransport";
-import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
+import { HermesA2AAdapter } from "../services/hermesA2AAdapter";
+import { createA2ACompatibilityMetadata } from "../services/providerTypes";
 import { A2AClient } from "../services/a2aClient";
 import {
   applyAgentAvatarUpdate,

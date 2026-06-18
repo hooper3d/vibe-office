@@ -1,6 +1,6 @@
 import type { A2APart } from "../domain/a2a";
 import type { ConversationMessage } from "../domain/projectScope";
-import type { ChatHistoryMessage } from "./hermesA2AAdapter";
+import type { ChatHistoryMessage } from "./providerTypes";
 
 export function getTextPartContent(parts: A2APart[]) {
   return parts

@@ -1,7 +1,8 @@
 import type { A2ATask } from "../domain/a2a";
 import type { AgentInstance, Project } from "../domain/types";
 import { extractA2ATaskText, getA2ATaskTimestamp } from "./agentTaskResult";
-import { HermesA2AAdapter, type ChatHistoryMessage } from "./hermesA2AAdapter";
+import { HermesA2AAdapter } from "./hermesA2AAdapter";
+import type { ChatHistoryMessage } from "./providerTypes";
 
 export type AgentRequestExecution = {
   task: A2ATask;
