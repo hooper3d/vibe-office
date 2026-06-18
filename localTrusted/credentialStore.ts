@@ -10,6 +10,7 @@ export type LocalTrustedCredentialRecord = {
 
 export const LOCAL_TRUSTED_DIRECTORY_MODE = 0o700;
 export const LOCAL_TRUSTED_PRIVATE_FILE_MODE = 0o600;
+export const LOCAL_TRUSTED_TEMP_FILE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export function getLocalTrustedFilePath(fileName: string) {
   return path.join(process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME || path.join(os.homedir(), ".vibe-office"), fileName);
@@ -50,6 +51,7 @@ export async function writeLocalTrustedPrivateJsonFile(filePath: string, value: 
   );
 
   await ensureLocalTrustedPrivateDirectory(directory);
+  await cleanupStaleLocalTrustedTempFiles(directory, prefix);
   await fs.writeFile(temporaryPath, JSON.stringify(value, null, 2), {
     encoding: "utf8",
     mode: LOCAL_TRUSTED_PRIVATE_FILE_MODE,
@@ -57,6 +59,42 @@ export async function writeLocalTrustedPrivateJsonFile(filePath: string, value: 
   await chmodLocalTrustedPath(temporaryPath, LOCAL_TRUSTED_PRIVATE_FILE_MODE);
   await fs.rename(temporaryPath, filePath);
   await chmodLocalTrustedPath(filePath, LOCAL_TRUSTED_PRIVATE_FILE_MODE);
+}
+
+export async function cleanupStaleLocalTrustedTempFiles(
+  directory: string,
+  prefix: string,
+  options: { maxAgeMs?: number; nowMs?: number } = {},
+) {
+  const maxAgeMs = options.maxAgeMs ?? LOCAL_TRUSTED_TEMP_FILE_MAX_AGE_MS;
+  const nowMs = options.nowMs ?? Date.now();
+  let entries: string[];
+
+  try {
+    entries = await fs.readdir(directory);
+  } catch {
+    return;
+  }
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      if (!isLocalTrustedTempFile(entry, prefix)) return;
+
+      const filePath = path.join(directory, entry);
+      try {
+        const stat = await fs.stat(filePath);
+        if (!stat.isFile()) return;
+        if (nowMs - stat.mtimeMs < maxAgeMs) return;
+        await fs.rm(filePath, { force: true });
+      } catch {
+        // Temp-file cleanup is best effort; credential writes should not fail because cleanup did.
+      }
+    }),
+  );
+}
+
+function isLocalTrustedTempFile(fileName: string, prefix: string) {
+  return fileName.startsWith(`${prefix}.`) && fileName.endsWith(".tmp");
 }
 
 export async function ensureLocalTrustedPrivateDirectory(directory: string) {

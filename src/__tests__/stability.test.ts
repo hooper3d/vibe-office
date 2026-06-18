@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { A2ATask } from "../domain/a2a";
@@ -2462,6 +2462,40 @@ test("local trusted credential files use private atomic write helpers", async ()
   assert.match(credentialUpdater, /localTrustedDirectoryMode = 0o700/);
   assert.match(credentialUpdater, /localTrustedPrivateFileMode = 0o600/);
   assert.match(credentialUpdater, /fs\.chmod/);
+  assert.match(credentialStore, /cleanupStaleLocalTrustedTempFiles/);
+});
+
+test("local trusted temp cleanup removes only stale atomic-write leftovers", async () => {
+  const { cleanupStaleLocalTrustedTempFiles } = await import("../../localTrusted/credentialStore");
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-temp-cleanup-"));
+  const nowMs = Date.parse("2026-06-19T00:00:00.000Z");
+  const oldTemp = path.join(localTrustedHome, "agent-credentials.local.1.1.old.tmp");
+  const freshTemp = path.join(localTrustedHome, "agent-credentials.local.1.1.fresh.tmp");
+  const unrelatedTemp = path.join(localTrustedHome, "agent-registry.local.1.1.old.tmp");
+  const realCredentialFile = path.join(localTrustedHome, "agent-credentials.local.json");
+
+  try {
+    await writeFile(oldTemp, "old", "utf8");
+    await writeFile(freshTemp, "fresh", "utf8");
+    await writeFile(unrelatedTemp, "other", "utf8");
+    await writeFile(realCredentialFile, "{}", "utf8");
+    await utimes(oldTemp, new Date(nowMs - 120_000), new Date(nowMs - 120_000));
+    await utimes(freshTemp, new Date(nowMs - 10_000), new Date(nowMs - 10_000));
+    await utimes(unrelatedTemp, new Date(nowMs - 120_000), new Date(nowMs - 120_000));
+
+    await cleanupStaleLocalTrustedTempFiles(localTrustedHome, "agent-credentials.local", {
+      maxAgeMs: 60_000,
+      nowMs,
+    });
+
+    const remaining = await readdir(localTrustedHome);
+    assert.equal(remaining.includes(path.basename(oldTemp)), false);
+    assert.equal(remaining.includes(path.basename(freshTemp)), true);
+    assert.equal(remaining.includes(path.basename(unrelatedTemp)), true);
+    assert.equal(remaining.includes(path.basename(realCredentialFile)), true);
+  } finally {
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
 });
 
 test("local trusted registry exposes safe agent status without credentials", async () => {
