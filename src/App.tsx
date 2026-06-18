@@ -63,7 +63,12 @@ import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agen
 import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
-import { getPendingRequestMessages, getRespondingAgentIds, resolvePendingRequestRecovery } from "./services/requestRecovery";
+import {
+  getPendingRequestMessages,
+  getRespondingAgentIds,
+  resolveDirectMessageRetry,
+  resolvePendingRequestRecovery,
+} from "./services/requestRecovery";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -1158,66 +1163,56 @@ export function App() {
   }
 
   async function retryDirectMessage(messageId: string) {
-    const message = messages.find((item) => item.id === messageId);
-    if (!message || message.role !== "user" || message.status !== "failed") return;
-
-    const conversation = conversations.find((item) => item.id === message.conversationId);
-    if (!conversation || conversation.mode !== "direct") return;
-
-    const targetAgent = agents.find((item) => item.id === conversation.primaryAgentId);
-    if (!targetAgent) {
-      markInterruptedMessageFailed(message, "Agent no longer exists. Please reconnect the agent before retrying.");
+    const retry = resolveDirectMessageRetry({
+      messageId,
+      messages,
+      conversations,
+      agents,
+      projects,
+      freeChatProjectId: FREE_CHAT_PROJECT_ID,
+    });
+    if (retry.kind === "ignore") return;
+    if (retry.kind === "fail") {
+      markInterruptedMessageFailed(retry.message, retry.reason);
       return;
     }
 
-    const text = getTextPartContent(message.contentParts).trim();
-    if (!text) {
-      markInterruptedMessageFailed(message, "Message content could not be restored. Please send a new message.");
-      return;
-    }
-
-    activeRequestMessageIdsRef.current.add(message.id);
+    activeRequestMessageIdsRef.current.add(retry.message.id);
     setMessages((current) =>
       markConversationMessageSending(
         current.filter(
           (item) =>
             !(
               item.role === "system" &&
-              item.conversationId === message.conversationId &&
-              item.createdAt >= message.createdAt &&
-              (message.runId ? item.runId === message.runId : item.agentId === targetAgent.id)
+              item.conversationId === retry.message.conversationId &&
+              item.createdAt >= retry.message.createdAt &&
+              (retry.message.runId ? item.runId === retry.message.runId : item.agentId === retry.targetAgent.id)
             ),
         ),
-        message.id,
+        retry.message.id,
       ),
     );
 
     try {
-      if (conversation.projectId === FREE_CHAT_PROJECT_ID) {
+      if (retry.kind === "free-chat") {
         await completeFreeChatRequest({
-          conversation,
-          targetAgent,
-          userMessageId: message.id,
-          text,
+          conversation: retry.conversation,
+          targetAgent: retry.targetAgent,
+          userMessageId: retry.message.id,
+          text: retry.text,
         });
         return;
       }
 
-      const project = projects.find((item) => item.id === conversation.projectId);
-      if (!project) {
-        markInterruptedMessageFailed(message, "Project no longer exists. Please send a new message.");
-        return;
-      }
-
       await resumeProjectDirectRequest({
-        message,
-        conversation,
-        project,
-        targetAgent,
-        text,
+        message: retry.message,
+        conversation: retry.conversation,
+        project: retry.project,
+        targetAgent: retry.targetAgent,
+        text: retry.text,
       });
     } finally {
-      activeRequestMessageIdsRef.current.delete(message.id);
+      activeRequestMessageIdsRef.current.delete(retry.message.id);
     }
   }
 

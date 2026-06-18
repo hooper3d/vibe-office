@@ -21,6 +21,31 @@ export type PendingRequestRecovery =
       text: string;
     };
 
+export type DirectMessageRetry =
+  | {
+      kind: "ignore";
+    }
+  | {
+      kind: "fail";
+      message: ConversationMessage;
+      reason: string;
+    }
+  | {
+      kind: "free-chat";
+      message: ConversationMessage;
+      conversation: Conversation;
+      targetAgent: AgentInstance;
+      text: string;
+    }
+  | {
+      kind: "project-chat";
+      message: ConversationMessage;
+      conversation: Conversation;
+      project: Project;
+      targetAgent: AgentInstance;
+      text: string;
+    };
+
 export function getPendingRequestMessages(
   messages: ConversationMessage[],
   activeMessageIds: ReadonlySet<string>,
@@ -122,6 +147,78 @@ export function resolvePendingRequestRecovery({
 
   return {
     kind: "project-chat",
+    conversation,
+    project,
+    targetAgent,
+    text,
+  };
+}
+
+export function resolveDirectMessageRetry({
+  messageId,
+  messages,
+  conversations,
+  agents,
+  projects,
+  freeChatProjectId,
+}: {
+  messageId: string;
+  messages: ConversationMessage[];
+  conversations: Conversation[];
+  agents: AgentInstance[];
+  projects: Project[];
+  freeChatProjectId: string;
+}): DirectMessageRetry {
+  const message = messages.find((item) => item.id === messageId);
+  if (!message || message.role !== "user" || message.status !== "failed") {
+    return { kind: "ignore" };
+  }
+
+  const conversation = conversations.find((item) => item.id === message.conversationId);
+  if (!conversation || conversation.mode !== "direct") {
+    return { kind: "ignore" };
+  }
+
+  const targetAgent = agents.find((item) => item.id === conversation.primaryAgentId);
+  if (!targetAgent) {
+    return {
+      kind: "fail",
+      message,
+      reason: "Agent no longer exists. Please reconnect the agent before retrying.",
+    };
+  }
+
+  const text = getTextPartContent(message).trim();
+  if (!text) {
+    return {
+      kind: "fail",
+      message,
+      reason: "Message content could not be restored. Please send a new message.",
+    };
+  }
+
+  if (conversation.projectId === freeChatProjectId) {
+    return {
+      kind: "free-chat",
+      message,
+      conversation,
+      targetAgent,
+      text,
+    };
+  }
+
+  const project = projects.find((item) => item.id === conversation.projectId);
+  if (!project) {
+    return {
+      kind: "fail",
+      message,
+      reason: "Project no longer exists. Please send a new message.",
+    };
+  }
+
+  return {
+    kind: "project-chat",
+    message,
     conversation,
     project,
     targetAgent,
