@@ -717,9 +717,11 @@ Implementation progress:
 - Browser agent storage strips API keys before writing `localStorage`; legacy browser-stored keys are migrated into the local trusted registry on the next agent sync.
 - Provider adapters now pass `agentId` to the local trusted layer and no longer assemble provider credential headers in browser code.
 - The local trusted provider endpoint validates that an agent-scoped request targets that registered agent before injecting credentials.
+- OpenAI-compatible and Anthropic-compatible adapters now call `POST /agent-local/command` with `agentId`, provider action, and semantic message payloads.
+- The local trusted command endpoint owns provider URL construction, model selection, JSON body assembly, and credential injection for OpenAI-compatible and Anthropic-compatible chat.
 - Workspace list/read/search/media remains on `/workspace-local/*`.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
-- Next M8 slice should move provider request construction itself behind the local trusted layer so the browser sends only `agentId`, action, and payload.
+- Next M8 slice should move native A2A task/capability request construction behind the same local command boundary.
 
 Acceptance:
 

@@ -21,6 +21,7 @@ type LocalTrustedAgentRecord = {
   endpoint: string;
   a2aEndpoint: string;
   agentCardUrl: string;
+  model: string;
   runtimeProvider: "hermes" | "openai" | "anthropic";
   apiKey?: string;
 };
@@ -89,6 +90,29 @@ function localWorkspaceFileLayer(): Plugin {
           delete registry[agentId];
           await writeLocalTrustedAgentRegistry(registry);
           sendJson(res, 200, { ok: true });
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
+
+      server.middlewares.use("/agent-local/command", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local provider commands." });
+
+        try {
+          const body = await readJsonBody(req);
+          const providerRequest = await getVerifiedProviderCommandRequest(body);
+          const response = await fetch(providerRequest.url, {
+            method: providerRequest.method,
+            headers: providerRequest.headers,
+            body: providerRequest.body,
+          });
+          const contentType = response.headers.get("content-type") || "application/json";
+          const responseBody = await response.text();
+
+          res.statusCode = response.status;
+          res.setHeader("Content-Type", contentType);
+          res.setHeader("Cache-Control", "no-store");
+          res.end(responseBody);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }
@@ -343,6 +367,7 @@ function getVerifiedTrustedAgentRecord(value: unknown): LocalTrustedAgentRecord 
   const endpoint = String(agent.endpoint || "").trim().replace(/\/+$/, "");
   const a2aEndpoint = String(agent.a2aEndpoint || "").trim().replace(/\/+$/, "");
   const agentCardUrl = String(agent.agentCardUrl || "").trim();
+  const model = String(agent.model || "").trim();
   const runtimeProvider = getVerifiedRuntimeProvider(agent.runtimeProvider);
   const apiKey = typeof agent.apiKey === "string" && agent.apiKey.trim() ? agent.apiKey.trim() : undefined;
 
@@ -350,15 +375,139 @@ function getVerifiedTrustedAgentRecord(value: unknown): LocalTrustedAgentRecord 
   assertHttpUrl(endpoint, "Agent endpoint");
   assertHttpUrl(a2aEndpoint, "Agent task endpoint");
   assertHttpUrl(agentCardUrl, "Agent capability URL");
+  if (!model) throw new Error("Agent model is required.");
 
   return {
     id,
     endpoint,
     a2aEndpoint,
     agentCardUrl,
+    model,
     runtimeProvider,
     apiKey,
   };
+}
+
+async function getVerifiedProviderCommandRequest(body: Record<string, unknown>) {
+  const agentId = String(body.agentId || "").trim();
+  const command = String(body.command || "").trim();
+  if (!agentId) throw new Error("Agent id is required.");
+
+  const agent = await getLocalTrustedAgent(agentId);
+  if (command === "openai.chatCompletions") {
+    if (agent.runtimeProvider === "anthropic") throw new Error("OpenAI-compatible command does not match this agent provider.");
+    return createOpenAIChatCompletionsRequest(agent, body.payload);
+  }
+  if (command === "anthropic.messages") {
+    if (agent.runtimeProvider !== "anthropic") throw new Error("Anthropic command does not match this agent provider.");
+    return createAnthropicMessagesRequest(agent, body.payload);
+  }
+  throw new Error("Provider command is not supported.");
+}
+
+function createOpenAIChatCompletionsRequest(agent: LocalTrustedAgentRecord, payload: unknown) {
+  const commandPayload = getVerifiedCommandPayload(payload);
+  const messages = getVerifiedCommandMessages(commandPayload.messages, ["system", "user", "assistant"]);
+  const headers = createProviderJsonHeaders();
+  injectLocalTrustedCredential(headers, agent);
+
+  return {
+    url: toOpenAIChatCompletionsUrl(agent.endpoint),
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: agent.model,
+      messages,
+      ...(commandPayload.maxTokens ? { max_tokens: commandPayload.maxTokens } : {}),
+    }),
+  };
+}
+
+function createAnthropicMessagesRequest(agent: LocalTrustedAgentRecord, payload: unknown) {
+  const commandPayload = getVerifiedCommandPayload(payload);
+  const messages = getVerifiedCommandMessages(commandPayload.messages, ["user", "assistant"]);
+  const headers = createProviderJsonHeaders({
+    "anthropic-version": "2023-06-01",
+  });
+  injectLocalTrustedCredential(headers, agent);
+
+  return {
+    url: toAnthropicMessagesUrl(agent.endpoint),
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: agent.model,
+      max_tokens: commandPayload.maxTokens ?? 4096,
+      ...(typeof commandPayload.system === "string" && commandPayload.system.trim() ? { system: commandPayload.system.trim() } : {}),
+      messages,
+    }),
+  };
+}
+
+function getVerifiedCommandPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Provider command payload is invalid.");
+  }
+  const value = payload as Record<string, unknown>;
+  return {
+    messages: value.messages,
+    system: value.system,
+    maxTokens: getVerifiedMaxTokens(value.maxTokens),
+  };
+}
+
+function getVerifiedCommandMessages(value: unknown, allowedRoles: Array<"system" | "user" | "assistant">) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("Provider command messages are required.");
+  }
+
+  return value.map((message) => {
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      throw new Error("Provider command message is invalid.");
+    }
+    const role = String((message as Record<string, unknown>).role || "");
+    const content = String((message as Record<string, unknown>).content || "");
+    if (!allowedRoles.includes(role as "system" | "user" | "assistant")) {
+      throw new Error("Provider command message role is not supported.");
+    }
+    if (!content.trim()) {
+      throw new Error("Provider command message content is required.");
+    }
+    return {
+      role,
+      content,
+    };
+  });
+}
+
+function getVerifiedMaxTokens(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error("Provider command max tokens value is invalid.");
+  }
+  return Math.min(Math.floor(parsed), 100_000);
+}
+
+function createProviderJsonHeaders(extra: Record<string, string> = {}) {
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...extra,
+  };
+}
+
+function toOpenAIChatCompletionsUrl(endpoint: string) {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
+  return `${trimmed}/chat/completions`;
+}
+
+function toAnthropicMessagesUrl(endpoint: string) {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (/\/messages$/i.test(trimmed)) return trimmed;
+  if (/\/v1$/i.test(trimmed)) return `${trimmed}/messages`;
+  return `${trimmed}/v1/messages`;
 }
 
 function getVerifiedRuntimeProvider(value: unknown): LocalTrustedAgentRecord["runtimeProvider"] {

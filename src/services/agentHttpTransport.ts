@@ -1,6 +1,7 @@
 export type AgentHttpTransport = {
   request(url: string, init: RequestInit, options: AgentHttpRequestOptions): Promise<Response>;
   requestJson<T>(url: string, init: RequestInit, options: AgentHttpRequestOptions): Promise<T>;
+  commandJson<T>(command: LocalTrustedProviderCommand, options: AgentHttpRequestOptions): Promise<T>;
 };
 
 export type AgentHttpRequestOptions = {
@@ -18,6 +19,25 @@ export type LocalTrustedProviderRequestBody = {
   agentId?: string;
 };
 
+export type LocalTrustedProviderCommand =
+  | {
+      agentId: string;
+      command: "openai.chatCompletions";
+      payload: {
+        messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+        maxTokens?: number;
+      };
+    }
+  | {
+      agentId: string;
+      command: "anthropic.messages";
+      payload: {
+        system?: string;
+        messages: Array<{ role: "user" | "assistant"; content: string }>;
+        maxTokens?: number;
+      };
+    };
+
 export function createBrowserAgentHttpTransport(): AgentHttpTransport {
   return {
     async request(url: string, init: RequestInit, options: AgentHttpRequestOptions) {
@@ -32,6 +52,26 @@ export function createBrowserAgentHttpTransport(): AgentHttpTransport {
 
       return (await response.json()) as T;
     },
+    async commandJson<T>(command: LocalTrustedProviderCommand, options: AgentHttpRequestOptions) {
+      const response = await fetchWithTimeout("/agent-local/command", createLocalTrustedProviderCommandRequest(command), options.timeoutMs, options.timeoutMessage);
+
+      if (!response.ok) {
+        throw new Error(`${options.failurePrefix ?? "Agent command failed"}: ${response.status}${await readErrorSuffix(response)}`);
+      }
+
+      return (await response.json()) as T;
+    },
+  };
+}
+
+export function createLocalTrustedProviderCommandRequest(command: LocalTrustedProviderCommand): RequestInit {
+  return {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(command),
   };
 }
 

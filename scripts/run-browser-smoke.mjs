@@ -241,10 +241,10 @@ async function runProjectContextRecoveryFailureSmoke() {
 }
 
 async function installSmokeProviderRoute(page, content) {
-  await page.route("**/agent-local/request", async (route) => {
+  await page.route("**/agent-local/command", async (route) => {
     const requestBody = route.request().postDataJSON();
-    if (!String(requestBody?.url || "").includes("/smoke-openai/chat/completions")) {
-      throw new Error(`Smoke provider route received an unexpected local provider target: ${requestBody?.url}`);
+    if (requestBody?.command !== "openai.chatCompletions") {
+      throw new Error(`Smoke provider route received an unexpected local provider command: ${requestBody?.command}`);
     }
 
     await route.fulfill({

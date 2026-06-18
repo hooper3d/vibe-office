@@ -85,36 +85,31 @@ export class OpenAIProvider {
     systemContent,
     metadata,
   }: ProviderMessageRequest): Promise<A2ATask> {
-    const messages = [
-      ...(systemContent
-        ? [
-            {
-              role: "system",
-              content: systemContent,
-            },
-          ]
-        : []),
-      ...history,
-      {
-        role: "user" as const,
-        content: text,
-      },
-    ];
-    const payload = await this.transport.requestJson<{
+    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+    if (systemContent) {
+      messages.push({
+        role: "system",
+        content: systemContent,
+      });
+    }
+    messages.push(...history);
+    messages.push({
+      role: "user",
+      content: text,
+    });
+    const payload = await this.transport.commandJson<{
       choices?: Array<{
         message?: {
           content?: string;
         };
       }>;
     }>(
-      toOpenAIChatCompletionsUrl(this.agent.endpoint),
       {
-        method: "POST",
-        headers: this.buildHeaders(true),
-        body: JSON.stringify({
-          model: this.agent.model,
+        agentId: this.agent.id,
+        command: "openai.chatCompletions",
+        payload: {
           messages,
-        }),
+        },
       },
       {
         timeoutMs: this.timeoutMs,
@@ -129,21 +124,19 @@ export class OpenAIProvider {
   }
 
   private async validateChat() {
-    await this.transport.requestJson<unknown>(
-      toOpenAIChatCompletionsUrl(this.agent.endpoint),
+    await this.transport.commandJson<unknown>(
       {
-        method: "POST",
-        headers: this.buildHeaders(true),
-        body: JSON.stringify({
-          model: this.agent.model,
+        agentId: this.agent.id,
+        command: "openai.chatCompletions",
+        payload: {
           messages: [
             {
               role: "user",
               content: "Reply with exactly: ok",
             },
           ],
-          max_tokens: 8,
-        }),
+          maxTokens: 8,
+        },
       },
       {
         timeoutMs: this.timeoutMs,
@@ -154,17 +147,6 @@ export class OpenAIProvider {
     );
   }
 
-  private buildHeaders(isJson: boolean) {
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-    };
-
-    if (isJson) {
-      headers["Content-Type"] = "application/json";
-    }
-
-    return headers;
-  }
 }
 
 export function toOpenAIChatCompletionsUrl(endpoint: string) {

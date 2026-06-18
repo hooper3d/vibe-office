@@ -35,6 +35,7 @@ import {
   createBrowserAgentHttpTransport,
   createLocalTrustedProviderRequest,
   type AgentHttpTransport,
+  type LocalTrustedProviderCommand,
   toLocalTrustedProviderRequestBody,
   toLocalTrustedProxyUrl,
 } from "../services/agentHttpTransport";
@@ -374,7 +375,7 @@ test("agent http transport delegates provider requests to the local trusted laye
 
   const previousFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
-  const requestedBodies: Array<{ url?: string; agentId?: string }> = [];
+  const requestedBodies: Array<{ url?: string; agentId?: string; command?: string }> = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     requestedUrls.push(String(url));
     requestedBodies.push(JSON.parse(String(init?.body || "{}")));
@@ -394,6 +395,27 @@ test("agent http transport delegates provider requests to the local trusted laye
   try {
     const transport = createBrowserAgentHttpTransport();
     assert.deepEqual(
+      await transport.commandJson<{ ok: boolean }>(
+        {
+          agentId: "agent-lucy",
+          command: "openai.chatCompletions",
+          payload: {
+            messages: [{ role: "user", content: "hi" }],
+          },
+        },
+        {
+          timeoutMs: 1000,
+          timeoutMessage: "timed out",
+          failurePrefix: "Provider command failed",
+        },
+      ),
+      { ok: true },
+    );
+    assert.equal(requestedUrls[0], "/agent-local/command");
+    assert.equal(requestedBodies[0].agentId, "agent-lucy");
+    assert.equal(requestedBodies[0].command, "openai.chatCompletions");
+
+    assert.deepEqual(
       await transport.requestJson<{ ok: boolean }>("http://127.0.0.1:8642/ok", {}, {
         timeoutMs: 1000,
         timeoutMessage: "timed out",
@@ -402,9 +424,9 @@ test("agent http transport delegates provider requests to the local trusted laye
       }),
       { ok: true },
     );
-    assert.equal(requestedUrls[0], "/agent-local/request");
-    assert.equal(requestedBodies[0].url, "http://127.0.0.1:8642/ok");
-    assert.equal(requestedBodies[0].agentId, "agent-lucy");
+    assert.equal(requestedUrls[1], "/agent-local/request");
+    assert.equal(requestedBodies[1].url, "http://127.0.0.1:8642/ok");
+    assert.equal(requestedBodies[1].agentId, "agent-lucy");
     await assert.rejects(
       () =>
         transport.requestJson("https://api.example.com/fail", {}, {
@@ -437,14 +459,17 @@ test("configured agent storage keeps provider credentials out of browser localSt
   });
 });
 
-test("provider adapter routes OpenAI-compatible free chat through chat completions", async () => {
-  const calls: Array<{ url: string; init: RequestInit; options?: { agentId?: string } }> = [];
+test("provider adapter routes OpenAI-compatible free chat through local provider commands", async () => {
+  const commands: LocalTrustedProviderCommand[] = [];
   const transport: AgentHttpTransport = {
     async request() {
       throw new Error("Native A2A should not be used for OpenAI-compatible agents.");
     },
-    async requestJson<T>(url: string, init: RequestInit, options?: { agentId?: string }) {
-      calls.push({ url, init, options });
+    async requestJson() {
+      throw new Error("OpenAI-compatible agents should not send browser-built provider HTTP requests.");
+    },
+    async commandJson<T>(command: LocalTrustedProviderCommand) {
+      commands.push(command);
       return {
         choices: [
           {
@@ -469,23 +494,26 @@ test("provider adapter routes OpenAI-compatible free chat through chat completio
   const result = await adapter.testConnection();
   const metadata = createA2ACompatibilityMetadata(result);
 
-  assert.equal(calls[0].url, "https://api.deepseek.example/v1/chat/completions");
-  assert.equal(calls[0].options?.agentId, openAIAgent.id);
-  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, undefined);
+  assert.equal(commands[0].agentId, openAIAgent.id);
+  assert.equal(commands[0].command, "openai.chatCompletions");
+  assert.equal(commands[1].command, "openai.chatCompletions");
   assert.equal(task.metadata?.adapter, "openai-compatible");
   assert.equal(task.status.message?.parts[0].kind, "text");
   assert.equal(result.mode, "openai-compatible");
   assert.equal(metadata.a2aTransportBinding, "openai-compatible-http");
 });
 
-test("provider adapter routes Anthropic-compatible project chat through messages", async () => {
-  const calls: Array<{ url: string; body: unknown; headers: Record<string, string>; options?: { agentId?: string } }> = [];
+test("provider adapter routes Anthropic-compatible project chat through local provider commands", async () => {
+  const commands: LocalTrustedProviderCommand[] = [];
   const transport: AgentHttpTransport = {
     async request() {
       throw new Error("Native A2A should not be used for Anthropic-compatible agents.");
     },
-    async requestJson<T>(url: string, init: RequestInit, options?: { agentId?: string }) {
-      calls.push({ url, body: JSON.parse(String(init.body)), headers: init.headers as Record<string, string>, options });
+    async requestJson() {
+      throw new Error("Anthropic-compatible agents should not send browser-built provider HTTP requests.");
+    },
+    async commandJson<T>(command: LocalTrustedProviderCommand) {
+      commands.push(command);
       return {
         content: [
           {
@@ -509,11 +537,10 @@ test("provider adapter routes Anthropic-compatible project chat through messages
   const result = await adapter.testConnection();
   const metadata = createA2ACompatibilityMetadata(result);
 
-  assert.equal(calls[0].url, "https://api.minimax.example/anthropic/v1/messages");
-  assert.equal(calls[0].options?.agentId, anthropicAgent.id);
-  assert.equal(calls[0].headers["x-api-key"], undefined);
-  assert.equal(calls[0].headers.Authorization, undefined);
-  assert.equal((calls[0].body as { system?: string }).system, "Vibe Office project namespace: project-vibe-office. Keep this task scoped to this project.");
+  assert.equal(commands[0].agentId, anthropicAgent.id);
+  assert.equal(commands[0].command, "anthropic.messages");
+  assert.equal(commands[0].payload.system, "Vibe Office project namespace: project-vibe-office. Keep this task scoped to this project.");
+  assert.equal(commands[1].command, "anthropic.messages");
   assert.equal(task.metadata?.adapter, "anthropic-compatible");
   assert.equal(result.mode, "anthropic-compatible");
   assert.equal(metadata.a2aSelectedInterface, "Anthropic messages");
@@ -542,6 +569,18 @@ test("provider adapter falls Hermes native A2A failures back to Hermes chat comp
         ],
       } as T;
     },
+    async commandJson<T>(command: LocalTrustedProviderCommand) {
+      requestJsonUrls.push(command.command);
+      return {
+        choices: [
+          {
+            message: {
+              content: "Hermes compatibility response.",
+            },
+          },
+        ],
+      } as T;
+    },
   };
   const nativeHermesAgent: AgentInstance = {
     ...agent,
@@ -556,7 +595,7 @@ test("provider adapter falls Hermes native A2A failures back to Hermes chat comp
   const task = await new HermesA2AAdapter({ agent: nativeHermesAgent, transport }).sendProjectMessage(project, "Recover through chat.");
 
   assert.equal(requestUrls[0], "https://native.example/a2a");
-  assert.equal(requestJsonUrls[0], "http://127.0.0.1:8642/v1/chat/completions");
+  assert.equal(requestJsonUrls[0], "openai.chatCompletions");
   assert.equal(task.metadata?.adapter, "hermes-openai-compatible");
 });
 

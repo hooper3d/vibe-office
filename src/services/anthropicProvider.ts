@@ -64,21 +64,19 @@ export class AnthropicProvider {
     systemContent,
     metadata,
   }: ProviderMessageRequest): Promise<A2ATask> {
-    const payload = await this.transport.requestJson<{
+    const payload = await this.transport.commandJson<{
       content?: Array<{
         type?: string;
         text?: string;
         thinking?: string;
       }>;
     }>(
-      toAnthropicMessagesUrl(this.agent.endpoint),
       {
-        method: "POST",
-        headers: this.buildHeaders(true),
-        body: JSON.stringify({
-          model: this.agent.model,
-          max_tokens: 4096,
+        agentId: this.agent.id,
+        command: "anthropic.messages",
+        payload: {
           ...(systemContent ? { system: systemContent } : {}),
+          maxTokens: 4096,
           messages: [
             ...history.map((message) => ({
               role: message.role,
@@ -89,7 +87,7 @@ export class AnthropicProvider {
               content: text,
             },
           ],
-        }),
+        },
       },
       {
         timeoutMs: this.timeoutMs,
@@ -109,21 +107,19 @@ export class AnthropicProvider {
   }
 
   private async validateMessages() {
-    await this.transport.requestJson<unknown>(
-      toAnthropicMessagesUrl(this.agent.endpoint),
+    await this.transport.commandJson<unknown>(
       {
-        method: "POST",
-        headers: this.buildHeaders(true),
-        body: JSON.stringify({
-          model: this.agent.model,
-          max_tokens: 8,
+        agentId: this.agent.id,
+        command: "anthropic.messages",
+        payload: {
+          maxTokens: 8,
           messages: [
             {
               role: "user",
               content: "Reply with exactly: ok",
             },
           ],
-        }),
+        },
       },
       {
         timeoutMs: this.timeoutMs,
@@ -134,18 +130,6 @@ export class AnthropicProvider {
     );
   }
 
-  private buildHeaders(isJson: boolean) {
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      "anthropic-version": "2023-06-01",
-    };
-
-    if (isJson) {
-      headers["Content-Type"] = "application/json";
-    }
-
-    return headers;
-  }
 }
 
 export function toAnthropicMessagesUrl(endpoint: string) {
