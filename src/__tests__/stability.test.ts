@@ -2106,7 +2106,7 @@ test("output selectors keep chat records separate from trackable project outputs
       previewCount: group.previewCount,
     })),
     [
-      { agentId: agent.id, previewCount: 1 },
+      { agentId: agent.id, previewCount: 0 },
       { agentId: participant.id, previewCount: 0 },
     ],
   );

@@ -58,6 +58,8 @@ export function ProjectOutputs({
     () => assignPreviewToOutputGroups({ groups: rawOutputGroups, hasPreview, ownerAgentId: previewOwnerAgentId }),
     [rawOutputGroups, hasPreview, previewOwnerAgentId],
   );
+  const hasAssignedPreview = outputGroups.some((group) => group.previewCount > 0);
+  const showProjectPreviewIndex = hasPreview && !hasAssignedPreview;
   const [selection, setSelection] = useState<OutputSelection>(() => getInitialOutputSelection(outputGroups));
   const selectedGroup = getSelectedOutputAgentGroup(outputGroups, selection);
   const hasAgentOutputs = outputGroups.length > 0;
@@ -92,7 +94,7 @@ export function ProjectOutputs({
   return (
     <div className="project-outputs">
       <div className="output-agent-index" aria-label="Output agents">
-        {!hasAgentOutputs && hasPreview ? (
+        {showProjectPreviewIndex ? (
           <OutputIndexButton
             active={selection.kind === "preview"}
             label="Project preview"

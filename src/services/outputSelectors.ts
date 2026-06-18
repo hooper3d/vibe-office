@@ -105,7 +105,8 @@ export function assignPreviewToOutputGroups({
 }): OutputAgentGroup[] {
   if (!hasPreview || groups.length === 0) return groups;
   const ownerIndex = ownerAgentId ? groups.findIndex((group) => group.agent.id === ownerAgentId) : -1;
-  const previewIndex = ownerIndex >= 0 ? ownerIndex : 0;
+  if (ownerIndex < 0) return groups;
+  const previewIndex = ownerIndex;
   return groups.map((group, index) => (index === previewIndex ? { ...group, previewCount: 1 } : group));
 }
 
