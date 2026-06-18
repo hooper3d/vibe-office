@@ -59,6 +59,7 @@ import {
 } from "./domain/requestLifecycle";
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
+import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agentErrorText";
 import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
@@ -3119,35 +3120,6 @@ function NoProjectState({ onSelectProject }: { onSelectProject: () => void }) {
 function getDisplayMessageText(message: ConversationMessage) {
   const text = getPartText(message.contentParts);
   return message.role === "system" ? sanitizeAgentErrorText(text) : text;
-}
-
-function getUserFacingAgentError(error: unknown) {
-  return sanitizeAgentErrorText(error instanceof Error ? error.message : "Agent request failed.");
-}
-
-function sanitizeAgentErrorText(text: string) {
-  if (text.includes("Agent did not respond before the timeout") || text.includes("Hermes chat completion timed out")) {
-    return "Agent did not respond before the timeout. You can retry, or increase this agent's timeout in Advanced settings.";
-  }
-  if (text.includes("OpenAI-compatible chat failed") || text.includes("OpenAI chat failed")) {
-    return text.replace(/OpenAI-compatible chat failed|OpenAI chat failed/, "Agent request failed");
-  }
-  if (text.includes("Anthropic-compatible message failed") || text.includes("Anthropic message failed")) {
-    return text.replace(/Anthropic-compatible message failed|Anthropic message failed/, "Agent request failed");
-  }
-  if (text.includes("Hermes chat completion failed")) {
-    return text.replace("Hermes chat completion failed", "Agent request failed");
-  }
-  if (text.includes("OpenAI-compatible chat auth failed") || text.includes("OpenAI chat auth failed")) {
-    return text.replace(/OpenAI-compatible chat auth failed|OpenAI chat auth failed/, "Agent authentication failed");
-  }
-  if (text.includes("Anthropic-compatible message auth failed") || text.includes("Anthropic message auth failed")) {
-    return text.replace(/Anthropic-compatible message auth failed|Anthropic message auth failed/, "Agent authentication failed");
-  }
-  if (text.includes("Hermes chat completion auth failed")) {
-    return text.replace("Hermes chat completion auth failed", "Agent authentication failed");
-  }
-  return text;
 }
 
 function MessageRows({
