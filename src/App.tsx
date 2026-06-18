@@ -1,24 +1,7 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Bot,
-  Folder,
-  Loader2,
-  MessageSquare,
-  Moon,
-  Paperclip,
-  Pencil,
-  Plus,
-  Settings,
-  Sparkles,
-  Sun,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ArrowUp, Paperclip, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
-import { AgentAvatar, StatusDot } from "./components/AgentPrimitives";
+import { AppSidebar } from "./components/AppSidebar";
 import {
   DirectChat,
   FreeChatHistoryPanel,
@@ -33,7 +16,6 @@ import { ConfirmDialog, ProjectDialog, type ConfirmAction } from "./components/P
 import { WorkspaceFiles } from "./components/WorkspaceFiles";
 import { SetupWizard, type ConnectionTestState } from "./components/SetupWizard";
 import type { A2APart, A2ATask } from "./domain/a2a";
-import { getOfficeRoleLabel } from "./domain/agentProfile";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
 import {
   conversationMessages,
@@ -1653,152 +1635,30 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar" aria-label="Vibe Office navigation">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            <Sparkles size={18} />
-          </div>
-          <div>
-            <div className="brand-title">Vibe Office</div>
-          </div>
-          <button
-            className="theme-toggle"
-            type="button"
-            onClick={toggleTheme}
-            aria-label={themeMode === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            title={themeMode === "dark" ? "Light theme" : "Dark theme"}
-          >
-            {themeMode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-        </div>
-
-        <section className="nav-section">
-          <div className="section-label">
-            <span className="section-title">
-              <Bot size={14} />
-              Agents
-            </span>
-            <span className="count-badge">{agents.length}</span>
-          </div>
-          <div className="nav-list">
-            {agents.length === 0 ? (
-              <div className="inline-empty">Add an agent provider to start.</div>
-            ) : null}
-            {agents.map((agent) => {
-              const isActive = selectedAgentId === agent.id;
-              const isResponding = respondingAgentIds.has(agent.id);
-              return (
-                <div className={`agent-row ${isActive ? "active" : ""}`} key={agent.id}>
-                  <button
-                    className="nav-item agent-item"
-                    onClick={() => {
-                      setSelectedAgentId(agent.id);
-                      setConversationMode("single");
-                    }}
-                  >
-                    <AgentAvatar agent={agent} />
-                    <span className="nav-item-content">
-                      <span className="nav-item-title">
-                        <span className="nav-item-name">{agent.name}</span>
-                        <span className="chief-dot">{getOfficeRoleLabel(agent.officeRole, agent.isChief)}</span>
-                      </span>
-                      <span className="nav-item-meta">
-                        <StatusDot status={isResponding ? "checking" : agent.status} />
-                        {isResponding ? "responding" : agent.tags.slice(0, 2).join(" / ")}
-                      </span>
-                    </span>
-                  </button>
-                  <div className="row-actions agent-row-actions" aria-label={`${agent.name} agent actions`}>
-                    <button
-                      className="icon-button mini-button"
-                      type="button"
-                      onClick={() => openAgentEditor(agent.id)}
-                      aria-label={`Edit ${agent.name}`}
-                      title="Edit agent"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <button className="secondary-action" onClick={openAddAgentDialog}>
-            <Plus size={16} />
-            Add agent
-          </button>
-        </section>
-
-        <section className="nav-section">
-          <div className="section-label">
-            <span className="section-title">
-              <Folder size={14} />
-              Projects
-            </span>
-            <button className="section-icon-button" type="button" onClick={openProjectDialog} aria-label="Create project" title="Create project">
-              <Plus size={14} />
-            </button>
-          </div>
-          <div className="nav-list">
-            {projects.map((project) => {
-              const isActive = selectedProjectId === project.id;
-              const isFreeChatProject = project.id === FREE_CHAT_ENTRY_PROJECT_ID;
-              const projectName = isFreeChatProject ? "Free Chat" : project.name;
-              const projectMeta = isFreeChatProject ? "personal conversations" : project.directory ?? project.namespace;
-              return (
-                <div className={`project-row ${isActive ? "active" : ""}`} key={project.id}>
-                  <button
-                    className="project-item"
-                    onClick={() => {
-                      setSelectedProjectId(project.id);
-                      setChatScope(isFreeChatProject ? "free" : "project");
-                      setConversationMode("single");
-                    }}
-                  >
-                      <span className="project-icon" aria-hidden="true">
-                        {isFreeChatProject ? <MessageSquare size={15} /> : <Folder size={15} />}
-                      </span>
-                      <span>
-                        <span className="project-name">{projectName}</span>
-                        <span className="project-namespace">{projectMeta}</span>
-                      </span>
-                    </button>
-                  {!isFreeChatProject ? (
-                    <div className="row-actions" aria-label={`${projectName} project actions`}>
-                      <button
-                        className="icon-button mini-button"
-                        type="button"
-                        onClick={() => openProjectEditor(project.id)}
-                        aria-label={`Rename ${projectName}`}
-                        title="Rename project"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        className="icon-button mini-button danger-button"
-                        type="button"
-                        onClick={() => requestDeleteProject(project.id)}
-                        aria-label={`Delete ${projectName}`}
-                        title="Delete project"
-                        disabled={projects.length <= 1}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <button className="setup-card" onClick={openAddAgentDialog}>
-          <Settings size={18} />
-          <span>
-            <strong>Settings</strong>
-          </span>
-        </button>
-      </aside>
+      <AppSidebar
+        agents={agents}
+        projects={projects}
+        selectedAgentId={selectedAgentId}
+        selectedProjectId={selectedProjectId}
+        freeChatEntryProjectId={FREE_CHAT_ENTRY_PROJECT_ID}
+        respondingAgentIds={respondingAgentIds}
+        themeMode={themeMode}
+        onAddAgent={openAddAgentDialog}
+        onCreateProject={openProjectDialog}
+        onDeleteProject={requestDeleteProject}
+        onEditAgent={openAgentEditor}
+        onEditProject={openProjectEditor}
+        onSelectAgent={(agentId) => {
+          setSelectedAgentId(agentId);
+          setConversationMode("single");
+        }}
+        onSelectProject={(projectId, scope) => {
+          setSelectedProjectId(projectId);
+          setChatScope(scope);
+          setConversationMode("single");
+        }}
+        onToggleTheme={toggleTheme}
+      />
 
       <main className="workspace">
         <div
