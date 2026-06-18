@@ -24,6 +24,7 @@ export class NativeA2AProvider {
     this.agent = agent;
     this.client = new A2AClient({
       endpoint: agent.a2aEndpoint,
+      agentId: agent.id,
       apiKey: apiKey ?? agent.apiKey,
       protocolVersion: useA2AVersionHeader ? agent.a2aProtocolVersion : undefined,
       timeoutMs,

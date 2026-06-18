@@ -1,4 +1,5 @@
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "../domain/types";
+import { stripAgentCredential } from "./localTrustedAgentRegistry";
 
 const STORAGE_KEY = "vibe-office.configured-agents";
 
@@ -57,7 +58,7 @@ export function saveConfiguredAgents(agents: AgentInstance[]) {
   if (typeof window === "undefined") return;
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(agents));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(agents.map(stripAgentCredential)));
   } catch {
     // Agent settings are recoverable in prototype mode; storage failures should not interrupt the active workspace.
   }

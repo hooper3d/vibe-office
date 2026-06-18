@@ -7,6 +7,7 @@ export type AgentHttpRequestOptions = {
   timeoutMs: number;
   timeoutMessage: string;
   failurePrefix?: string;
+  agentId?: string;
 };
 
 export type LocalTrustedProviderRequestBody = {
@@ -14,15 +15,16 @@ export type LocalTrustedProviderRequestBody = {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  agentId?: string;
 };
 
 export function createBrowserAgentHttpTransport(): AgentHttpTransport {
   return {
     async request(url: string, init: RequestInit, options: AgentHttpRequestOptions) {
-      return fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init), options.timeoutMs, options.timeoutMessage);
+      return fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init, options), options.timeoutMs, options.timeoutMessage);
     },
     async requestJson<T>(url: string, init: RequestInit, options: AgentHttpRequestOptions) {
-      const response = await fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init), options.timeoutMs, options.timeoutMessage);
+      const response = await fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init, options), options.timeoutMs, options.timeoutMessage);
 
       if (!response.ok) {
         throw new Error(`${options.failurePrefix ?? "Agent request failed"}: ${response.status}${await readErrorSuffix(response)}`);
@@ -33,23 +35,24 @@ export function createBrowserAgentHttpTransport(): AgentHttpTransport {
   };
 }
 
-export function createLocalTrustedProviderRequest(url: string, init: RequestInit): RequestInit {
+export function createLocalTrustedProviderRequest(url: string, init: RequestInit, options: Pick<AgentHttpRequestOptions, "agentId"> = {}): RequestInit {
   return {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(toLocalTrustedProviderRequestBody(url, init)),
+    body: JSON.stringify(toLocalTrustedProviderRequestBody(url, init, options)),
   };
 }
 
-export function toLocalTrustedProviderRequestBody(url: string, init: RequestInit): LocalTrustedProviderRequestBody {
+export function toLocalTrustedProviderRequestBody(url: string, init: RequestInit, options: Pick<AgentHttpRequestOptions, "agentId"> = {}): LocalTrustedProviderRequestBody {
   return {
     url,
     method: init.method ?? "GET",
     headers: normalizeRequestHeaders(init.headers),
     body: typeof init.body === "string" ? init.body : undefined,
+    agentId: options.agentId,
   };
 }
 

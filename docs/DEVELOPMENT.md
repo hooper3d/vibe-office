@@ -350,8 +350,8 @@ Important boundary:
 - Remote agents still cannot read local files directly.
 - File content is sent only when the user previews and attaches it.
 - Full file bodies are not persisted in localStorage; conversation history stores lightweight file references.
-- API keys are still prototype-only browser localStorage secrets.
-- A packaged release still needs native folder permission handling and secure local credential storage.
+- API keys are no longer written to browser localStorage after agent sync; the local trusted layer owns the prototype credential registry.
+- A packaged release still needs native folder permission handling and OS-backed secure local credential storage.
 - Chief-led Task Room is intentionally one-round in v0.1: one Chief plan, one delegated task per selected participant, and one Chief aggregation.
 - Generated media is served only through the local trusted layer and currently allows known image files from controlled generated-media temp roots.
 
@@ -713,9 +713,13 @@ Implementation progress:
 - Provider HTTP execution now goes through `POST /agent-local/request` before reaching Hermes, OpenAI-compatible, Anthropic-compatible, or native A2A endpoints.
 - Browser transport now sends a provider request command to the local trusted layer instead of directly calling remote provider URLs.
 - The local trusted provider endpoint only forwards supported HTTP methods and a small allowlist of provider headers.
+- Agent profile saves now upsert provider connection details into the local trusted agent registry.
+- Browser agent storage strips API keys before writing `localStorage`; legacy browser-stored keys are migrated into the local trusted registry on the next agent sync.
+- Provider adapters now pass `agentId` to the local trusted layer and no longer assemble provider credential headers in browser code.
+- The local trusted provider endpoint validates that an agent-scoped request targets that registered agent before injecting credentials.
 - Workspace list/read/search/media remains on `/workspace-local/*`.
-- Credential storage is still browser-local prototype storage; moving secrets into local secure storage is still pending.
-- Next M8 slice should move credential lookup/storage behind the local trusted layer.
+- Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
+- Next M8 slice should move provider request construction itself behind the local trusted layer so the browser sends only `agentId`, action, and payload.
 
 Acceptance:
 
@@ -774,12 +778,12 @@ A2A states must be mapped into internal states instead of directly leaking proto
 
 Prototype:
 
-- API keys are currently in browser localStorage.
-- Browser localStorage secrets are allowed only in prototype/dev mode.
+- API keys are stored by the local trusted layer prototype registry and stripped from browser localStorage.
+- The current local trusted registry is a development bridge, not final secure credential storage.
 
 Next stage:
 
-- Move secrets to a local backend or desktop secure storage.
+- Move secrets to OS-backed desktop secure storage.
 - Any public release must move secrets out of browser localStorage.
 - UI must show a visible dev/prototype warning when secrets are stored locally.
 - Provider API keys must never be exported with workspace data.

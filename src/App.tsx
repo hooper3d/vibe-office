@@ -71,6 +71,7 @@ import {
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter, type A2ACompatibilityMetadata } from "./services/hermesA2AAdapter";
+import { deleteLocalTrustedAgent, stripAgentCredential, upsertLocalTrustedAgent } from "./services/localTrustedAgentRegistry";
 import {
   getPendingRequestMessages,
   getRespondingAgentIds,
@@ -342,6 +343,11 @@ export function App() {
   }, [artifacts]);
 
   useEffect(() => {
+    agents.forEach((agent) => {
+      void upsertLocalTrustedAgent(agent).catch(() => {
+        // Local registry sync is recoverable; connection tests and requests surface actionable errors.
+      });
+    });
     saveConfiguredAgents(agents);
   }, [agents]);
 
@@ -724,6 +730,7 @@ export function App() {
     try {
       const agent = createAgentFromHermesSetup(form);
       const apiKey = String(form.get("apiKey") || "");
+      if (!(await persistLocalTrustedAgent({ ...agent, apiKey: apiKey || agent.apiKey }))) return;
       const result = await new HermesA2AAdapter({ agent, apiKey }).testConnection();
 
       setTestState("passed");
@@ -733,6 +740,17 @@ export function App() {
       setTestState("failed");
       setLastConnectionMetadata(null);
       setTestMessage(getUserFacingAgentError(error));
+    }
+  }
+
+  async function persistLocalTrustedAgent(agent: AgentInstance) {
+    try {
+      await upsertLocalTrustedAgent(agent);
+      return true;
+    } catch {
+      setTestState("failed");
+      setTestMessage("Unable to update the local trusted agent registry.");
+      return false;
     }
   }
 
@@ -772,16 +790,18 @@ export function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const newAgent = createAgentFromHermesSetup(form);
+    const safeNewAgent = stripAgentCredential(newAgent);
 
     if (setupAgentId) {
+      const trustedAgent = { ...newAgent, id: setupAgentId };
+      if (!(await persistLocalTrustedAgent(trustedAgent))) return;
       setAgents((current) =>
         current.map((agent) =>
           agent.id === setupAgentId
             ? {
-                ...agent,
-                ...newAgent,
+                ...stripAgentCredential(agent),
+                ...safeNewAgent,
                 id: agent.id,
-                apiKey: newAgent.apiKey ?? agent.apiKey,
                 avatarUrl: agent.avatarUrl,
                 isChief: newAgent.officeRole === "chief",
                 status: agent.status,
@@ -806,14 +826,15 @@ export function App() {
     );
 
     if (duplicateAgent) {
+      const trustedAgent = { ...newAgent, id: duplicateAgent.id };
+      if (!(await persistLocalTrustedAgent(trustedAgent))) return;
       setAgents((current) =>
         current.map((agent) =>
           agent.id === duplicateAgent.id
             ? {
-                ...agent,
-                ...newAgent,
+                ...stripAgentCredential(agent),
+                ...safeNewAgent,
                 id: agent.id,
-                apiKey: newAgent.apiKey ?? agent.apiKey,
                 avatarUrl: agent.avatarUrl,
                 isChief: newAgent.officeRole === "chief",
                 status: agent.status,
@@ -828,8 +849,9 @@ export function App() {
       return;
     }
 
+    if (!(await persistLocalTrustedAgent(newAgent))) return;
     setAgents((current) => {
-      const addedAgent = { ...newAgent, ...(lastConnectionMetadata ?? {}), isChief: newAgent.officeRole === "chief" };
+      const addedAgent = { ...safeNewAgent, ...(lastConnectionMetadata ?? {}), isChief: newAgent.officeRole === "chief" };
       if (newAgent.officeRole !== "chief") return [...current, addedAgent];
       return [...current.map((agent) => ({ ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole })), addedAgent];
     });
@@ -862,6 +884,9 @@ export function App() {
   }
 
   function deleteAgent(agentId: string) {
+    void deleteLocalTrustedAgent(agentId).catch(() => {
+      // A stale local registry entry is less harmful than interrupting the delete UI flow.
+    });
     const remainingAgents = normalizeChief(agents.filter((agent) => agent.id !== agentId));
     const fallbackAgent = remainingAgents.find((agent) => agent.isChief) ?? remainingAgents[0];
     setAgents(remainingAgents);

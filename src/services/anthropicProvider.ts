@@ -95,6 +95,7 @@ export class AnthropicProvider {
         timeoutMs: this.timeoutMs,
         timeoutMessage: "Agent did not respond before the timeout.",
         failurePrefix: "Anthropic message failed",
+        agentId: this.agent.id,
       },
     );
     const content =
@@ -128,6 +129,7 @@ export class AnthropicProvider {
         timeoutMs: this.timeoutMs,
         timeoutMessage: "Agent connection test timed out.",
         failurePrefix: "Anthropic message auth failed",
+        agentId: this.agent.id,
       },
     );
   }
@@ -140,11 +142,6 @@ export class AnthropicProvider {
 
     if (isJson) {
       headers["Content-Type"] = "application/json";
-    }
-
-    if (this.agent.apiKey) {
-      headers["x-api-key"] = this.agent.apiKey;
-      headers.Authorization = `Bearer ${this.agent.apiKey}`;
     }
 
     return headers;

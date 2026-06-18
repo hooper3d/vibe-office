@@ -120,6 +120,7 @@ export class OpenAIProvider {
         timeoutMs: this.timeoutMs,
         timeoutMessage: "Agent did not respond before the timeout.",
         failurePrefix: "OpenAI chat failed",
+        agentId: this.agent.id,
       },
     );
     const content = payload.choices?.[0]?.message?.content ?? "OpenAI provider returned an empty response.";
@@ -148,6 +149,7 @@ export class OpenAIProvider {
         timeoutMs: this.timeoutMs,
         timeoutMessage: "Agent connection test timed out.",
         failurePrefix: "OpenAI chat auth failed",
+        agentId: this.agent.id,
       },
     );
   }
@@ -159,10 +161,6 @@ export class OpenAIProvider {
 
     if (isJson) {
       headers["Content-Type"] = "application/json";
-    }
-
-    if (this.agent.apiKey) {
-      headers.Authorization = `Bearer ${this.agent.apiKey}`;
     }
 
     return headers;

@@ -10,6 +10,7 @@ import { createBrowserAgentHttpTransport, type AgentHttpTransport } from "./agen
 
 export type A2AClientOptions = {
   endpoint: string;
+  agentId?: string;
   apiKey?: string;
   protocolVersion?: string;
   timeoutMs?: number;
@@ -19,6 +20,7 @@ export type A2AClientOptions = {
 
 export class A2AClient {
   private endpoint: string;
+  private agentId?: string;
   private apiKey?: string;
   private protocolVersion?: string;
   private timeoutMs: number;
@@ -27,6 +29,7 @@ export class A2AClient {
 
   constructor(options: A2AClientOptions) {
     this.endpoint = options.endpoint.replace(/\/$/, "");
+    this.agentId = options.agentId;
     this.apiKey = options.apiKey;
     this.protocolVersion = options.protocolVersion;
     this.timeoutMs = options.timeoutMs ?? 60_000;
@@ -40,6 +43,7 @@ export class A2AClient {
     }, {
       timeoutMs: this.timeoutMs,
       timeoutMessage: "Provider capability request timed out.",
+      agentId: this.agentId,
     });
 
     if (!response.ok) {
@@ -90,6 +94,7 @@ export class A2AClient {
     }, {
       timeoutMs: this.timeoutMs,
       timeoutMessage: "Agent task request timed out.",
+      agentId: this.agentId,
     });
 
     if (!response.ok) {
@@ -117,7 +122,7 @@ export class A2AClient {
       headers["Content-Type"] = "application/json";
     }
 
-    if (this.apiKey) {
+    if (this.apiKey && !this.agentId) {
       headers.Authorization = `Bearer ${this.apiKey}`;
     }
 

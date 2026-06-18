@@ -14,6 +14,16 @@ const MAX_SEARCH_RESULTS = 80;
 const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
 const WSL_MEDIA_ROOTS = ["/tmp/mmx-gen", "/tmp/vibe-office-media"];
 const WINDOWS_MEDIA_ROOTS = [os.tmpdir(), path.join(os.tmpdir(), "vibe-office-m4-demo")];
+const LOCAL_TRUSTED_AGENT_REGISTRY_PATH = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
+
+type LocalTrustedAgentRecord = {
+  id: string;
+  endpoint: string;
+  a2aEndpoint: string;
+  agentCardUrl: string;
+  runtimeProvider: "hermes" | "openai" | "anthropic";
+  apiKey?: string;
+};
 
 export default defineConfig({
   plugins: [react(), localWorkspaceFileLayer()],
@@ -48,12 +58,53 @@ function localWorkspaceFileLayer(): Plugin {
   return {
     name: "vibe-office-local-workspace-file-layer",
     configureServer(server: ViteDevServer) {
+      server.middlewares.use("/agent-local/agents/upsert", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent registry requests." });
+
+        try {
+          const body = await readJsonBody(req);
+          const agent = getVerifiedTrustedAgentRecord(body.agent);
+          const registry = await readLocalTrustedAgentRegistry();
+          const existing = registry[agent.id];
+          registry[agent.id] = {
+            ...existing,
+            ...agent,
+            apiKey: agent.apiKey ?? existing?.apiKey,
+          };
+          await writeLocalTrustedAgentRegistry(registry);
+          sendJson(res, 200, { ok: true });
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
+
+      server.middlewares.use("/agent-local/agents/delete", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent registry requests." });
+
+        try {
+          const body = await readJsonBody(req);
+          const agentId = String(body.agentId || "").trim();
+          if (!agentId) throw new Error("Agent id is required.");
+          const registry = await readLocalTrustedAgentRegistry();
+          delete registry[agentId];
+          await writeLocalTrustedAgentRegistry(registry);
+          sendJson(res, 200, { ok: true });
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
+
       server.middlewares.use("/agent-local/request", async (req, res) => {
         if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local provider requests." });
 
         try {
           const body = await readJsonBody(req);
           const providerRequest = getVerifiedProviderRequest(body);
+          const trustedAgent = providerRequest.agentId ? await getLocalTrustedAgent(providerRequest.agentId) : undefined;
+          if (trustedAgent) {
+            assertProviderTargetBelongsToAgent(providerRequest.url, trustedAgent);
+            injectLocalTrustedCredential(providerRequest.headers, trustedAgent);
+          }
           const response = await fetch(providerRequest.url, {
             method: providerRequest.method,
             headers: providerRequest.headers,
@@ -237,6 +288,7 @@ function localWorkspaceFileLayer(): Plugin {
 function getVerifiedProviderRequest(body: Record<string, unknown>) {
   const url = String(body.url || "").trim();
   const method = String(body.method || "GET").trim().toUpperCase();
+  const agentId = String(body.agentId || "").trim();
   const parsed = new URL(url);
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
@@ -250,13 +302,14 @@ function getVerifiedProviderRequest(body: Record<string, unknown>) {
   return {
     url,
     method,
+    agentId,
     headers: getVerifiedProviderHeaders(body.headers),
     body: typeof body.body === "string" && method !== "GET" ? body.body : undefined,
   };
 }
 
 function getVerifiedProviderHeaders(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 
   const headers: Record<string, string> = {};
   for (const [rawKey, rawValue] of Object.entries(value)) {
@@ -272,11 +325,114 @@ function getVerifiedProviderHeaders(value: unknown) {
 function isForwardableProviderHeader(key: string) {
   return [
     "accept",
+    "a2a-version",
     "authorization",
     "anthropic-version",
     "content-type",
     "x-api-key",
   ].includes(key);
+}
+
+function getVerifiedTrustedAgentRecord(value: unknown): LocalTrustedAgentRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Agent registry payload is invalid.");
+  }
+
+  const agent = value as Record<string, unknown>;
+  const id = String(agent.id || "").trim();
+  const endpoint = String(agent.endpoint || "").trim().replace(/\/+$/, "");
+  const a2aEndpoint = String(agent.a2aEndpoint || "").trim().replace(/\/+$/, "");
+  const agentCardUrl = String(agent.agentCardUrl || "").trim();
+  const runtimeProvider = getVerifiedRuntimeProvider(agent.runtimeProvider);
+  const apiKey = typeof agent.apiKey === "string" && agent.apiKey.trim() ? agent.apiKey.trim() : undefined;
+
+  if (!id) throw new Error("Agent id is required.");
+  assertHttpUrl(endpoint, "Agent endpoint");
+  assertHttpUrl(a2aEndpoint, "Agent task endpoint");
+  assertHttpUrl(agentCardUrl, "Agent capability URL");
+
+  return {
+    id,
+    endpoint,
+    a2aEndpoint,
+    agentCardUrl,
+    runtimeProvider,
+    apiKey,
+  };
+}
+
+function getVerifiedRuntimeProvider(value: unknown): LocalTrustedAgentRecord["runtimeProvider"] {
+  if (value === "openai" || value === "anthropic") return value;
+  return "hermes";
+}
+
+function assertHttpUrl(value: string, label: string) {
+  const parsed = new URL(value);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`${label} must use http or https.`);
+  }
+}
+
+async function getLocalTrustedAgent(agentId: string) {
+  const registry = await readLocalTrustedAgentRegistry();
+  const agent = registry[agentId];
+  if (!agent) {
+    throw new Error("Agent is not registered in the local trusted layer.");
+  }
+  return agent;
+}
+
+async function readLocalTrustedAgentRegistry(): Promise<Record<string, LocalTrustedAgentRecord>> {
+  try {
+    const raw = await fs.readFile(LOCAL_TRUSTED_AGENT_REGISTRY_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([id, value]) => {
+          try {
+            const agent = getVerifiedTrustedAgentRecord({ ...(value as object), id });
+            return [agent.id, agent] as const;
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry): entry is readonly [string, LocalTrustedAgentRecord] => Boolean(entry)),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function writeLocalTrustedAgentRegistry(registry: Record<string, LocalTrustedAgentRecord>) {
+  await fs.mkdir(path.dirname(LOCAL_TRUSTED_AGENT_REGISTRY_PATH), { recursive: true });
+  await fs.writeFile(LOCAL_TRUSTED_AGENT_REGISTRY_PATH, JSON.stringify(registry, null, 2), "utf8");
+}
+
+function assertProviderTargetBelongsToAgent(url: string, agent: LocalTrustedAgentRecord) {
+  const target = new URL(url);
+  const allowedBases = [agent.endpoint, agent.a2aEndpoint, agent.agentCardUrl];
+  if (allowedBases.some((base) => isUrlInsideBase(target, base))) return;
+  throw new Error("Provider request target does not match the registered agent.");
+}
+
+function isUrlInsideBase(target: URL, base: string) {
+  const parsed = new URL(base);
+  const basePath = parsed.pathname.replace(/\/+$/, "");
+  return (
+    target.origin === parsed.origin &&
+    (target.pathname === basePath || target.pathname.startsWith(`${basePath}/`))
+  );
+}
+
+function injectLocalTrustedCredential(headers: Record<string, string>, agent: LocalTrustedAgentRecord) {
+  if (!agent.apiKey) return;
+
+  if (agent.runtimeProvider === "anthropic") {
+    headers["x-api-key"] = agent.apiKey;
+  }
+  headers.Authorization = `Bearer ${agent.apiKey}`;
 }
 
 async function getVerifiedRoot(rootInput: string) {

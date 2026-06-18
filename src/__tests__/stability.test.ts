@@ -39,6 +39,7 @@ import {
   toLocalTrustedProxyUrl,
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
+import { saveConfiguredAgents } from "../services/agentStorage";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
@@ -346,14 +347,18 @@ test("agent http transport delegates provider requests to the local trusted laye
   assert.equal(toLocalTrustedProxyUrl("https://hooper.ink/a2a?x=1"), "/hermes-hooper/a2a?x=1");
   assert.equal(toLocalTrustedProxyUrl("https://api.example.com/v1"), "https://api.example.com/v1");
   assert.deepEqual(
-    toLocalTrustedProviderRequestBody("https://api.example.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-key",
-        "Content-Type": "application/json",
+    toLocalTrustedProviderRequestBody(
+      "https://api.example.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-key",
+          "Content-Type": "application/json",
+        },
+        body: "{\"model\":\"test\"}",
       },
-      body: "{\"model\":\"test\"}",
-    }),
+      { agentId: "agent-lucy" },
+    ),
     {
       url: "https://api.example.com/v1/chat/completions",
       method: "POST",
@@ -362,13 +367,14 @@ test("agent http transport delegates provider requests to the local trusted laye
         "Content-Type": "application/json",
       },
       body: "{\"model\":\"test\"}",
+      agentId: "agent-lucy",
     },
   );
-  assert.equal(JSON.parse(String(createLocalTrustedProviderRequest("https://api.example.com/v1", {}).body)).url, "https://api.example.com/v1");
+  assert.equal(JSON.parse(String(createLocalTrustedProviderRequest("https://api.example.com/v1", {}, { agentId: "agent-lucy" }).body)).agentId, "agent-lucy");
 
   const previousFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
-  const requestedBodies: Array<{ url?: string }> = [];
+  const requestedBodies: Array<{ url?: string; agentId?: string }> = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     requestedUrls.push(String(url));
     requestedBodies.push(JSON.parse(String(init?.body || "{}")));
@@ -392,17 +398,20 @@ test("agent http transport delegates provider requests to the local trusted laye
         timeoutMs: 1000,
         timeoutMessage: "timed out",
         failurePrefix: "Provider failed",
+        agentId: "agent-lucy",
       }),
       { ok: true },
     );
     assert.equal(requestedUrls[0], "/agent-local/request");
     assert.equal(requestedBodies[0].url, "http://127.0.0.1:8642/ok");
+    assert.equal(requestedBodies[0].agentId, "agent-lucy");
     await assert.rejects(
       () =>
         transport.requestJson("https://api.example.com/fail", {}, {
           timeoutMs: 1000,
           timeoutMessage: "timed out",
           failurePrefix: "Provider failed",
+          agentId: "agent-lucy",
         }),
       /Provider failed: 401: bad key/,
     );
@@ -411,14 +420,31 @@ test("agent http transport delegates provider requests to the local trusted laye
   }
 });
 
+test("configured agent storage keeps provider credentials out of browser localStorage", () => {
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    saveConfiguredAgents([
+      {
+        ...agent,
+        a2aEndpoint: "http://127.0.0.1:8642/a2a",
+        agentCardUrl: "http://127.0.0.1:8642/.well-known/agent-card.json",
+        apiKey: "local-secret-value",
+      },
+    ]);
+
+    const raw = window.localStorage.getItem("vibe-office.configured-agents") ?? "";
+    assert.equal(raw.includes("local-secret-value"), false);
+    assert.equal(JSON.parse(raw)[0].apiKey, undefined);
+  });
+});
+
 test("provider adapter routes OpenAI-compatible free chat through chat completions", async () => {
-  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const calls: Array<{ url: string; init: RequestInit; options?: { agentId?: string } }> = [];
   const transport: AgentHttpTransport = {
     async request() {
       throw new Error("Native A2A should not be used for OpenAI-compatible agents.");
     },
-    async requestJson<T>(url: string, init: RequestInit) {
-      calls.push({ url, init });
+    async requestJson<T>(url: string, init: RequestInit, options?: { agentId?: string }) {
+      calls.push({ url, init, options });
       return {
         choices: [
           {
@@ -435,6 +461,7 @@ test("provider adapter routes OpenAI-compatible free chat through chat completio
     runtimeProvider: "openai",
     endpoint: "https://api.deepseek.example/v1",
     model: "deepseek-chat",
+    apiKey: "should-stay-local",
   };
 
   const adapter = new HermesA2AAdapter({ agent: openAIAgent, transport });
@@ -443,6 +470,8 @@ test("provider adapter routes OpenAI-compatible free chat through chat completio
   const metadata = createA2ACompatibilityMetadata(result);
 
   assert.equal(calls[0].url, "https://api.deepseek.example/v1/chat/completions");
+  assert.equal(calls[0].options?.agentId, openAIAgent.id);
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, undefined);
   assert.equal(task.metadata?.adapter, "openai-compatible");
   assert.equal(task.status.message?.parts[0].kind, "text");
   assert.equal(result.mode, "openai-compatible");
@@ -450,13 +479,13 @@ test("provider adapter routes OpenAI-compatible free chat through chat completio
 });
 
 test("provider adapter routes Anthropic-compatible project chat through messages", async () => {
-  const calls: Array<{ url: string; body: unknown }> = [];
+  const calls: Array<{ url: string; body: unknown; headers: Record<string, string>; options?: { agentId?: string } }> = [];
   const transport: AgentHttpTransport = {
     async request() {
       throw new Error("Native A2A should not be used for Anthropic-compatible agents.");
     },
-    async requestJson<T>(url: string, init: RequestInit) {
-      calls.push({ url, body: JSON.parse(String(init.body)) });
+    async requestJson<T>(url: string, init: RequestInit, options?: { agentId?: string }) {
+      calls.push({ url, body: JSON.parse(String(init.body)), headers: init.headers as Record<string, string>, options });
       return {
         content: [
           {
@@ -472,6 +501,7 @@ test("provider adapter routes Anthropic-compatible project chat through messages
     runtimeProvider: "anthropic",
     endpoint: "https://api.minimax.example/anthropic",
     model: "MiniMax-M3",
+    apiKey: "should-stay-local",
   };
 
   const adapter = new HermesA2AAdapter({ agent: anthropicAgent, transport });
@@ -480,6 +510,9 @@ test("provider adapter routes Anthropic-compatible project chat through messages
   const metadata = createA2ACompatibilityMetadata(result);
 
   assert.equal(calls[0].url, "https://api.minimax.example/anthropic/v1/messages");
+  assert.equal(calls[0].options?.agentId, anthropicAgent.id);
+  assert.equal(calls[0].headers["x-api-key"], undefined);
+  assert.equal(calls[0].headers.Authorization, undefined);
   assert.equal((calls[0].body as { system?: string }).system, "Vibe Office project namespace: project-vibe-office. Keep this task scoped to this project.");
   assert.equal(task.metadata?.adapter, "anthropic-compatible");
   assert.equal(result.mode, "anthropic-compatible");
