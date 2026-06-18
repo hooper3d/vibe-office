@@ -17,6 +17,8 @@ import {
   applyTaskRoomParticipantDelegated,
   applyTaskRoomRequestFailed,
 } from "../services/taskRoomState";
+import { loadUiState, saveUiState } from "../services/uiStateStorage";
+import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 
 const at = "2026-06-18T10:00:00.000Z";
 const freeChatProjectId = "default";
@@ -131,6 +133,51 @@ function a2aTask(summary: string, id = "remote-task-1"): A2ATask {
       },
     },
   };
+}
+
+class MemoryLocalStorage {
+  private values = new Map<string, string>();
+
+  constructor(private shouldThrowOnSet = false) {}
+
+  getItem(key: string) {
+    return this.values.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string) {
+    if (this.shouldThrowOnSet) throw new Error("Quota exceeded");
+    this.values.set(key, value);
+  }
+
+  removeItem(key: string) {
+    this.values.delete(key);
+  }
+
+  clear() {
+    this.values.clear();
+  }
+}
+
+function withWindowStorage<T>(storage: MemoryLocalStorage, run: () => T) {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, "window");
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage: storage },
+  });
+
+  try {
+    return run();
+  } finally {
+    if (hadWindow) {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: previousWindow,
+      });
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
 }
 
 test("pending recovery ignores active requests and recovers free/project direct chats", () => {
@@ -314,4 +361,138 @@ test("task room reducers persist chief plan, participant result, aggregation, an
   assert.equal(failed.messages[0].errorKind, "timeout");
   assert.equal(failed.tasks[0].state, "failed");
   assert.equal(failed.runs[0].state, "failed");
+});
+
+test("ui state storage restores selected chrome and tolerates corrupt or unavailable storage", () => {
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    saveUiState({
+      selectedAgentId: "agent-lucy",
+      selectedProjectId: "project-vibe",
+      chatScope: "project",
+      conversationMode: "task-room",
+      outputMode: "artifacts",
+      activeFreeChatConversationIds: {
+        "agent-lucy": "free-conversation-1",
+      },
+    });
+
+    assert.deepEqual(loadUiState(), {
+      selectedAgentId: "agent-lucy",
+      selectedProjectId: "project-vibe",
+      chatScope: "project",
+      conversationMode: "task-room",
+      outputMode: "artifacts",
+      activeFreeChatConversationIds: {
+        "agent-lucy": "free-conversation-1",
+      },
+    });
+  });
+
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    window.localStorage.setItem(
+      "vibe-office.ui.v1",
+      JSON.stringify({
+        selectedAgentId: 12,
+        selectedProjectId: "project-vibe",
+        chatScope: "workspace",
+        conversationMode: "task-room",
+        outputMode: "floating",
+        activeFreeChatConversationIds: {
+          valid: "conversation-id",
+          invalid: 123,
+        },
+      }),
+    );
+
+    assert.deepEqual(loadUiState(), {
+      selectedAgentId: undefined,
+      selectedProjectId: "project-vibe",
+      chatScope: undefined,
+      conversationMode: "task-room",
+      outputMode: undefined,
+      activeFreeChatConversationIds: {
+        valid: "conversation-id",
+      },
+    });
+  });
+
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    window.localStorage.setItem("vibe-office.ui.v1", "{bad json");
+    assert.deepEqual(loadUiState(), {});
+  });
+
+  assert.doesNotThrow(() =>
+    withWindowStorage(new MemoryLocalStorage(true), () => {
+      saveUiState({ selectedAgentId: "agent-lucy" });
+    }),
+  );
+});
+
+test("workspace storage migrates recoverable state and falls back safely", () => {
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    saveWorkspaceState({
+      projects: [project],
+      conversations: [conversation()],
+      messages: [userMessage({ requestId: undefined, requestAttempt: undefined, requestStartedAt: undefined })],
+      runs: [run({ summary: "Recovered run summary." })],
+      tasks: [task()],
+      artifacts: [],
+    });
+
+    const restored = loadWorkspaceState();
+    assert.equal(restored.projects[0].id, project.id);
+    assert.equal(restored.conversations[0].updatedAt, at);
+    assert.equal(restored.messages[0].requestId, "message-1");
+    assert.equal(restored.messages[0].requestAttempt, 1);
+    assert.equal(restored.messages[0].requestStartedAt, at);
+    assert.equal(restored.runs[0].summary, "Recovered run summary.");
+  });
+
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    window.localStorage.setItem(
+      "vibe-office.workspace.v1",
+      JSON.stringify({
+        version: 1,
+        projects: [{ id: "project-vibe", name: "Vibe Office", namespace: "project-vibe-office" }, { id: 5 }],
+        conversations: [{ id: "conversation-1", projectId: "project-vibe", mode: "direct" }, { id: "bad" }],
+        messages: [
+          {
+            id: "message-1",
+            conversationId: "conversation-1",
+            projectId: "project-vibe",
+            role: "user",
+            status: "sending",
+            contentParts: [{ kind: "text", text: "hello" }, { kind: "file", file: {} }],
+            workspaceContext: [{ path: "src/App.tsx", size: "big" }],
+            createdAt: at,
+          },
+          { id: "bad-message", role: "robot" },
+        ],
+        runs: [{ id: "run-1", projectId: "project-vibe", conversationId: "conversation-1", type: "direct_message", ownerAgentId: "agent-lucy", state: "completed" }],
+        tasks: [{ id: "task-1", projectId: "project-vibe", contextId: "project-vibe-office", title: "Task", ownerAgentId: "agent-lucy", state: "working" }],
+        artifacts: [{ id: "artifact-1", projectId: "project-vibe", taskId: "task-1", agentId: "agent-lucy", name: "Result", kind: "text" }],
+      }),
+    );
+
+    const restored = loadWorkspaceState();
+    assert.equal(restored.projects.length, 1);
+    assert.equal(restored.conversations.length, 1);
+    assert.equal(restored.messages.length, 1);
+    assert.equal(restored.messages[0].contentParts.length, 1);
+    assert.deepEqual(restored.messages[0].workspaceContext, [{ path: "src/App.tsx", size: 0, attachedAt: restored.messages[0].workspaceContext?.[0].attachedAt }]);
+    assert.equal(restored.runs.length, 1);
+    assert.equal(restored.tasks.length, 1);
+    assert.equal(restored.artifacts.length, 1);
+  });
+
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    window.localStorage.setItem("vibe-office.workspace.v1", "{bad json");
+    assert.deepEqual(loadWorkspaceState(), emptyWorkspaceState);
+  });
+
+  assert.doesNotThrow(() =>
+    withWindowStorage(new MemoryLocalStorage(true), () => {
+      saveWorkspaceState(emptyWorkspaceState);
+    }),
+  );
 });
