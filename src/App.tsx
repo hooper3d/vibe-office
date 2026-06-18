@@ -81,7 +81,11 @@ import {
   prepareDirectRetrySubmission,
   prepareTaskRoomRetrySubmission,
 } from "./services/requestRetrySubmissionState";
-import { createRequestRuntimeStore, type RequestWorkspaceState } from "./services/requestRuntimeStore";
+import {
+  createRequestRuntimeStore,
+  syncRequestRuntimeWorkspaceState,
+  type RequestWorkspaceState,
+} from "./services/requestRuntimeStore";
 import {
   executeTaskRoomRequestState,
   type TaskRoomRequestState,
@@ -325,24 +329,14 @@ export function App() {
   }, [activeFreeChatConversationIds, chatScope, currentConversation, selectedAgent]);
 
   useEffect(() => {
-    requestStoreRef.current.sync({ conversations });
-  }, [conversations]);
-
-  useEffect(() => {
-    requestStoreRef.current.sync({ messages });
-  }, [messages]);
-
-  useEffect(() => {
-    requestStoreRef.current.sync({ runs });
-  }, [runs]);
-
-  useEffect(() => {
-    requestStoreRef.current.sync({ tasks });
-  }, [tasks]);
-
-  useEffect(() => {
-    requestStoreRef.current.sync({ artifacts });
-  }, [artifacts]);
+    syncRequestRuntimeWorkspaceState(requestStoreRef.current, {
+      conversations,
+      messages,
+      runs,
+      tasks,
+      artifacts,
+    });
+  }, [artifacts, conversations, messages, runs, tasks]);
 
   useEffect(() => {
     syncConfiguredAgents({ agents });

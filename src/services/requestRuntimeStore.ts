@@ -42,3 +42,9 @@ export function createRequestRuntimeStore(initialState: RequestWorkspaceState) {
     },
   };
 }
+
+export type RequestRuntimeStore = ReturnType<typeof createRequestRuntimeStore>;
+
+export function syncRequestRuntimeWorkspaceState(store: RequestRuntimeStore, state: RequestWorkspaceState) {
+  return store.replace(state);
+}

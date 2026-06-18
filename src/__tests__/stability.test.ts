@@ -105,7 +105,7 @@ import {
   requestDeleteProjectConfirmState,
   setProjectFormErrorState,
 } from "../services/projectDialogState";
-import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
+import { createRequestRuntimeStore, syncRequestRuntimeWorkspaceState } from "../services/requestRuntimeStore";
 import { getSplitPercentFromClientX, nudgeSplitPercent } from "../services/splitPaneState";
 import {
   countTrackableTaskOutputs,
@@ -616,6 +616,26 @@ test("request runtime store keeps active request ids with the latest workspace s
 
   store.end(requestId);
   assert.equal(store.activeRequestIds().has("request-1"), false);
+});
+
+test("request runtime workspace sync replaces the full snapshot without clearing active requests", () => {
+  const store = createRequestRuntimeStore(directRequestState());
+  const requestId = store.begin(userMessage());
+
+  syncRequestRuntimeWorkspaceState(store, {
+    conversations: [conversation({ id: "conversation-next" })],
+    messages: [userMessage({ id: "message-next" })],
+    runs: [run({ id: "run-next" })],
+    tasks: [task({ id: "task-next" })],
+    artifacts: [artifact({ id: "artifact-next" })],
+  });
+
+  assert.equal(store.snapshot().conversations[0].id, "conversation-next");
+  assert.equal(store.snapshot().messages[0].id, "message-next");
+  assert.equal(store.snapshot().runs[0].id, "run-next");
+  assert.equal(store.snapshot().tasks[0].id, "task-next");
+  assert.equal(store.snapshot().artifacts[0].id, "artifact-next");
+  assert.equal(store.activeRequestIds().has(requestId), true);
 });
 
 test("agent http transport delegates provider commands to the local trusted layer", async () => {

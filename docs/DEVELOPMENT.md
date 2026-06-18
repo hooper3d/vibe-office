@@ -811,6 +811,7 @@ Acceptance:
 - Retry submission state now lives in `src/services/requestRetrySubmissionState.ts`, covering Direct Chat and Task Room retry preparation, stale retry-message cleanup, and Task Room retry completion state.
 - Pending recovery submission state now lives in `src/services/requestRecoverySubmissionState.ts`, covering interrupted request resume preparation and Direct Chat / Task Room failure state after refresh or app interruption.
 - Request workspace state is now applied through one local `App.tsx` sync path, keeping React state and `requestRuntimeStore` aligned for direct/task-room completions, recovery, retry, submissions, and project delete cleanup.
+- Request runtime store workspace synchronization now uses a single full-snapshot helper in `src/services/requestRuntimeStore.ts`, replacing scattered per-collection sync effects in `App.tsx`.
 - Workspace selection state now lives in `src/services/workspaceSelectionState.ts`, covering selected project, selected workspace project, scoped tasks/runs/artifacts, and latest Chief task derivation.
 - Workspace attachment state now lives in `src/services/workspaceAttachmentState.ts`, covering dedupe, attach timestamps, max attached files, and detach-by-path behavior.
 - Task participant selection state now lives in `src/services/taskParticipantSelectionState.ts`, covering available participant filtering, active participant derivation, and duplicate-safe toggles.
