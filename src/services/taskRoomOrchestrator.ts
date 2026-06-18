@@ -18,7 +18,7 @@ import {
 } from "./taskRoomState";
 import type { WorkspaceFileAttachment } from "./workspaceFileClient";
 
-export type TaskRoomRequestOutputMode = "runs" | "artifacts";
+export type TaskRoomRequestOutputMode = "outputs";
 
 export type TaskRoomRequestState = {
   conversations: Conversation[];
@@ -109,7 +109,7 @@ export async function executeTaskRoomRequestState({
         runs: chiefPlanState.state.runs,
         artifacts: chiefPlanState.state.artifacts,
       },
-      outputMode: chiefPlanState.addedArtifactCount > 0 ? "artifacts" : undefined,
+      outputMode: chiefPlanState.addedArtifactCount > 0 ? "outputs" : undefined,
     });
 
     const participantResults: ParticipantTaskResult[] = [];
@@ -224,7 +224,7 @@ export async function executeTaskRoomRequestState({
         runs: finalStateUpdate.state.runs,
         artifacts: finalStateUpdate.state.artifacts,
       },
-      outputMode: finalStateUpdate.finalArtifactIds.length > 0 ? "artifacts" : "runs",
+      outputMode: "outputs",
     } satisfies TaskRoomRequestStep;
     applyStep(finalStep);
     return finalStep;
@@ -247,7 +247,7 @@ export async function executeTaskRoomRequestState({
         tasks: failedState.tasks,
         runs: failedState.runs,
       },
-      outputMode: "runs",
+      outputMode: "outputs",
     } satisfies TaskRoomRequestStep;
     applyStep(failedStep);
     return failedStep;

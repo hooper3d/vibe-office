@@ -1319,7 +1319,7 @@ textarea::placeholder {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   border-bottom: 1px solid var(--border);
   background: transparent;
@@ -1367,6 +1367,191 @@ textarea::placeholder {
   gap: 10px;
   margin-top: 14px;
   overflow: hidden;
+}
+
+.project-outputs {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.34fr) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  gap: 14px;
+  margin-top: 14px;
+  overflow: hidden;
+}
+
+.output-agent-index {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  padding-right: 10px;
+}
+
+.output-agent-button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 10px 8px;
+  text-align: left;
+}
+
+.output-agent-button:hover,
+.output-agent-button.active {
+  background: var(--surface-soft);
+}
+
+.output-agent-button.active {
+  border-left-color: var(--accent);
+}
+
+.output-agent-button strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-agent-button span,
+.output-workspace-header span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.output-type-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.output-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.output-workspace-header h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.output-type-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.output-type-button {
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.output-type-button:hover,
+.output-type-button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.output-section-stack {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 14px;
+}
+
+.output-section {
+  display: grid;
+  gap: 8px;
+}
+
+.output-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.output-section-heading h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+  text-transform: uppercase;
+}
+
+.output-section-heading span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.preview-output-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 10px 0;
+  text-align: left;
+}
+
+.preview-output-row:hover {
+  background: var(--surface-soft);
+}
+
+.preview-output-row span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.preview-output-row strong {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.preview-output-row small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .browser-workspace {
@@ -2664,6 +2849,7 @@ textarea::placeholder {
   }
 
   .browser-toolbar,
+  .project-outputs,
   .workspace-file-grid,
   .workspace-search,
   .form-grid,
@@ -2676,6 +2862,18 @@ textarea::placeholder {
   .technical-fields,
   .runtime-status-row {
     grid-template-columns: 1fr;
+  }
+
+  .output-agent-index {
+    max-height: 180px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: 8px;
+  }
+
+  .output-workspace-header {
+    display: grid;
   }
 
   .profile-block {

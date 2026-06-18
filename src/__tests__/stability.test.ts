@@ -790,7 +790,7 @@ test("direct request orchestrator converts workspace recovery failure into conte
   assert.equal(result.state.messages[0].errorKind, "context");
   assert.match(result.state.messages[0].errorText ?? "", /workspace files/i);
   assert.equal(result.state.runs[0].state, "failed");
-  assert.equal(result.outputMode, "runs");
+  assert.equal(result.outputMode, "outputs");
 });
 
 test("task room orchestrator emits progressive state steps for chief, participant, and aggregation", async () => {
@@ -836,7 +836,7 @@ test("task room orchestrator emits progressive state steps for chief, participan
   assert.equal(result.state.runs[0].state, "completed");
   assert.equal(result.state.messages[0].status, "sent");
   assert.equal(result.state.messages[result.state.messages.length - 1]?.role, "agent");
-  assert.equal(result.outputMode, "artifacts");
+  assert.equal(result.outputMode, "outputs");
 });
 
 test("task room orchestrator converts chief planning failure into retryable failed request state", async () => {
@@ -864,7 +864,7 @@ test("task room orchestrator converts chief planning failure into retryable fail
   assert.equal(result.state.messages[0].errorKind, "timeout");
   assert.equal(result.state.tasks[0].state, "failed");
   assert.equal(result.state.runs[0].state, "failed");
-  assert.equal(result.outputMode, "runs");
+  assert.equal(result.outputMode, "outputs");
 });
 
 test("ui state storage restores selected chrome and tolerates corrupt or unavailable storage", () => {
@@ -874,7 +874,7 @@ test("ui state storage restores selected chrome and tolerates corrupt or unavail
       selectedProjectId: "project-vibe",
       chatScope: "project",
       conversationMode: "task-room",
-      outputMode: "artifacts",
+      outputMode: "outputs",
       activeFreeChatConversationIds: {
         "agent-lucy": "free-conversation-1",
       },
@@ -885,11 +885,22 @@ test("ui state storage restores selected chrome and tolerates corrupt or unavail
       selectedProjectId: "project-vibe",
       chatScope: "project",
       conversationMode: "task-room",
-      outputMode: "artifacts",
+      outputMode: "outputs",
       activeFreeChatConversationIds: {
         "agent-lucy": "free-conversation-1",
       },
     });
+  });
+
+  withWindowStorage(new MemoryLocalStorage(), () => {
+    window.localStorage.setItem(
+      "vibe-office.ui.v1",
+      JSON.stringify({
+        outputMode: "artifacts",
+      }),
+    );
+
+    assert.equal(loadUiState().outputMode, "outputs");
   });
 
   withWindowStorage(new MemoryLocalStorage(), () => {

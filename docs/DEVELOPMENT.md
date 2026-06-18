@@ -703,7 +703,12 @@ Implementation progress:
 - Shared provider result and task helpers live in `src/services/providerTypes.ts`.
 - `HermesA2AAdapter` remains the unified provider entry, native fallback coordinator, and A2A compatibility metadata mapper.
 - Provider split tests cover OpenAI-compatible free chat, Anthropic-compatible project chat, and Hermes native fallback to chat compatibility.
-- Next M7 slice should start Output Area organization by agent and output type.
+- M7-3 Output Area organization started.
+- Project Workspace now uses top-level `Workspace`, `Browser`, and `Outputs` tabs.
+- `Outputs` groups project work by agent first, then filters by `All`, `Tasks`, `Artifacts`, or `Preview`.
+- Task and artifact request flows now target the unified `outputs` mode instead of separate `runs` or `artifacts` UI modes.
+- UI state storage migrates legacy `runs` and `artifacts` output tabs to `outputs`.
+- Next stage should start M8 local trusted layer work for provider requests, workspace file access, and credential handling.
 
 Acceptance:
 

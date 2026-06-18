@@ -25,7 +25,7 @@ import type { CSSProperties, PointerEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AgentAvatar, StatusDot } from "./components/AgentPrimitives";
-import { BrowserPreview, ProjectArtifacts, ProjectTasks, WorkspaceFiles } from "./components/OutputWorkspace";
+import { BrowserPreview, ProjectOutputs, WorkspaceFiles } from "./components/OutputWorkspace";
 import { SetupWizard, type ConnectionTestState } from "./components/SetupWizard";
 import type { A2APart, A2ATask } from "./domain/a2a";
 import { getOfficeRoleLabel } from "./domain/agentProfile";
@@ -98,7 +98,7 @@ import {
   type WorkspaceFileReadResult,
 } from "./services/workspaceFileClient";
 
-type OutputMode = "workspace" | "browser" | "runs" | "artifacts";
+type OutputMode = "workspace" | "browser" | "outputs";
 type ConversationMode = "single" | "task-room";
 type ChatScope = "free" | "project";
 type DirectoryPickerHandle = {
@@ -118,6 +118,12 @@ const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
 const MAX_AVATAR_BYTES = 512 * 1024;
+
+function normalizeOutputMode(mode?: string): OutputMode {
+  if (mode === "workspace" || mode === "browser" || mode === "outputs") return mode;
+  if (mode === "runs" || mode === "artifacts") return "outputs";
+  return "workspace";
+}
 
 declare global {
   interface Window {
@@ -153,7 +159,7 @@ export function App() {
     initialUiState.chatScope ?? (initialUiState.selectedProjectId && initialUiState.selectedProjectId !== FREE_CHAT_ENTRY_PROJECT_ID ? "project" : "free"),
   );
   const [conversationMode, setConversationMode] = useState<ConversationMode>(initialUiState.conversationMode ?? "single");
-  const [outputMode, setOutputMode] = useState<OutputMode>(initialUiState.outputMode ?? "workspace");
+  const [outputMode, setOutputMode] = useState<OutputMode>(normalizeOutputMode(initialUiState.outputMode));
   const [activeFreeChatConversationIds, setActiveFreeChatConversationIds] = useState<Record<string, string>>(
     initialUiState.activeFreeChatConversationIds ?? {},
   );
@@ -1082,7 +1088,7 @@ export function App() {
     setRuns(result.state.runs);
     setTasks(result.state.tasks);
     setArtifacts(result.state.artifacts);
-    if (result.outputMode) setOutputMode(result.outputMode);
+    if (result.outputMode) setOutputMode(normalizeOutputMode(result.outputMode));
   }
 
   function getTaskRoomRequestState(): TaskRoomRequestState {
@@ -1097,7 +1103,7 @@ export function App() {
     setRuns(step.state.runs);
     setTasks(step.state.tasks);
     setArtifacts(step.state.artifacts);
-    if (step.outputMode) setOutputMode(step.outputMode);
+    if (step.outputMode) setOutputMode(normalizeOutputMode(step.outputMode));
   }
 
   async function completeFreeChatRequest({
@@ -1551,7 +1557,7 @@ export function App() {
     setRuns(nextRuns);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
-    setOutputMode("runs");
+    setOutputMode("outputs");
 
     try {
       await executeTaskRoomRequestState({
@@ -1901,11 +1907,8 @@ export function App() {
                   <TabButton active={outputMode === "browser"} onClick={() => setOutputMode("browser")}>
                     Browser
                   </TabButton>
-                  <TabButton active={outputMode === "runs"} onClick={() => setOutputMode("runs")}>
-                    Tasks
-                  </TabButton>
-                  <TabButton active={outputMode === "artifacts"} onClick={() => setOutputMode("artifacts")}>
-                    Artifacts
+                  <TabButton active={outputMode === "outputs"} onClick={() => setOutputMode("outputs")}>
+                    Outputs
                   </TabButton>
                 </div>
 
@@ -1928,20 +1931,19 @@ export function App() {
                     onOpenPreview={openPreview}
                   />
                 ) : null}
-                {outputMode === "runs" ? (
-                  <ProjectTasks
+                {outputMode === "outputs" ? (
+                  <ProjectOutputs
                     agents={agents}
                     runs={scopedRuns}
                     tasks={scopedTasks}
                     artifacts={scopedArtifacts}
+                    previewUrl={previewUrl}
                     busyActionId={taskLifecycleBusyId}
                     onCancelTask={cancelTaskLifecycle}
                     onRefreshTask={refreshTaskLifecycle}
                     onRetryTask={retryTaskLifecycle}
+                    onShowBrowser={() => setOutputMode("browser")}
                   />
-                ) : null}
-                {outputMode === "artifacts" ? (
-                  <ProjectArtifacts agents={agents} artifacts={scopedArtifacts} />
                 ) : null}
               </>
             ) : (

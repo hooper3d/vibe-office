@@ -14,7 +14,7 @@ import {
 import { restoreWorkspaceAttachments } from "./workspaceContextRecovery";
 import type { WorkspaceFileAttachment } from "./workspaceFileClient";
 
-export type DirectRequestOutputMode = "runs" | "artifacts";
+export type DirectRequestOutputMode = "outputs";
 
 export type DirectRequestState = {
   conversations: Conversation[];
@@ -125,7 +125,7 @@ export async function resumeProjectDirectRequestState({
         messages: markConversationMessageFailed(state.messages, message.id, errorText, { errorKind: "context" }),
         runs: failRunForMessage(state.runs, message, failedAt, errorText),
       },
-      outputMode: "runs",
+      outputMode: "outputs",
     };
   }
 
@@ -226,7 +226,7 @@ export async function completeProjectDirectRequestState({
         tasks: nextState.tasks,
         artifacts: nextState.artifacts,
       },
-      outputMode: nextState.returnedArtifactCount > 0 ? "artifacts" : nextState.createdTask ? "runs" : undefined,
+      outputMode: nextState.returnedArtifactCount > 0 || nextState.createdTask ? "outputs" : undefined,
     };
   } catch (error) {
     const failedAt = (deps.now ?? (() => new Date().toISOString()))();
@@ -245,7 +245,7 @@ export async function completeProjectDirectRequestState({
         messages: nextState.messages,
         runs: nextState.runs,
       },
-      outputMode: "runs",
+      outputMode: "outputs",
     };
   }
 }
