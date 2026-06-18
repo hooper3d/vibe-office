@@ -3751,7 +3751,6 @@ function SetupWizard({
                     </label>
                     <OfficeRoleSelector selectedRole={profileOfficeRole} />
                     <CapabilityTagSelector options={capabilityOptions} selectedTags={profileTags} />
-                    <p className="profile-note">Name the agent, choose its office responsibility, and mark what kind of work it should handle.</p>
                   </div>
                 </div>
               </section>
@@ -3770,7 +3769,6 @@ function SetupWizard({
                     <FieldLabel help="Local responsibility note for routing and future prompt behavior." label="Role note" />
                     <textarea name="role" defaultValue={profileNote} placeholder="What should this agent do, avoid, or hand off?" />
                   </label>
-                  <p className="profile-note">Keep this short and specific. Example: release note drafting and editing, not code changes.</p>
                 </div>
               </section>
 
