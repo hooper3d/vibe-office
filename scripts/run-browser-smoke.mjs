@@ -5,6 +5,7 @@ const appUrl = process.env.VIBE_OFFICE_URL ?? "http://127.0.0.1:5180/";
 const edgePath =
   process.env.VIBE_OFFICE_BROWSER ??
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+const smokeAgentIds = new Set();
 
 await access(edgePath).catch(() => {
   throw new Error(`Browser executable not found: ${edgePath}. Set VIBE_OFFICE_BROWSER to an installed Chromium/Edge executable.`);
@@ -26,6 +27,9 @@ try {
   await runProjectContextRecoveryFailureSmoke();
   console.log("Browser smoke checks passed.");
 } finally {
+  await cleanupSmokeAgents().catch((error) => {
+    console.warn(`Unable to clean up smoke agents: ${error instanceof Error ? error.message : String(error)}`);
+  });
   await browser.close();
 }
 
@@ -813,6 +817,7 @@ function createTaskRoomRetrySeed() {
 }
 
 function createSmokeAgent(id, name, overrides = {}) {
+  smokeAgentIds.add(id);
   return {
     id,
     name,
@@ -828,6 +833,27 @@ function createSmokeAgent(id, name, overrides = {}) {
     status: "online",
     ...overrides,
   };
+}
+
+async function cleanupSmokeAgents() {
+  const ids = [...smokeAgentIds];
+  if (ids.length === 0) return;
+
+  await Promise.all(
+    ids.map(async (agentId) => {
+      const response = await fetch(new URL("/agent-local/agents/delete", appUrl), {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ agentId }),
+      });
+      if (!response.ok) {
+        throw new Error(`delete ${agentId} failed with ${response.status}`);
+      }
+    }),
+  );
 }
 
 function assertEqual(actual, expected, label) {
