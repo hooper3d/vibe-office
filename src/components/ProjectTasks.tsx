@@ -6,6 +6,7 @@ import {
   getTaskLifecycleAddress,
   hasCancelUnsupportedEvent,
   hasLifecycleUnsupportedEvent,
+  isTaskLifecycleBusy,
   isTaskActive,
   isTaskTerminal,
 } from "../services/taskLifecycleState";
@@ -164,9 +165,9 @@ function TaskLifecycleActions({
   const cancelUnsupported = hasCancelUnsupportedEvent(task);
   const lifecycleKnownUnsupported = !lifecycleLinked || unsupported || owner?.supportsTaskLifecycle === false;
   const cancelKnownUnsupported = !lifecycleLinked || unsupported || cancelUnsupported || owner?.supportsCancel === false;
-  const refreshBusy = busyActionId === `refresh:${task.id}`;
-  const retryBusy = busyActionId === `retry:${task.id}`;
-  const cancelBusy = busyActionId === `cancel:${task.id}`;
+  const refreshBusy = isTaskLifecycleBusy(busyActionId, "refresh", task.id);
+  const retryBusy = isTaskLifecycleBusy(busyActionId, "retry", task.id);
+  const cancelBusy = isTaskLifecycleBusy(busyActionId, "cancel", task.id);
 
   return (
     <div className="task-lifecycle-actions" aria-label="Task lifecycle actions">

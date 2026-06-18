@@ -10,6 +10,16 @@ export type TaskLifecycleState = {
   tasks: ProjectTask[];
 };
 
+export type TaskLifecycleBusyAction = "refresh" | "cancel" | "retry";
+
+export function getTaskLifecycleBusyId(action: TaskLifecycleBusyAction, taskId: string) {
+  return `${action}:${taskId}`;
+}
+
+export function isTaskLifecycleBusy(busyActionId: string, action: TaskLifecycleBusyAction, taskId: string) {
+  return busyActionId === getTaskLifecycleBusyId(action, taskId);
+}
+
 export function applyTaskLifecycleRemoteUpdate({
   state,
   task,

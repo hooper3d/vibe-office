@@ -107,6 +107,7 @@ import {
   failTaskRetry,
   getRemoteTaskWorkState,
   getTaskEventDisplayLabel,
+  getTaskLifecycleBusyId,
   isTaskTerminal,
   prepareTaskRetrySubmitting,
   recordCancelUnsupportedState,
@@ -479,7 +480,7 @@ export function App() {
       return;
     }
 
-    if (!options.silent) setTaskLifecycleBusyId(`refresh:${taskId}`);
+    if (!options.silent) setTaskLifecycleBusyId(getTaskLifecycleBusyId("refresh", taskId));
 
     try {
       const remoteTask = await refreshRemoteTaskLifecycle({ agent: request.owner, address: request.address });
@@ -499,7 +500,7 @@ export function App() {
       return;
     }
 
-    setTaskLifecycleBusyId(`cancel:${taskId}`);
+    setTaskLifecycleBusyId(getTaskLifecycleBusyId("cancel", taskId));
     try {
       const remoteTask = await cancelRemoteTaskLifecycle({ agent: request.owner, address: request.address });
       applyLifecycleTaskUpdate(request.task, remoteTask, request.owner.id, "Task cancel requested.");
@@ -519,7 +520,7 @@ export function App() {
     }
 
     const retryAt = new Date().toISOString();
-    setTaskLifecycleBusyId(`retry:${taskId}`);
+    setTaskLifecycleBusyId(getTaskLifecycleBusyId("retry", taskId));
     setTasks((current) =>
       prepareTaskRetrySubmitting({ tasks: current, task: request.task, ownerAgentId: request.owner.id, retryAt }),
     );

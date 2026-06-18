@@ -131,9 +131,11 @@ import {
 import {
   failTaskRetry,
   getTaskLifecycleAddress,
+  getTaskLifecycleBusyId,
   prepareTaskRetrySubmitting,
   recordCancelUnsupportedState,
   recordLifecycleUnsupportedState,
+  isTaskLifecycleBusy,
 } from "../services/taskLifecycleState";
 import {
   getAvailableTaskParticipants,
@@ -1502,6 +1504,9 @@ test("task lifecycle request state resolves ready, unsupported, and retry contex
 test("task lifecycle helpers preserve unsupported and retry states", () => {
   const directRun = run({ type: "direct_message" });
   const localTask = task();
+  assert.equal(getTaskLifecycleBusyId("refresh", localTask.id), `refresh:${localTask.id}`);
+  assert.equal(isTaskLifecycleBusy(`retry:${localTask.id}`, "retry", localTask.id), true);
+  assert.equal(isTaskLifecycleBusy(`refresh:${localTask.id}`, "cancel", localTask.id), false);
   assert.deepEqual(getTaskLifecycleAddress(localTask, [directRun]), {
     taskId: localTask.id,
     contextId: localTask.contextId,
