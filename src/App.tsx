@@ -99,20 +99,20 @@ import {
 } from "./services/requestSubmissionState";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import {
+  applyTaskCancelUnsupportedToWorkspace,
+  applyTaskLifecycleUnsupportedToWorkspace,
   applyTaskLifecycleRemoteUpdateToWorkspace,
+  applyTaskRetryFailureToWorkspace,
+  applyTaskRetrySubmittingToWorkspace,
   getPollableTasks,
   resolveTaskLifecycleRequest,
   resolveTaskRetryRequest,
 } from "./services/taskLifecycleRequestState";
 import {
-  failTaskRetry,
   getRemoteTaskWorkState,
   getTaskEventDisplayLabel,
   getTaskLifecycleBusyId,
   isTaskTerminal,
-  prepareTaskRetrySubmitting,
-  recordCancelUnsupportedState,
-  recordLifecycleUnsupportedState,
 } from "./services/taskLifecycleState";
 import {
   getAvailableTaskParticipants,
@@ -503,8 +503,13 @@ export function App() {
 
     const retryAt = new Date().toISOString();
     setTaskLifecycleBusyId(getTaskLifecycleBusyId("retry", taskId));
-    setTasks((current) =>
-      prepareTaskRetrySubmitting({ tasks: current, task: request.task, ownerAgentId: request.owner.id, retryAt }),
+    applyRequestWorkspaceState(
+      applyTaskRetrySubmittingToWorkspace({
+        state: requestStoreRef.current.snapshot(),
+        task: request.task,
+        ownerAgentId: request.owner.id,
+        retryAt,
+      }),
     );
 
     try {
@@ -519,9 +524,9 @@ export function App() {
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorText = getUserFacingAgentError(error);
-      setTasks((current) =>
-        failTaskRetry({
-          tasks: current,
+      applyRequestWorkspaceState(
+        applyTaskRetryFailureToWorkspace({
+          state: requestStoreRef.current.snapshot(),
           task: request.task,
           ownerAgentId: request.owner.id,
           errorText,
@@ -549,12 +554,26 @@ export function App() {
 
   function recordLifecycleUnsupported(task: ProjectTask, reason: string) {
     const at = new Date().toISOString();
-    setTasks((current) => recordLifecycleUnsupportedState({ tasks: current, task, reason, at }));
+    applyRequestWorkspaceState(
+      applyTaskLifecycleUnsupportedToWorkspace({
+        state: requestStoreRef.current.snapshot(),
+        task,
+        reason,
+        at,
+      }),
+    );
   }
 
   function recordCancelUnsupported(task: ProjectTask, reason: string) {
     const at = new Date().toISOString();
-    setTasks((current) => recordCancelUnsupportedState({ tasks: current, task, reason, at }));
+    applyRequestWorkspaceState(
+      applyTaskCancelUnsupportedToWorkspace({
+        state: requestStoreRef.current.snapshot(),
+        task,
+        reason,
+        at,
+      }),
+    );
   }
 
   async function runConnectionTest(form: FormData) {

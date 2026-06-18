@@ -4,9 +4,13 @@ import type { AgentInstance, Project } from "../domain/types";
 import type { RequestWorkspaceState } from "./requestRuntimeStore";
 import {
   applyTaskLifecycleRemoteUpdate,
+  failTaskRetry,
   getTaskLifecycleAddress,
   hasLifecycleUnsupportedEvent,
   isTaskActive,
+  prepareTaskRetrySubmitting,
+  recordCancelUnsupportedState,
+  recordLifecycleUnsupportedState,
 } from "./taskLifecycleState";
 
 export type TaskLifecycleWorkspaceState = {
@@ -177,5 +181,96 @@ export function applyTaskLifecycleRemoteUpdateToWorkspace({
     artifacts: taskLifecycleState.artifacts,
     runs: taskLifecycleState.runs,
     tasks: taskLifecycleState.tasks,
+  };
+}
+
+export function applyTaskLifecycleUnsupportedToWorkspace({
+  at,
+  reason,
+  state,
+  task,
+}: {
+  at: string;
+  reason: string;
+  state: RequestWorkspaceState;
+  task: ProjectTask;
+}): RequestWorkspaceState {
+  return {
+    ...state,
+    tasks: recordLifecycleUnsupportedState({
+      tasks: state.tasks,
+      task,
+      reason,
+      at,
+    }),
+  };
+}
+
+export function applyTaskCancelUnsupportedToWorkspace({
+  at,
+  reason,
+  state,
+  task,
+}: {
+  at: string;
+  reason: string;
+  state: RequestWorkspaceState;
+  task: ProjectTask;
+}): RequestWorkspaceState {
+  return {
+    ...state,
+    tasks: recordCancelUnsupportedState({
+      tasks: state.tasks,
+      task,
+      reason,
+      at,
+    }),
+  };
+}
+
+export function applyTaskRetrySubmittingToWorkspace({
+  ownerAgentId,
+  retryAt,
+  state,
+  task,
+}: {
+  ownerAgentId: string;
+  retryAt: string;
+  state: RequestWorkspaceState;
+  task: ProjectTask;
+}): RequestWorkspaceState {
+  return {
+    ...state,
+    tasks: prepareTaskRetrySubmitting({
+      tasks: state.tasks,
+      task,
+      ownerAgentId,
+      retryAt,
+    }),
+  };
+}
+
+export function applyTaskRetryFailureToWorkspace({
+  errorText,
+  failedAt,
+  ownerAgentId,
+  state,
+  task,
+}: {
+  errorText: string;
+  failedAt: string;
+  ownerAgentId: string;
+  state: RequestWorkspaceState;
+  task: ProjectTask;
+}): RequestWorkspaceState {
+  return {
+    ...state,
+    tasks: failTaskRetry({
+      tasks: state.tasks,
+      task,
+      ownerAgentId,
+      errorText,
+      failedAt,
+    }),
   };
 }

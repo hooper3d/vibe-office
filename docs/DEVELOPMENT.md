@@ -806,6 +806,7 @@ Acceptance:
 - Task lifecycle state now lives in `src/services/taskLifecycleState.ts`, covering remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
 - Task lifecycle request resolution now lives in `src/services/taskLifecycleRequestState.ts`, covering refresh/cancel readiness, retry context lookup, pollable task checks, and workspace update application.
 - Task lifecycle remote updates can now be applied to a full request workspace snapshot through `src/services/taskLifecycleRequestState.ts`, so App uses the same request workspace application path for lifecycle refresh/cancel/retry updates.
+- Task lifecycle local unsupported/retry state updates now also apply through the full request workspace snapshot, keeping React state and request runtime recovery aligned across refresh/cancel/retry failure paths.
 - Output Area selection rules now live in `src/services/outputSelectors.ts`, keeping run/task/artifact visibility, agent grouping, agent filtering, and output counts out of the rendering components.
 - Request submission state now lives in `src/services/requestSubmissionState.ts`, covering optimistic Free Chat, Project Direct Chat, and Task Room conversation/message/run/task creation before remote provider execution.
 - Composer submission routing now lives in `src/services/composerSubmissionState.ts`, keeping Free Chat, Project Chat, Task Room, busy, empty, and missing-target entry decisions out of `App.tsx`.

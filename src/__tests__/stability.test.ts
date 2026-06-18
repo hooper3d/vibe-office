@@ -125,8 +125,12 @@ import {
 } from "../services/outputSelectors";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import {
+  applyTaskCancelUnsupportedToWorkspace,
+  applyTaskLifecycleUnsupportedToWorkspace,
   applyTaskLifecycleRemoteUpdateToWorkspace,
   applyTaskLifecycleWorkspaceUpdate,
+  applyTaskRetryFailureToWorkspace,
+  applyTaskRetrySubmittingToWorkspace,
   getPollableTasks,
   isTaskLifecyclePollable,
   resolveTaskLifecycleRequest,
@@ -1602,6 +1606,58 @@ test("task lifecycle workspace update preserves non-lifecycle workspace collecti
   assert.equal(next.messages[0].id, localMessage.id);
   assert.equal(next.tasks[0].state, "completed");
   assert.equal(next.runs[0].state, "completed");
+});
+
+test("task lifecycle local updates preserve the full request workspace snapshot", () => {
+  const localConversation = conversation({ id: "conversation-local-keep" });
+  const localMessage = userMessage({ id: "message-local-keep" });
+  const lifecycleTask = task({ id: "task-local-workspace-update" });
+  const baseState = {
+    conversations: [localConversation],
+    messages: [localMessage],
+    runs: [run({ id: "run-local-workspace-update", taskId: lifecycleTask.id })],
+    tasks: [lifecycleTask],
+    artifacts: [artifact({ id: "artifact-local-keep" })],
+  };
+
+  const unsupported = applyTaskLifecycleUnsupportedToWorkspace({
+    state: baseState,
+    task: lifecycleTask,
+    reason: "No remote task.",
+    at: "2026-06-18T10:21:00.000Z",
+  });
+  assert.equal(unsupported.conversations[0].id, localConversation.id);
+  assert.equal(unsupported.messages[0].id, localMessage.id);
+  assert.equal(unsupported.artifacts[0].id, "artifact-local-keep");
+  assert.match(unsupported.tasks[0].events[0].label, /Lifecycle unsupported/);
+
+  const cancelUnsupported = applyTaskCancelUnsupportedToWorkspace({
+    state: baseState,
+    task: lifecycleTask,
+    reason: "Cancel unavailable.",
+    at: "2026-06-18T10:22:00.000Z",
+  });
+  assert.match(cancelUnsupported.tasks[0].events[0].label, /Cancel unsupported/);
+
+  const retrying = applyTaskRetrySubmittingToWorkspace({
+    state: baseState,
+    task: lifecycleTask,
+    ownerAgentId: agent.id,
+    retryAt: "2026-06-18T10:23:00.000Z",
+  });
+  assert.equal(retrying.tasks[0].state, "submitting");
+  assert.equal(retrying.messages[0].id, localMessage.id);
+
+  const failed = applyTaskRetryFailureToWorkspace({
+    state: retrying,
+    task: retrying.tasks[0],
+    ownerAgentId: agent.id,
+    errorText: "Retry failed.",
+    failedAt: "2026-06-18T10:24:00.000Z",
+  });
+  assert.equal(failed.tasks[0].state, "failed");
+  assert.equal(failed.tasks[0].summary, "Retry failed.");
+  assert.equal(failed.conversations[0].id, localConversation.id);
 });
 
 test("task lifecycle request state resolves ready, unsupported, and retry contexts", () => {
