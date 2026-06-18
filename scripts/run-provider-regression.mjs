@@ -473,13 +473,18 @@ function getTargetReadiness(target, agents) {
 
   const providerMismatch = candidates.find((agent) => !isRuntimeProviderAllowed(target, agent.runtimeProvider));
   if (providerMismatch) {
-    return `PROVIDER_MISMATCH ${providerMismatch.id} expected=${getRuntimeProviderLabel(target)} actual=${providerMismatch.runtimeProvider}`;
+    return [
+      `PROVIDER_MISMATCH ${providerMismatch.id}`,
+      `expected=${getRuntimeProviderLabel(target)}`,
+      `actual=${providerMismatch.runtimeProvider}`,
+      `action=${getReadinessAction("provider-mismatch", target)}`,
+    ].join(" ");
   }
 
   const missingKey = candidates.find((agent) => !hasRequiredCredentials(target, agent));
-  if (missingKey) return `MISSING_KEY ${missingKey.id}`;
+  if (missingKey) return `MISSING_KEY ${missingKey.id} action=${getReadinessAction("missing-key", target)}`;
 
-  return "NOT_FOUND";
+  return `NOT_FOUND action=${getReadinessAction("not-found", target)}`;
 }
 
 function isRuntimeProviderAllowed(target, runtimeProvider) {
@@ -494,6 +499,22 @@ function hasRequiredCredentials(target, agent) {
 
 function getRuntimeProviderLabel(target) {
   return (target.allowedRuntimeProviders || [target.runtimeProvider]).join("|");
+}
+
+function getReadinessAction(reason, target) {
+  if (reason === "missing-key") {
+    return "edit-agent-save-api-key";
+  }
+
+  if (reason === "provider-mismatch") {
+    if (target.runtimeProvider === "anthropic") return "edit-agent-switch-to-anthropic-compatible-and-save";
+    if (target.runtimeProvider === "openai") return "edit-agent-switch-to-openai-compatible-and-save";
+    return "edit-agent-switch-provider-type-and-save";
+  }
+
+  if (target.runtimeProvider === "anthropic") return "add-anthropic-compatible-agent";
+  if (target.runtimeProvider === "openai") return "add-openai-compatible-agent";
+  return "add-or-register-agent";
 }
 
 function getAgentRuntimeProvider(agent, fallback) {

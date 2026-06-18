@@ -198,5 +198,7 @@ export function AppSidebar({
 
 function getSetupIssueLabel(issues: string[]) {
   if (issues.some((issue) => issue.toLowerCase().includes("api key"))) return "missing key";
+  if (issues.some((issue) => issue.toLowerCase().includes("provider type"))) return "provider mismatch";
+  if (issues.some((issue) => issue.toLowerCase().includes("minimax"))) return "provider mismatch";
   return "setup issue";
 }

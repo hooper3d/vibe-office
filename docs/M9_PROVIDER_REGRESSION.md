@@ -31,6 +31,13 @@ The list also prints M9 readiness for Hermes, DeepSeek OpenAI-compatible, and Mi
 - `PROVIDER_MISMATCH`: a likely provider record exists, but its provider type does not match the M9 target. For example, MiniMax Anthropic-compatible must be registered as `anthropic`, not `openai`.
 - `NOT_FOUND`: no likely local trusted agent exists yet, or the configured `VIBE_M9_*_AGENT_ID` does not exist.
 
+Readiness lines include an `action=` hint:
+
+- `edit-agent-save-api-key`: open the agent, paste the API key, test or save, then run the list again.
+- `edit-agent-switch-to-anthropic-compatible-and-save`: open the agent, set Provider type to Anthropic-compatible, use the Anthropic-compatible endpoint, save, then run the list again.
+- `edit-agent-switch-to-openai-compatible-and-save`: open the agent, set Provider type to OpenAI-compatible, use an OpenAI-compatible `/v1` endpoint, save, then run the list again.
+- `add-openai-compatible-agent` / `add-anthropic-compatible-agent`: add a matching provider-backed agent before running the M9 matrix.
+
 ## Providers
 
 The script runs any provider whose existing agent ID, ready local trusted registry match, or endpoint/model variables are present.
