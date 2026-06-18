@@ -20,7 +20,6 @@ import type {
   ProjectRun,
   ProjectTask,
 } from "./domain/projectScope";
-import { markConversationMessageFailed } from "./domain/requestLifecycle";
 import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, syncConfiguredAgents } from "./services/agentStorage";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
@@ -37,13 +36,7 @@ import {
   resolveCurrentDirectConversation,
   resolveTaskRoomConversation,
 } from "./services/conversationSelectionState";
-import {
-  completeFreeChatRequestState,
-  completeProjectDirectRequestState,
-  resumeProjectDirectRequestState,
-  type DirectRequestResult,
-  type DirectRequestState,
-} from "./services/directRequestOrchestrator";
+import { useDirectChatController } from "./services/directChatController";
 import { useProjectDialogState } from "./services/projectDialogState";
 import { useProjectSetupController } from "./services/projectSetupController";
 import { useFreeChatController } from "./services/freeChatController";
@@ -55,7 +48,6 @@ import { getRespondingAgentIds } from "./services/requestRecovery";
 import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
 import {
   completeTaskRoomRetrySubmission,
-  prepareDirectRetrySubmission,
   prepareTaskRoomRetrySubmission,
 } from "./services/requestRetrySubmissionState";
 import {
@@ -69,8 +61,6 @@ import {
   type TaskRoomRequestStep,
 } from "./services/taskRoomOrchestrator";
 import {
-  prepareFreeChatSubmission,
-  prepareProjectDirectSubmission,
   prepareTaskRoomSubmission,
 } from "./services/requestSubmissionState";
 import { useTaskLifecycleController } from "./services/taskLifecycleController";
@@ -297,6 +287,21 @@ export function App() {
     setMessageText,
     setSelectedProjectId,
   });
+  const directChatController = useDirectChatController({
+    agents,
+    applyRequestWorkspaceState,
+    attachedWorkspaceFiles,
+    currentConversation,
+    freeChatNamespace: FREE_CHAT_NAMESPACE,
+    freeChatProjectId: FREE_CHAT_PROJECT_ID,
+    projects,
+    requestStore: requestStoreRef.current,
+    selectedAgent,
+    selectedWorkspaceProject,
+    setActiveFreeChatConversationIds,
+    setAttachedWorkspaceFiles,
+    setMessageText,
+  });
   const activeComposerHasPendingRequest =
     conversationMode === "single" ? currentConversationHasPendingRequest : taskRoomHasPendingRequest;
   const respondingAgentIds = useMemo(() => getRespondingAgentIds(conversations, messages), [conversations, messages]);
@@ -419,7 +424,7 @@ export function App() {
     applyRequestWorkspaceState(submission.state);
 
     if (submission.recovery.kind === "free-chat") {
-      void completeFreeChatRequest({
+      void directChatController.completeFreeChatRequest({
         conversation: submission.recovery.conversation,
         targetAgent: submission.recovery.targetAgent,
         userMessageId: submission.message.id,
@@ -430,7 +435,7 @@ export function App() {
       return;
     }
 
-    void resumeProjectDirectRequest({
+    void directChatController.resumeProjectDirectRequest({
       message: submission.message,
       conversation: submission.recovery.conversation,
       project: submission.recovery.project,
@@ -503,12 +508,6 @@ export function App() {
     );
   }
 
-  function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
-    const failedMessages = markConversationMessageFailed(requestStoreRef.current.snapshot().messages, message.id, reason);
-    requestStoreRef.current.sync({ messages: failedMessages });
-    setMessages(failedMessages);
-  }
-
   function applyRequestWorkspaceState(state: RequestWorkspaceState, outputMode?: OutputMode) {
     requestStoreRef.current.replace(state);
     setConversations(state.conversations);
@@ -519,113 +518,12 @@ export function App() {
     if (outputMode) setOutputMode(normalizeOutputMode(outputMode));
   }
 
-  function getDirectRequestState(): DirectRequestState {
-    return requestStoreRef.current.snapshot();
-  }
-
-  function applyDirectRequestResult(result: DirectRequestResult) {
-    applyRequestWorkspaceState(result.state, result.outputMode);
-  }
-
   function getTaskRoomRequestState(): TaskRoomRequestState {
     return requestStoreRef.current.snapshot();
   }
 
   function applyTaskRoomRequestStep(step: TaskRoomRequestStep) {
     applyRequestWorkspaceState(step.state, step.outputMode);
-  }
-
-  async function completeFreeChatRequest({
-    conversation,
-    targetAgent,
-    userMessageId,
-    text,
-  }: {
-    conversation: Conversation;
-    targetAgent: AgentInstance;
-    userMessageId: string;
-    text: string;
-  }) {
-    applyDirectRequestResult(
-      await completeFreeChatRequestState({
-        state: getDirectRequestState(),
-        conversation,
-        targetAgent,
-        userMessageId,
-        text,
-        freeChatProjectId: FREE_CHAT_PROJECT_ID,
-      }),
-    );
-  }
-
-  async function submitFreeChatMessage(text: string) {
-    if (!selectedAgent) return;
-
-    const targetAgent = selectedAgent;
-    const submission = prepareFreeChatSubmission({
-      state: requestStoreRef.current.snapshot(),
-      currentConversation,
-      targetAgent,
-      text,
-      freeChatProjectId: FREE_CHAT_PROJECT_ID,
-      freeChatNamespace: FREE_CHAT_NAMESPACE,
-    });
-    const { conversation, requestId, userMessageId } = submission;
-
-    setActiveFreeChatConversationIds((current) => ({
-      ...current,
-      [targetAgent.id]: conversation.id,
-    }));
-    requestStoreRef.current.begin(requestId);
-    applyRequestWorkspaceState(submission.state);
-    setMessageText("");
-    setAttachedWorkspaceFiles([]);
-
-    try {
-      await completeFreeChatRequest({ conversation, targetAgent, userMessageId, text });
-    } finally {
-      requestStoreRef.current.end(requestId);
-    }
-  }
-
-  async function retryDirectMessage(messageId: string) {
-    const retry = prepareDirectRetrySubmission({
-      state: requestStoreRef.current.snapshot(),
-      messageId,
-      agents,
-      projects,
-      freeChatProjectId: FREE_CHAT_PROJECT_ID,
-    });
-    if (retry.kind === "ignore") return;
-    if (retry.kind === "fail") {
-      markInterruptedMessageFailed(retry.message, retry.reason);
-      return;
-    }
-
-    const trackedRequestId = requestStoreRef.current.begin(retry.retry.message);
-    applyRequestWorkspaceState(retry.state);
-
-    try {
-      if (retry.retry.kind === "free-chat") {
-        await completeFreeChatRequest({
-          conversation: retry.retry.conversation,
-          targetAgent: retry.retry.targetAgent,
-          userMessageId: retry.retry.message.id,
-          text: retry.retry.text,
-        });
-        return;
-      }
-
-      await resumeProjectDirectRequest({
-        message: retry.retry.message,
-        conversation: retry.retry.conversation,
-        project: retry.retry.project,
-        targetAgent: retry.retry.targetAgent,
-        text: retry.retry.text,
-      });
-    } finally {
-      requestStoreRef.current.end(trackedRequestId);
-    }
   }
 
   async function retryTaskRoomMessage(messageId: string) {
@@ -649,65 +547,6 @@ export function App() {
     } finally {
       requestStoreRef.current.end(trackedRequestId);
     }
-  }
-
-  async function resumeProjectDirectRequest({
-    message,
-    conversation,
-    project,
-    targetAgent,
-    text,
-  }: {
-    message: ConversationMessage;
-    conversation: Conversation;
-    project: Project;
-    targetAgent: AgentInstance;
-    text: string;
-  }) {
-    applyDirectRequestResult(
-      await resumeProjectDirectRequestState({
-        state: getDirectRequestState(),
-        message,
-        conversation,
-        project,
-        targetAgent,
-        text,
-      }),
-    );
-  }
-
-  async function completeProjectDirectRequest({
-    project,
-    conversation,
-    targetAgent,
-    userMessageId,
-    runId,
-    participantAgentIds,
-    text,
-    agentRequestText,
-  }: {
-    project: Project;
-    conversation: Conversation;
-    targetAgent: AgentInstance;
-    userMessageId: string;
-    runId: string;
-    participantAgentIds: string[];
-    text: string;
-    agentRequestText: string;
-  }) {
-    applyDirectRequestResult(
-      await completeProjectDirectRequestState({
-        state: getDirectRequestState(),
-        project,
-        conversation,
-        targetAgent,
-        userMessageId,
-        runId,
-        participantAgentIds,
-        text,
-        agentRequestText,
-      }),
-    );
   }
 
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
@@ -742,7 +581,7 @@ export function App() {
       composerSubmittingRef.current = true;
       setIsComposerSubmitting(true);
       try {
-        await submitFreeChatMessage(intent.text);
+        await directChatController.submitFreeChatMessage(intent.text);
       } finally {
         composerSubmittingRef.current = false;
         setIsComposerSubmitting(false);
@@ -755,42 +594,7 @@ export function App() {
     composerSubmittingRef.current = true;
     setIsComposerSubmitting(true);
     try {
-      const targetAgent = selectedAgent;
-      const submission = prepareProjectDirectSubmission({
-        state: requestStoreRef.current.snapshot(),
-        project: selectedWorkspaceProject,
-        targetAgent,
-        text: intent.text,
-        files: attachedWorkspaceFiles,
-      });
-      const {
-        agentRequestText,
-        conversation,
-        participantAgentIds,
-        requestId,
-        runId,
-        userMessageId,
-      } = submission;
-
-      requestStoreRef.current.begin(requestId);
-      applyRequestWorkspaceState(submission.state);
-      setMessageText("");
-      setAttachedWorkspaceFiles([]);
-
-      try {
-        await completeProjectDirectRequest({
-          project: selectedWorkspaceProject,
-          conversation,
-          targetAgent,
-          userMessageId,
-          runId,
-          participantAgentIds,
-          text: intent.text,
-          agentRequestText,
-        });
-      } finally {
-        requestStoreRef.current.end(requestId);
-      }
+      await directChatController.submitProjectDirectMessage(intent.text);
     } finally {
       composerSubmittingRef.current = false;
       setIsComposerSubmitting(false);
@@ -930,7 +734,7 @@ export function App() {
             onAddAgent={agentSetup.openAddAgentDialog}
             onDetachWorkspaceFile={detachWorkspaceFile}
             onMessageTextChange={setMessageText}
-            onRetryDirectMessage={retryDirectMessage}
+            onRetryDirectMessage={directChatController.retryDirectMessage}
             onRetryTaskRoomMessage={retryTaskRoomMessage}
             onSelectFreeChat={() => setChatScope("free")}
             onSubmitMessage={submitMessage}
