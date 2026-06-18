@@ -63,7 +63,7 @@ import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agen
 import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
-import { getPendingRequestMessages, getRespondingAgentIds } from "./services/requestRecovery";
+import { getPendingRequestMessages, getRespondingAgentIds, resolvePendingRequestRecovery } from "./services/requestRecovery";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -364,56 +364,43 @@ export function App() {
     if (pendingMessages.length === 0) return;
 
     pendingMessages.forEach((message) => {
-      const conversation = conversations.find((item) => item.id === message.conversationId);
-      if (!conversation) {
-        markInterruptedMessageFailed(message, "Conversation no longer exists. Please resend this message.");
-        return;
-      }
+      const recovery = resolvePendingRequestRecovery({
+        message,
+        conversations,
+        agents,
+        projects,
+        freeChatProjectId: FREE_CHAT_PROJECT_ID,
+      });
 
-      if (conversation.mode !== "direct") {
-        markTaskRoomMessageFailed(message, "Task Room was interrupted before the agent returned. You can retry this request.");
-        return;
-      }
-
-      const agent = agents.find((item) => item.id === conversation.primaryAgentId);
-      if (!agent) {
-        markInterruptedMessageFailed(message, "Agent no longer exists. Please resend this message after reconnecting the agent.");
-        return;
-      }
-
-      const text = getTextPartContent(message.contentParts).trim();
-      if (!text) {
-        markInterruptedMessageFailed(message, "Message content could not be restored. Please resend it.");
+      if (recovery.kind === "fail") {
+        if (recovery.failTaskRoom) {
+          markTaskRoomMessageFailed(message, recovery.reason);
+        } else {
+          markInterruptedMessageFailed(message, recovery.reason);
+        }
         return;
       }
 
       activeRequestMessageIdsRef.current.add(message.id);
 
-      if (conversation.projectId === FREE_CHAT_PROJECT_ID) {
+      if (recovery.kind === "free-chat") {
         void completeFreeChatRequest({
-          conversation,
-          targetAgent: agent,
+          conversation: recovery.conversation,
+          targetAgent: recovery.targetAgent,
           userMessageId: message.id,
-          text,
+          text: recovery.text,
         }).finally(() => {
           activeRequestMessageIdsRef.current.delete(message.id);
         });
         return;
       }
 
-      const project = projects.find((item) => item.id === conversation.projectId);
-      if (!project) {
-        activeRequestMessageIdsRef.current.delete(message.id);
-        markInterruptedMessageFailed(message, "Project no longer exists. Please resend this message.");
-        return;
-      }
-
       void resumeProjectDirectRequest({
         message,
-        conversation,
-        project,
-        targetAgent: agent,
-        text,
+        conversation: recovery.conversation,
+        project: recovery.project,
+        targetAgent: recovery.targetAgent,
+        text: recovery.text,
       }).finally(() => {
         activeRequestMessageIdsRef.current.delete(message.id);
       });
