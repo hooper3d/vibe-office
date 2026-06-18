@@ -1,8 +1,6 @@
 import type { A2ASendMessageParams } from "../domain/a2a";
 
 export type AgentHttpTransport = {
-  request(url: string, init: RequestInit, options: AgentHttpRequestOptions): Promise<Response>;
-  requestJson<T>(url: string, init: RequestInit, options: AgentHttpRequestOptions): Promise<T>;
   commandJson<T>(command: LocalTrustedProviderCommand, options: AgentHttpRequestOptions): Promise<T>;
 };
 
@@ -10,14 +8,6 @@ export type AgentHttpRequestOptions = {
   timeoutMs: number;
   timeoutMessage: string;
   failurePrefix?: string;
-  agentId?: string;
-};
-
-export type LocalTrustedProviderRequestBody = {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
   agentId?: string;
 };
 
@@ -68,18 +58,6 @@ export type LocalTrustedProviderCommand =
 
 export function createBrowserAgentHttpTransport(): AgentHttpTransport {
   return {
-    async request(url: string, init: RequestInit, options: AgentHttpRequestOptions) {
-      return fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init, options), options.timeoutMs, options.timeoutMessage);
-    },
-    async requestJson<T>(url: string, init: RequestInit, options: AgentHttpRequestOptions) {
-      const response = await fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init, options), options.timeoutMs, options.timeoutMessage);
-
-      if (!response.ok) {
-        throw new Error(`${options.failurePrefix ?? "Agent request failed"}: ${response.status}${await readErrorSuffix(response)}`);
-      }
-
-      return (await response.json()) as T;
-    },
     async commandJson<T>(command: LocalTrustedProviderCommand, options: AgentHttpRequestOptions) {
       const response = await fetchWithTimeout("/agent-local/command", createLocalTrustedProviderCommandRequest(command), options.timeoutMs, options.timeoutMessage);
 
@@ -101,75 +79,6 @@ export function createLocalTrustedProviderCommandRequest(command: LocalTrustedPr
     },
     body: JSON.stringify(command),
   };
-}
-
-export function createLocalTrustedProviderRequest(url: string, init: RequestInit, options: Pick<AgentHttpRequestOptions, "agentId"> = {}): RequestInit {
-  return {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(toLocalTrustedProviderRequestBody(url, init, options)),
-  };
-}
-
-export function toLocalTrustedProviderRequestBody(url: string, init: RequestInit, options: Pick<AgentHttpRequestOptions, "agentId"> = {}): LocalTrustedProviderRequestBody {
-  return {
-    url,
-    method: init.method ?? "GET",
-    headers: normalizeRequestHeaders(init.headers),
-    body: typeof init.body === "string" ? init.body : undefined,
-    agentId: options.agentId,
-  };
-}
-
-export function toLocalTrustedProxyUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === "127.0.0.1" && parsed.port === "8642") {
-      return `/hermes-local${parsed.pathname}${parsed.search}`;
-    }
-    if (parsed.hostname === "hooper.ink") {
-      return `/hermes-hooper${parsed.pathname}${parsed.search}`;
-    }
-  } catch {
-    return url;
-  }
-
-  return url;
-}
-
-function normalizeRequestHeaders(headers: RequestInit["headers"]) {
-  const normalized: Record<string, string> = {};
-  if (!headers) return normalized;
-
-  if (headers instanceof Headers) {
-    headers.forEach((value, key) => {
-      if (isCredentialHeader(key)) return;
-      normalized[key] = value;
-    });
-    return normalized;
-  }
-
-  if (Array.isArray(headers)) {
-    headers.forEach(([key, value]) => {
-      if (isCredentialHeader(key)) return;
-      normalized[key] = value;
-    });
-    return normalized;
-  }
-
-  Object.entries(headers).forEach(([key, value]) => {
-    if (isCredentialHeader(key)) return;
-    normalized[key] = String(value);
-  });
-  return normalized;
-}
-
-function isCredentialHeader(key: string) {
-  const normalized = key.toLowerCase();
-  return normalized === "authorization" || normalized === "x-api-key";
 }
 
 export async function readErrorSuffix(response: Response) {

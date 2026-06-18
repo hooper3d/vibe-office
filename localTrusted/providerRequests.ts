@@ -8,29 +8,6 @@ export type LocalTrustedProviderRequest = {
   agentId?: string;
 };
 
-export function getVerifiedProviderRequest(body: Record<string, unknown>): LocalTrustedProviderRequest {
-  const url = String(body.url || "").trim();
-  const method = String(body.method || "GET").trim().toUpperCase();
-  const agentId = String(body.agentId || "").trim();
-  const parsed = new URL(url);
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Provider requests must use http or https.");
-  }
-
-  if (!["GET", "POST"].includes(method)) {
-    throw new Error("Provider request method is not supported.");
-  }
-
-  return {
-    url,
-    method,
-    agentId,
-    headers: getVerifiedProviderHeaders(body.headers),
-    body: typeof body.body === "string" && method !== "GET" ? body.body : undefined,
-  };
-}
-
 export async function getVerifiedProviderCommandRequest(body: Record<string, unknown>): Promise<LocalTrustedProviderRequest> {
   const agentId = String(body.agentId || "").trim();
   const command = String(body.command || "").trim();
@@ -64,13 +41,6 @@ export async function getVerifiedProviderCommandRequest(body: Record<string, unk
   throw new Error("Provider command is not supported.");
 }
 
-export function assertProviderTargetBelongsToAgent(url: string, agent: LocalTrustedAgentRecord) {
-  const target = new URL(url);
-  const allowedBases = [agent.endpoint, agent.a2aEndpoint, agent.agentCardUrl];
-  if (allowedBases.some((base) => isUrlInsideBase(target, base))) return;
-  throw new Error("Provider request target does not match the registered agent.");
-}
-
 export function injectLocalTrustedCredential(headers: Record<string, string>, agent: LocalTrustedAgentRecord) {
   if (!agent.apiKey) return;
 
@@ -78,29 +48,6 @@ export function injectLocalTrustedCredential(headers: Record<string, string>, ag
     headers["x-api-key"] = agent.apiKey;
   }
   headers.Authorization = `Bearer ${agent.apiKey}`;
-}
-
-function getVerifiedProviderHeaders(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-
-  const headers: Record<string, string> = {};
-  for (const [rawKey, rawValue] of Object.entries(value)) {
-    const key = rawKey.toLowerCase();
-    if (!isForwardableProviderHeader(key)) continue;
-    if (typeof rawValue !== "string") continue;
-    headers[rawKey] = rawValue;
-  }
-
-  return headers;
-}
-
-function isForwardableProviderHeader(key: string) {
-  return [
-    "accept",
-    "a2a-version",
-    "anthropic-version",
-    "content-type",
-  ].includes(key);
 }
 
 function createOpenAIChatCompletionsRequest(agent: LocalTrustedAgentRecord, payload: unknown) {
@@ -285,13 +232,4 @@ function toAnthropicMessagesUrl(endpoint: string) {
   if (/\/messages$/i.test(trimmed)) return trimmed;
   if (/\/v1$/i.test(trimmed)) return `${trimmed}/messages`;
   return `${trimmed}/v1/messages`;
-}
-
-function isUrlInsideBase(target: URL, base: string) {
-  const parsed = new URL(base);
-  const basePath = parsed.pathname.replace(/\/+$/, "");
-  return (
-    target.origin === parsed.origin &&
-    (target.pathname === basePath || target.pathname.startsWith(`${basePath}/`))
-  );
 }

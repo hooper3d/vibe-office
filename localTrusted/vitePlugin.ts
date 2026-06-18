@@ -1,15 +1,11 @@
 import type { Plugin, ViteDevServer } from "vite";
 import {
-  getVerifiedTrustedAgentRecord,
-  getLocalTrustedAgent,
   getLocalTrustedAgentSafeStatuses,
+  getVerifiedTrustedAgentRecord,
   updateLocalTrustedAgentRegistry,
 } from "./agentRegistry";
 import {
-  assertProviderTargetBelongsToAgent,
   getVerifiedProviderCommandRequest,
-  getVerifiedProviderRequest,
-  injectLocalTrustedCredential,
 } from "./providerRequests";
 import { readGeneratedMedia } from "./generatedMedia";
 import {
@@ -84,23 +80,6 @@ export function localTrustedLayerPlugin(): Plugin {
         try {
           const body = await readJsonBody(req);
           const providerRequest = await getVerifiedProviderCommandRequest(body);
-          await forwardProviderRequest(res, providerRequest);
-        } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
-        }
-      });
-
-      server.middlewares.use("/agent-local/request", async (req, res) => {
-        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local provider requests." });
-
-        try {
-          const body = await readJsonBody(req);
-          const providerRequest = getVerifiedProviderRequest(body);
-          const trustedAgent = providerRequest.agentId ? await getLocalTrustedAgent(providerRequest.agentId) : undefined;
-          if (trustedAgent) {
-            assertProviderTargetBelongsToAgent(providerRequest.url, trustedAgent);
-            injectLocalTrustedCredential(providerRequest.headers, trustedAgent);
-          }
           await forwardProviderRequest(res, providerRequest);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });

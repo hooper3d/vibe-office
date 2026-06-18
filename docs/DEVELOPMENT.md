@@ -712,9 +712,9 @@ Implementation progress:
 - Task and artifact request flows now target the unified `outputs` mode instead of separate `runs` or `artifacts` UI modes.
 - UI state storage migrates legacy `runs` and `artifacts` output tabs to `outputs`.
 - M8 local trusted layer work started.
-- Provider HTTP execution now goes through `POST /agent-local/request` before reaching Hermes, OpenAI-compatible, Anthropic-compatible, or native A2A endpoints.
-- Browser transport now sends a provider request command to the local trusted layer instead of directly calling remote provider URLs.
-- The local trusted provider endpoint only forwards supported HTTP methods and a small allowlist of provider headers.
+- Provider HTTP execution now goes through command-shaped local trusted routes before reaching Hermes, OpenAI-compatible, Anthropic-compatible, or native A2A endpoints.
+- Browser transport now only sends provider commands to `POST /agent-local/command`; the earlier generic `/agent-local/request` proxy has been removed.
+- The local trusted provider command endpoint owns supported HTTP methods and provider headers instead of forwarding browser-authored provider requests.
 - Agent profile saves now upsert provider connection details into the local trusted agent registry.
 - Browser agent storage strips API keys before writing `localStorage`; legacy browser-stored keys are migrated into the local trusted registry on the next agent sync.
 - Provider adapters now pass `agentId` to the local trusted layer and no longer assemble provider credential headers in browser code.
@@ -728,7 +728,7 @@ Implementation progress:
 - Workspace list/read/search now use the same command-shaped local trusted boundary through `POST /workspace-local/command`; generated media remains a controlled `GET /workspace-local/media` route.
 - Local trusted provider, credential registry, workspace-file, and generated-media dev middleware now lives in `localTrusted/vitePlugin.ts` instead of `vite.config.ts`, making Vite configuration a thin mount point and preparing the trusted layer for a later native/local service move.
 - Local trusted agent registry validation and prototype credential-file reads/writes now live in `localTrusted/agentRegistry.ts`.
-- Local trusted provider request validation, OpenAI-compatible request construction, Anthropic-compatible request construction, native A2A JSON-RPC construction, target checks, and credential injection now live in `localTrusted/providerRequests.ts`.
+- Local trusted provider command validation, OpenAI-compatible request construction, Anthropic-compatible request construction, native A2A JSON-RPC construction, and credential injection now live in `localTrusted/providerRequests.ts`.
 - Local trusted workspace directory listing, file preview, and text search now live in `localTrusted/workspaceFiles.ts`.
 - Local trusted workspace command validation and dispatch now live in `localTrusted/workspaceFiles.ts`; the browser workspace client sends semantic commands instead of route-specific request bodies.
 - Controlled generated-media serving for local temp images and WSL media roots now lives in `localTrusted/generatedMedia.ts`.

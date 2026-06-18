@@ -12,26 +12,21 @@ export class NativeA2AProvider {
     agent,
     timeoutMs,
     transport,
-    useA2AVersionHeader,
   }: {
     agent: AgentInstance;
     timeoutMs: number;
     transport: AgentHttpTransport;
-    useA2AVersionHeader: boolean;
   }) {
     this.agent = agent;
     this.client = new A2AClient({
-      endpoint: agent.a2aEndpoint,
       agentId: agent.id,
-      protocolVersion: useA2AVersionHeader ? agent.a2aProtocolVersion : undefined,
       timeoutMs,
-      useA2AVersionHeader,
       transport,
     });
   }
 
-  async getAgentCard(url = this.agent.agentCardUrl): Promise<A2AAgentCard> {
-    return this.client.getAgentCard(url);
+  async getAgentCard(): Promise<A2AAgentCard> {
+    return this.client.getAgentCard();
   }
 
   async testConnection(): Promise<ProviderConnectionTestResult> {
@@ -101,12 +96,4 @@ export class NativeA2AProvider {
   async cancelProjectTask(taskId: string, contextId: string) {
     return this.client.cancelTask(taskId, contextId);
   }
-}
-
-export function shouldUseNativeA2A(agent: AgentInstance) {
-  return (
-    (agent.runtimeProvider ?? "hermes") === "hermes" &&
-    agent.a2aTransportBinding === "json-rpc/http" &&
-    agent.a2aProtocolVersion !== "compatibility"
-  );
 }

@@ -2,7 +2,7 @@ import type { A2AAgentCard, A2ATask } from "../domain/a2a";
 import type { AgentInstance, Project } from "../domain/types";
 import type { AgentHttpTransport } from "./agentHttpTransport";
 import { AnthropicProvider } from "./anthropicProvider";
-import { NativeA2AProvider, shouldUseNativeA2A } from "./nativeA2AProvider";
+import { NativeA2AProvider } from "./nativeA2AProvider";
 import { OpenAIProvider } from "./openaiProvider";
 import {
   createSyntheticAgentCard,
@@ -29,7 +29,6 @@ export class ProviderRouter {
       agent,
       timeoutMs,
       transport,
-      useA2AVersionHeader: shouldUseNativeA2A(agent),
     });
     this.openAIProvider = new OpenAIProvider({
       agent,
@@ -53,7 +52,7 @@ export class ProviderRouter {
 
   async getAgentCard(): Promise<A2AAgentCard> {
     try {
-      return await this.nativeA2AProvider.getAgentCard(this.agent.agentCardUrl);
+      return await this.nativeA2AProvider.getAgentCard();
     } catch {
       return createSyntheticAgentCard(this.agent);
     }

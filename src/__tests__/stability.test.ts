@@ -53,11 +53,8 @@ import {
 } from "../services/taskRoomOrchestrator";
 import {
   createBrowserAgentHttpTransport,
-  createLocalTrustedProviderRequest,
   type AgentHttpTransport,
   type LocalTrustedProviderCommand,
-  toLocalTrustedProviderRequestBody,
-  toLocalTrustedProxyUrl,
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { A2AClient } from "../services/a2aClient";
@@ -563,50 +560,7 @@ test("request runtime store keeps active request ids with the latest workspace s
   assert.equal(store.activeRequestIds().has("request-1"), false);
 });
 
-test("agent http transport delegates provider requests to the local trusted layer", async () => {
-  assert.equal(toLocalTrustedProxyUrl("http://127.0.0.1:8642/v1/chat/completions"), "/hermes-local/v1/chat/completions");
-  assert.equal(toLocalTrustedProxyUrl("https://hooper.ink/a2a?x=1"), "/hermes-hooper/a2a?x=1");
-  assert.equal(toLocalTrustedProxyUrl("https://api.example.com/v1"), "https://api.example.com/v1");
-  assert.deepEqual(
-    toLocalTrustedProviderRequestBody(
-      "https://api.example.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer test-key",
-          "Content-Type": "application/json",
-        },
-        body: "{\"model\":\"test\"}",
-      },
-      { agentId: "agent-lucy" },
-    ),
-    {
-      url: "https://api.example.com/v1/chat/completions",
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: "{\"model\":\"test\"}",
-      agentId: "agent-lucy",
-    },
-  );
-  assert.equal(JSON.parse(String(createLocalTrustedProviderRequest("https://api.example.com/v1", {}, { agentId: "agent-lucy" }).body)).agentId, "agent-lucy");
-  const { getVerifiedProviderRequest } = await import("../../localTrusted/providerRequests");
-  assert.deepEqual(
-    getVerifiedProviderRequest({
-      url: "https://api.example.com/v1/chat/completions",
-      method: "POST",
-      headers: {
-        Authorization: "Bearer browser-key",
-        "Content-Type": "application/json",
-        "x-api-key": "browser-key",
-      },
-    }).headers,
-    {
-      "Content-Type": "application/json",
-    },
-  );
-
+test("agent http transport delegates provider commands to the local trusted layer", async () => {
   const previousFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
   const requestedBodies: Array<{ url?: string; agentId?: string; command?: string }> = [];
@@ -649,26 +603,23 @@ test("agent http transport delegates provider requests to the local trusted laye
     assert.equal(requestedBodies[0].agentId, "agent-lucy");
     assert.equal(requestedBodies[0].command, "openai.chatCompletions");
 
-    assert.deepEqual(
-      await transport.requestJson<{ ok: boolean }>("http://127.0.0.1:8642/ok", {}, {
-        timeoutMs: 1000,
-        timeoutMessage: "timed out",
-        failurePrefix: "Provider failed",
-        agentId: "agent-lucy",
-      }),
-      { ok: true },
-    );
-    assert.equal(requestedUrls[1], "/agent-local/request");
-    assert.equal(requestedBodies[1].url, "http://127.0.0.1:8642/ok");
-    assert.equal(requestedBodies[1].agentId, "agent-lucy");
     await assert.rejects(
       () =>
-        transport.requestJson("https://api.example.com/fail", {}, {
-          timeoutMs: 1000,
-          timeoutMessage: "timed out",
-          failurePrefix: "Provider failed",
-          agentId: "agent-lucy",
-        }),
+        transport.commandJson(
+          {
+            agentId: "agent-lucy",
+            command: "openai.chatCompletions",
+            payload: {
+              messages: [{ role: "user", content: "fail" }],
+            },
+          },
+          {
+            timeoutMs: 1000,
+            timeoutMessage: "timed out",
+            failurePrefix: "Provider failed",
+            agentId: "agent-lucy",
+          },
+        ),
       /Provider failed: 401: bad key/,
     );
   } finally {
@@ -1658,9 +1609,11 @@ test("local trusted workspace commands list, read, search, and reject path escap
   }
 });
 
-test("local trusted workspace middleware exposes only the command route for file operations", async () => {
+test("local trusted middleware exposes command-only provider and workspace routes", async () => {
   const source = await readFile(path.join(process.cwd(), "localTrusted", "vitePlugin.ts"), "utf8");
 
+  assert.match(source, /agent-local\/command/);
+  assert.doesNotMatch(source, /agent-local\/request/);
   assert.match(source, /workspace-local\/command/);
   assert.doesNotMatch(source, /workspace-local\/list/);
   assert.doesNotMatch(source, /workspace-local\/read/);
@@ -1714,12 +1667,6 @@ test("provider setup detects obvious runtime endpoint mismatches", () => {
 test("provider adapter routes OpenAI-compatible free chat through local provider commands", async () => {
   const commands: LocalTrustedProviderCommand[] = [];
   const transport: AgentHttpTransport = {
-    async request() {
-      throw new Error("Native A2A should not be used for OpenAI-compatible agents.");
-    },
-    async requestJson() {
-      throw new Error("OpenAI-compatible agents should not send browser-built provider HTTP requests.");
-    },
     async commandJson<T>(command: LocalTrustedProviderCommand) {
       commands.push(command);
       return {
@@ -1758,12 +1705,6 @@ test("provider adapter routes OpenAI-compatible free chat through local provider
 test("provider adapter routes Anthropic-compatible project chat through local provider commands", async () => {
   const commands: LocalTrustedProviderCommand[] = [];
   const transport: AgentHttpTransport = {
-    async request() {
-      throw new Error("Native A2A should not be used for Anthropic-compatible agents.");
-    },
-    async requestJson() {
-      throw new Error("Anthropic-compatible agents should not send browser-built provider HTTP requests.");
-    },
     async commandJson<T>(command: LocalTrustedProviderCommand) {
       commands.push(command);
       return {
@@ -1801,12 +1742,6 @@ test("provider adapter routes Anthropic-compatible project chat through local pr
 test("provider adapter falls Hermes native A2A failures back to Hermes chat compatibility", async () => {
   const commands: LocalTrustedProviderCommand[] = [];
   const fallbackTransport: AgentHttpTransport = {
-    async request() {
-      throw new Error("Native A2A should use local provider commands.");
-    },
-    async requestJson() {
-      throw new Error("Hermes fallback should use local provider commands.");
-    },
     async commandJson<T>(command: LocalTrustedProviderCommand) {
       commands.push(command);
       if (command.command === "a2a.messageSend") {
@@ -1850,12 +1785,6 @@ test("provider adapter falls Hermes native A2A failures back to Hermes chat comp
 test("A2A client delegates capability and task lifecycle calls to local provider commands", async () => {
   const commands: LocalTrustedProviderCommand[] = [];
   const transport: AgentHttpTransport = {
-    async request() {
-      throw new Error("A2A client should use local provider commands when an agent id is available.");
-    },
-    async requestJson() {
-      throw new Error("A2A client should use local provider commands when an agent id is available.");
-    },
     async commandJson<T>(command: LocalTrustedProviderCommand) {
       commands.push(command);
       if (command.command === "a2a.getAgentCard") {
@@ -1874,13 +1803,11 @@ test("A2A client delegates capability and task lifecycle calls to local provider
     },
   };
   const client = new A2AClient({
-    endpoint: "https://native.example/a2a",
     agentId: "agent-native",
-    protocolVersion: "1.0",
     transport,
   });
 
-  const card = await client.getAgentCard("https://native.example/.well-known/agent-card.json");
+  const card = await client.getAgentCard();
   const taskResult = await client.getTask("task-1", "context-1");
   const cancelResult = await client.cancelTask("task-1", "context-1");
 
