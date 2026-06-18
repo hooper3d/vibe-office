@@ -11,6 +11,11 @@ import {
   resolveTaskRoomMessageRetry,
 } from "../services/requestRecovery";
 import {
+  completeTaskRoomMessageRetry,
+  prepareDirectMessageRetry,
+  prepareTaskRoomMessageRetry,
+} from "../services/requestRetryState";
+import {
   applyTaskRoomAggregationCompleted,
   applyTaskRoomChiefPlanCompleted,
   applyTaskRoomParticipantCompleted,
@@ -262,6 +267,64 @@ test("conversation lifecycle retry attempt preserves request identity and clears
   assert.equal(sendingAgain.requestAttempt, 2);
   assert.equal(sendingAgain.errorText, undefined);
   assert.equal(sendingAgain.errorKind, undefined);
+});
+
+test("retry state helpers prepare direct and task-room messages without stale retry artifacts", () => {
+  const failed = markConversationMessageFailed(
+    [userMessage({ id: "message-1", runId: "run-1", status: "sending" })],
+    "message-1",
+    "Agent did not respond before the timeout.",
+  )[0];
+  const relatedSystem: ConversationMessage = {
+    id: "system-related",
+    conversationId: failed.conversationId,
+    projectId: failed.projectId,
+    role: "system",
+    contentParts: [{ kind: "text", text: "Old retry error" }],
+    runId: "run-1",
+    status: "sent",
+    createdAt: "2026-06-18T10:01:00.000Z",
+  };
+  const unrelatedSystem: ConversationMessage = {
+    ...relatedSystem,
+    id: "system-unrelated",
+    runId: "run-2",
+  };
+
+  const preparedDirect = prepareDirectMessageRetry({
+    messages: [failed, relatedSystem, unrelatedSystem],
+    message: failed,
+    targetAgentId: agent.id,
+  });
+  assert.deepEqual(preparedDirect.map((message) => message.id), ["message-1", "system-unrelated"]);
+  assert.equal(preparedDirect[0].status, "sending");
+  assert.equal(preparedDirect[0].requestId, "request-1");
+  assert.equal(preparedDirect[0].requestAttempt, 2);
+  assert.equal(preparedDirect[0].errorText, undefined);
+
+  const preparedTaskRoom = prepareTaskRoomMessageRetry({
+    messages: [failed],
+    messageId: failed.id,
+  });
+  assert.equal(preparedTaskRoom[0].status, "sending");
+  assert.equal(preparedTaskRoom[0].requestAttempt, 2);
+
+  const completedTaskRoom = completeTaskRoomMessageRetry({
+    messages: preparedTaskRoom,
+    messageId: failed.id,
+    succeeded: true,
+  });
+  assert.equal(completedTaskRoom[0].status, "sent");
+  assert.equal(completedTaskRoom[0].errorText, undefined);
+
+  const failedTaskRoom = completeTaskRoomMessageRetry({
+    messages: preparedTaskRoom,
+    messageId: failed.id,
+    succeeded: false,
+  });
+  assert.equal(failedTaskRoom[0].status, "failed");
+  assert.equal(failedTaskRoom[0].errorKind, "unknown");
+  assert.match(failedTaskRoom[0].errorText ?? "", /Retry failed/);
 });
 
 test("task room reducers persist chief plan, participant result, aggregation, and failure states", () => {

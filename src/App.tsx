@@ -62,7 +62,6 @@ import {
   failTaskRoomTaskForMessage,
   markConversationMessageFailed,
   markConversationMessageSending,
-  markConversationMessageSent,
 } from "./domain/requestLifecycle";
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
@@ -91,6 +90,11 @@ import {
   resolvePendingRequestRecovery,
   resolveTaskRoomMessageRetry,
 } from "./services/requestRecovery";
+import {
+  completeTaskRoomMessageRetry,
+  prepareDirectMessageRetry,
+  prepareTaskRoomMessageRetry,
+} from "./services/requestRetryState";
 import { createRequestTracker } from "./services/requestTracker";
 import {
   executeChiefAggregationTurn,
@@ -1229,18 +1233,11 @@ export function App() {
 
     const trackedRequestId = requestTrackerRef.current.begin(retry.message);
     setMessages((current) =>
-      markConversationMessageSending(
-        current.filter(
-          (item) =>
-            !(
-              item.role === "system" &&
-              item.conversationId === retry.message.conversationId &&
-              item.createdAt >= retry.message.createdAt &&
-              (retry.message.runId ? item.runId === retry.message.runId : item.agentId === retry.targetAgent.id)
-            ),
-        ),
-        retry.message.id,
-      ),
+      prepareDirectMessageRetry({
+        messages: current,
+        message: retry.message,
+        targetAgentId: retry.targetAgent.id,
+      }),
     );
 
     try {
@@ -1275,14 +1272,16 @@ export function App() {
     if (retry.kind === "ignore") return;
 
     const trackedRequestId = requestTrackerRef.current.begin(retry.message);
-    setMessages((current) => markConversationMessageSending(current, retry.message.id));
+    setMessages((current) => prepareTaskRoomMessageRetry({ messages: current, messageId: retry.message.id }));
 
     try {
       const succeeded = await retryTaskLifecycle(retry.taskId);
       setMessages((current) =>
-        succeeded
-          ? markConversationMessageSent(current, retry.message.id)
-          : markConversationMessageFailed(current, retry.message.id, "Retry failed. Check the task activity for details."),
+        completeTaskRoomMessageRetry({
+          messages: current,
+          messageId: retry.message.id,
+          succeeded,
+        }),
       );
     } finally {
       requestTrackerRef.current.end(trackedRequestId);
