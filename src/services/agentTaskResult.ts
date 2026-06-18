@@ -1,5 +1,5 @@
-import type { A2ATask } from "../domain/a2a";
-import type { ConversationMessage } from "../domain/projectScope";
+import type { A2ATask, A2ATaskState } from "../domain/a2a";
+import type { ConversationMessage, WorkState } from "../domain/projectScope";
 
 export function extractA2ATaskText(task: A2ATask) {
   const parts = task.status.message?.parts ?? [];
@@ -19,6 +19,12 @@ export function isDirectMessageResponse(task: A2ATask) {
 
 export function getA2ATaskTimestamp(task: A2ATask) {
   return task.status.timestamp ?? new Date().toISOString();
+}
+
+export function mapA2AState(state: A2ATaskState): WorkState {
+  if (state === "input-required") return "input_required";
+  if (state === "rejected" || state === "auth-required" || state === "unknown") return "failed";
+  return state;
 }
 
 export function createAgentMessageFromTask({

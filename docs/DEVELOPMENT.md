@@ -385,6 +385,8 @@ Completed:
 - Direct free-chat and project-chat provider turns are routed through a direct chat request service that owns history construction plus provider execution.
 - Task Room Chief planning, participant execution, and Chief aggregation provider turns are routed through a task-room request service.
 - Free Chat completion/failure and conversation timestamp updates use pure state reducers instead of ad hoc component-local state edits.
+- Project Direct Chat completion/failure now uses state reducers for messages, runs, tasks, and artifacts.
+- Artifact/media mapping helpers are centralized outside the React component.
 
 Still open:
 

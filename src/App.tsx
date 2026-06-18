@@ -38,7 +38,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { A2APart, A2ATask, A2ATaskState } from "./domain/a2a";
+import type { A2APart, A2ATask } from "./domain/a2a";
 import { createAgentFromHermesSetup } from "./domain/hermesSetup";
 import {
   conversationMessages,
@@ -68,9 +68,23 @@ import {
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agentErrorText";
-import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
+import { createAgentMessageFromTask, extractA2ATaskText, mapA2AState } from "./services/agentTaskResult";
+import {
+  createBackfilledMediaArtifacts,
+  createMediaArtifactFromText,
+  createTextArtifact,
+  createTextParts,
+  getImageFileParts,
+  mapA2AArtifacts,
+} from "./services/artifactState";
 import { executeFreeChatTurn, executeProjectDirectTurn } from "./services/directChatRequest";
-import { applyConversationMessageFailed, applyFreeChatTurnCompleted, touchConversationUpdatedAt } from "./services/directChatState";
+import {
+  applyConversationMessageFailed,
+  applyFreeChatTurnCompleted,
+  applyProjectDirectTurnCompleted,
+  applyProjectDirectTurnFailed,
+  touchConversationUpdatedAt,
+} from "./services/directChatState";
 import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { getTextPartContent } from "./services/messageContent";
 import {
@@ -95,7 +109,6 @@ import { getUserFacingWorkspaceError } from "./services/workspaceErrorText";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
-  mediaFileUrl,
   readWorkspaceFile,
   searchWorkspaceFiles,
   type WorkspaceFileAttachment,
@@ -202,6 +215,9 @@ export function App() {
   const composerSubmittingRef = useRef(false);
   const requestTrackerRef = useRef(createRequestTracker());
   const messagesRef = useRef(messages);
+  const runsRef = useRef(runs);
+  const tasksRef = useRef(tasks);
+  const artifactsRef = useRef(artifacts);
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
@@ -354,6 +370,18 @@ export function App() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    runsRef.current = runs;
+  }, [runs]);
+
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  useEffect(() => {
+    artifactsRef.current = artifacts;
+  }, [artifacts]);
 
   useEffect(() => {
     saveConfiguredAgents(agents);
@@ -1348,97 +1376,40 @@ export function App() {
         conversationId: conversation.id,
         userMessageId,
       });
-      const remoteTask = result.task;
-      const responseSummary = result.summary;
-      const completedAt = result.completedAt;
-      const mediaArtifact = createMediaArtifactFromText({
-        projectId: project.id,
-        taskId: remoteTask.id || runId,
-        agentId: targetAgent.id,
-        name: `${targetAgent.name} media`,
-        text: responseSummary,
-        createdAt: completedAt,
+      const nextState = applyProjectDirectTurnCompleted({
+        messages: messagesRef.current,
+        runs: runsRef.current,
+        tasks: tasksRef.current,
+        artifacts: artifactsRef.current,
+        result,
+        project,
+        conversationId: conversation.id,
+        targetAgent,
+        userMessageId,
+        runId,
+        participantAgentIds,
+        text,
       });
-      const returnedArtifacts = [
-        ...mapA2AArtifacts(remoteTask, project.id, targetAgent.id),
-        ...(mediaArtifact ? [mediaArtifact] : []),
-      ];
-      const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
-      const mappedState = mapA2AState(remoteTask.status.state);
-      const shouldCreateTask = !isDirectMessageResponse(remoteTask);
-      const taskId = shouldCreateTask ? remoteTask.id || crypto.randomUUID() : undefined;
-
-      setMessages((current) => markConversationMessageSent(current, userMessageId, { runId }));
-
-      if (responseSummary) {
-        const agentMessage = createAgentMessageFromTask({
-          task: remoteTask,
-          conversationId: conversation.id,
-          projectId: project.id,
-          agentId: targetAgent.id,
-          fallbackText: responseSummary,
-          taskId,
-          runId,
-          createdAt: completedAt,
-        });
-        setMessages((current) => [...current, agentMessage]);
-      }
-
-      if (returnedArtifacts.length > 0) {
-        setArtifacts((current) => [...returnedArtifacts, ...current]);
-        setOutputMode("artifacts");
-      }
-
-      if (shouldCreateTask && taskId) {
-        const projectTask: ProjectTask = {
-          id: taskId,
-          projectId: project.id,
-          contextId: remoteTask.contextId || project.namespace,
-          remoteTaskId: remoteTask.id || taskId,
-          remoteContextId: remoteTask.contextId || project.namespace,
-          title: text.length > 56 ? `${text.slice(0, 56)}...` : text,
-          ownerAgentId: targetAgent.id,
-          participantAgentIds,
-          state: mappedState,
-          summary: responseSummary,
-          events: [
-            {
-              id: `${taskId}-accepted`,
-              taskId,
-              agentId: targetAgent.id,
-              label: "Agent returned a task.",
-              state: mappedState,
-              timestamp: completedAt,
-            },
-          ],
-          artifactIds: returnedArtifactIds,
-          updatedAt: completedAt,
-        };
-        setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
-        setOutputMode("runs");
-      }
-
-      setRuns((current) =>
-        current.map((run) =>
-          run.id === runId
-            ? {
-                ...run,
-                taskId,
-                state: mappedState,
-                summary: responseSummary || run.summary,
-                eventIds: mergeIds(run.eventIds, [`${runId}-completed`]),
-                artifactIds: returnedArtifactIds,
-                updatedAt: completedAt,
-              }
-            : run,
-        ),
-      );
-      setConversations((current) => touchConversationUpdatedAt(current, conversation.id, completedAt));
+      setMessages(nextState.messages);
+      setRuns(nextState.runs);
+      setTasks(nextState.tasks);
+      setArtifacts(nextState.artifacts);
+      if (nextState.returnedArtifactCount > 0) setOutputMode("artifacts");
+      if (nextState.createdTask) setOutputMode("runs");
+      setConversations((current) => touchConversationUpdatedAt(current, conversation.id, nextState.completedAt));
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorText = getUserFacingAgentError(error);
-      setMessages((current) => markConversationMessageFailed(current, userMessageId, errorText, { runId }));
-      setRuns((current) => failRunById(current, runId, failedAt, errorText));
+      const nextState = applyProjectDirectTurnFailed({
+        messages: messagesRef.current,
+        runs: runsRef.current,
+        userMessageId,
+        runId,
+        errorText,
+        failedAt,
+      });
+      setMessages(nextState.messages);
+      setRuns(nextState.runs);
       setOutputMode("runs");
     }
   }
@@ -2388,95 +2359,6 @@ export function App() {
   );
 }
 
-function mapA2AArtifacts(task: A2ATask, projectId: string, agentId: string): ProjectArtifact[] {
-  return (task.artifacts ?? []).map((artifact, index) => {
-    const text = artifact.parts.find((part) => part.kind === "text")?.text;
-    const contentParts = addMediaPartsToParts(artifact.parts);
-    const hasFile = contentParts.some((part) => part.kind === "file");
-    return {
-      id: artifact.artifactId ?? `${task.id}-artifact-${index}`,
-      projectId,
-      taskId: task.id,
-      agentId,
-      name: artifact.name ?? `Artifact ${index + 1}`,
-      kind: hasFile ? "file" : text ? "text" : "json",
-      summary: artifact.description ?? text ?? "Artifact returned by the agent.",
-      contentParts,
-      createdAt: task.status.timestamp ?? new Date().toISOString(),
-    };
-  });
-}
-
-function createTextArtifact({
-  projectId,
-  taskId,
-  agentId,
-  name,
-  text,
-  createdAt,
-}: {
-  projectId: string;
-  taskId: string;
-  agentId: string;
-  name: string;
-  text: string;
-  createdAt: string;
-}): ProjectArtifact {
-  const contentParts = createMediaAwareParts(text);
-  return {
-    id: crypto.randomUUID(),
-    projectId,
-    taskId,
-    agentId,
-    name,
-    kind: getImageFileParts(contentParts).length > 0 ? "file" : "text",
-    summary: text,
-    contentParts,
-    createdAt,
-  };
-}
-
-function createMediaArtifactFromText({
-  projectId,
-  taskId,
-  agentId,
-  name,
-  text,
-  createdAt,
-}: {
-  projectId: string;
-  taskId: string;
-  agentId: string;
-  name: string;
-  text: string;
-  createdAt: string;
-}) {
-  if (extractMediaReferences(text).length === 0) return undefined;
-  return createTextArtifact({ projectId, taskId, agentId, name, text, createdAt });
-}
-
-function createBackfilledMediaArtifacts(messages: ConversationMessage[]) {
-  return messages.flatMap((message) => {
-    if (message.role !== "agent" || !message.agentId || !message.taskId) return [];
-
-    const text = getPartText(message.contentParts);
-    return extractMediaReferences(text).map((reference, index) => ({
-      runId: message.runId,
-      artifact: {
-        id: `${message.id}-media-${index}`,
-        projectId: message.projectId,
-        taskId: message.taskId ?? message.runId ?? message.id,
-        agentId: message.agentId ?? "",
-        name: index === 0 ? "Generated media" : `Generated media ${index + 1}`,
-        kind: "file" as const,
-        summary: text,
-        contentParts: createMediaAwareParts(text),
-        createdAt: message.createdAt,
-      },
-    }));
-  });
-}
-
 function createConversation({
   projectId,
   namespace,
@@ -2508,87 +2390,6 @@ function createConversation({
     createdAt,
     updatedAt: createdAt,
   };
-}
-
-function createTextParts(text: string): A2APart[] {
-  return [
-    {
-      kind: "text",
-      text,
-    },
-  ];
-}
-
-function createMediaAwareParts(text: string): A2APart[] {
-  return addMediaPartsToParts(createTextParts(text));
-}
-
-function addMediaPartsToParts(parts: A2APart[]) {
-  const mediaParts = parts.flatMap((part) => (part.kind === "text" ? createMediaFileParts(part.text) : []));
-  if (mediaParts.length === 0) return parts;
-
-  const existingUris = new Set(
-    parts.flatMap((part) => (part.kind === "file" && part.file.uri ? [part.file.uri] : [])),
-  );
-  const uniqueMediaParts = mediaParts.filter((part) => part.file.uri && !existingUris.has(part.file.uri));
-  return uniqueMediaParts.length > 0 ? [...parts, ...uniqueMediaParts] : parts;
-}
-
-function createMediaFileParts(text: string): Extract<A2APart, { kind: "file" }>[] {
-  return extractMediaReferences(text).map((reference) => ({
-    kind: "file",
-    file: {
-      name: reference.name,
-      mimeType: reference.mimeType,
-      uri: mediaFileUrl(reference.path),
-    },
-  }));
-}
-
-function extractMediaReferences(text: string) {
-  const references: Array<{ path: string; name: string; mimeType: string }> = [];
-  const seen = new Set<string>();
-  const mediaLinePattern = /(?:^|\s)MEDIA:\s*([^\r\n]+)/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = mediaLinePattern.exec(text)) !== null) {
-    const mediaPath = cleanMediaPath(match[1]);
-    const mimeType = getImageMimeTypeFromPath(mediaPath);
-    if (!mediaPath || !mimeType || seen.has(mediaPath)) continue;
-
-    seen.add(mediaPath);
-    references.push({
-      path: mediaPath,
-      name: getFileNameFromPath(mediaPath),
-      mimeType,
-    });
-  }
-
-  return references;
-}
-
-function cleanMediaPath(value: string) {
-  const [pathToken = ""] = value.trim().split(/\s+/);
-  return pathToken
-    .trim()
-    .replace(/^["'`]+|["'`,.;]+$/g, "")
-    .trim();
-}
-
-function getFileNameFromPath(filePath: string) {
-  return filePath.split(/[\\/]/).filter(Boolean).pop() ?? "media artifact";
-}
-
-function getImageMimeTypeFromPath(filePath: string) {
-  const extension = filePath.split(/[?#]/)[0]?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
-  if (extension === "png") return "image/png";
-  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
-  if (extension === "gif") return "image/gif";
-  if (extension === "webp") return "image/webp";
-  if (extension === "avif") return "image/avif";
-  if (extension === "bmp") return "image/bmp";
-  if (extension === "svg") return "image/svg+xml";
-  return "";
 }
 
 function buildAgentRequestText(text: string, project: Project, files: WorkspaceFileAttachment[]) {
@@ -2627,25 +2428,6 @@ function MarkdownContent({ content }: { content: string }) {
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
     </div>
   );
-}
-
-function getImageFileParts(parts: A2APart[]) {
-  return parts.filter(
-    (part) =>
-      part.kind === "file" &&
-      Boolean(part.file.uri) &&
-      (part.file.mimeType?.startsWith("image/") || isImageUrl(part.file.uri ?? "")),
-  );
-}
-
-function isImageUrl(uri: string) {
-  return /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?.*)?$/i.test(uri) || uri.startsWith("data:image/");
-}
-
-function mapA2AState(state: A2ATaskState): WorkState {
-  if (state === "input-required") return "input_required";
-  if (state === "rejected" || state === "auth-required" || state === "unknown") return "failed";
-  return state;
 }
 
 function createA2ACompatibilityMetadata(result: HermesConnectionTestResult): A2ACompatibilityMetadata {
