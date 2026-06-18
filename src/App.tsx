@@ -1,10 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { AppDialogs } from "./components/AppDialogs";
 import { AppSidebar } from "./components/AppSidebar";
 import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
-import { ConfirmDialog, ProjectDialog } from "./components/ProjectDialogs";
-import { SetupWizard } from "./components/SetupWizard";
 import type {
   Conversation,
   ConversationMessage,
@@ -497,38 +496,20 @@ export function App() {
         </div>
       </main>
 
-      {agentSetup.showSetup ? (
-        <SetupWizard
-          testState={agentSetup.testState}
-          testMessage={agentSetup.testMessage}
-          isSaving={agentSetup.isSavingAgent}
-          onClose={agentSetup.closeSetup}
-          onRunTest={agentSetupController.runConnectionTest}
-          onResetTest={agentSetup.resetConnectionTest}
-          onSaveAgent={agentSetupController.saveAgent}
-          agent={agentSetup.setupAgentId ? agents.find((agent) => agent.id === agentSetup.setupAgentId) : undefined}
-          localTrustedStatus={activeSetupAgentId ? localTrustedAgentStatuses[activeSetupAgentId] : undefined}
-          onDeleteAgent={appActionController.requestDeleteAgent}
-          onAgentAvatarFile={agentSetupController.updateExistingAgentAvatar}
-        />
-      ) : null}
-      {projectDialog.showProjectDialog ? (
-        <ProjectDialog
-          error={projectDialog.projectFormError}
-          project={projectDialog.editingProjectId ? projects.find((project) => project.id === projectDialog.editingProjectId) : undefined}
-          onClose={projectDialog.closeProjectDialog}
-          onSaveProject={projectSetupController.saveProject}
-        />
-      ) : null}
-      {projectDialog.confirmAction ? (
-        <ConfirmDialog
-          action={projectDialog.confirmAction}
-          agents={agents}
-          projects={projects}
-          onCancel={projectDialog.clearConfirmAction}
-          onConfirm={appActionController.confirmPendingAction}
-        />
-      ) : null}
+      <AppDialogs
+        activeSetupAgentId={activeSetupAgentId}
+        agentSetup={agentSetup}
+        agents={agents}
+        localTrustedStatus={activeSetupAgentId ? localTrustedAgentStatuses[activeSetupAgentId] : undefined}
+        projectDialog={projectDialog}
+        projects={projects}
+        onAgentAvatarFile={agentSetupController.updateExistingAgentAvatar}
+        onConfirmPendingAction={appActionController.confirmPendingAction}
+        onDeleteAgent={appActionController.requestDeleteAgent}
+        onRunConnectionTest={agentSetupController.runConnectionTest}
+        onSaveAgent={agentSetupController.saveAgent}
+        onSaveProject={projectSetupController.saveProject}
+      />
     </div>
   );
 }

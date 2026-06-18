@@ -804,6 +804,7 @@ Acceptance:
 - Agent/project navigation, theme toggle, and sidebar list rendering now live in `src/components/AppSidebar.tsx`.
 - Conversation panel, direct/task-room body selection, workspace attachment chips, and composer rendering now live in `src/components/ConversationWorkspace.tsx`.
 - Right Output Area shell selection now lives in `src/components/OutputPanel.tsx`, covering Free Chat history, Project workspace tabs, Browser preview, grouped Outputs, and no-project state while `App.tsx` remains the orchestration owner.
+- App dialog shell rendering now lives in `src/components/AppDialogs.tsx`, keeping Agent setup, Project dialog, and delete confirmation modal composition out of `App.tsx`.
 - Agent setup save state now lives in `src/services/agentSetupState.ts`, covering add/edit/deduplicate/chief-normalization behavior while keeping provider credentials in the local trusted payload and out of UI state.
 - Project setup save/delete state now lives in `src/services/projectSetupState.ts`, covering project validation, create/update state, delete eligibility, and project-scoped cleanup of conversations, messages, runs, tasks, and artifacts.
 - Project setup control now lives in `src/services/projectSetupController.ts`, keeping project create/update/delete submission, selected-project fallback, and project-scoped workspace cleanup out of `App.tsx`.
