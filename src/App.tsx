@@ -234,10 +234,13 @@ export function App() {
       )
       .map((conversation) => {
         const conversationMessages = messages.filter((message) => message.conversationId === conversation.id);
+        const contextMessages = buildFreeChatContext(messages, conversation.id);
         const firstUserMessage = conversationMessages.find((message) => message.role === "user");
         return {
           conversation,
           messageCount: conversationMessages.length,
+          contextMessageCount: contextMessages.length,
+          estimatedContextTokens: estimateChatContextTokens(contextMessages),
           title: firstUserMessage ? getPartText(firstUserMessage.contentParts) : conversation.title,
         };
       })
@@ -2616,6 +2619,12 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatCompactNumber(value: number) {
+  if (value < 1000) return `${value}`;
+  if (value < 10000) return `${(value / 1000).toFixed(1)}k`;
+  return `${Math.round(value / 1000)}k`;
+}
+
 function formatWorkspacePath(result: WorkspaceFileListResult | null) {
   if (!result) return "Root";
   if (!result.path) return result.rootName || "Root";
@@ -2690,6 +2699,8 @@ function FreeChatHistoryPanel({
   histories: Array<{
     conversation: Conversation;
     messageCount: number;
+    contextMessageCount: number;
+    estimatedContextTokens: number;
     title: string;
   }>;
 }) {
@@ -2712,7 +2723,9 @@ function FreeChatHistoryPanel({
               key={item.conversation.id}
             >
               <strong>{item.title}</strong>
-              <span>{item.messageCount} messages</span>
+              <span>
+                {item.messageCount} msgs · {item.contextMessageCount} ctx · ~{formatCompactNumber(item.estimatedContextTokens)} tok
+              </span>
             </div>
           ))
         ) : (
@@ -2772,6 +2785,18 @@ function buildFreeChatContext(messages: ConversationMessage[], conversationId: s
       content: getPartText(message.contentParts),
     }))
     .filter((message) => message.content.trim().length > 0);
+}
+
+function estimateChatContextTokens(messages: Array<{ content: string }>) {
+  return messages.reduce((total, message) => total + estimateTextTokens(message.content) + 4, 0);
+}
+
+function estimateTextTokens(text: string) {
+  const cjkMatches = text.match(/[\u3400-\u9fff\uf900-\ufaff]/g);
+  const cjkCount = cjkMatches?.length ?? 0;
+  const nonCjkText = text.replace(/[\u3400-\u9fff\uf900-\ufaff]/g, "");
+  const nonWhitespaceCount = nonCjkText.replace(/\s+/g, "").length;
+  return Math.max(1, Math.ceil(cjkCount + nonWhitespaceCount / 4));
 }
 
 function getUserFacingAgentError(error: unknown) {
