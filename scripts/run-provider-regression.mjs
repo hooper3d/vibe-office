@@ -2,6 +2,7 @@ const appUrl = normalizeBaseUrl(process.env.VIBE_OFFICE_URL || "http://127.0.0.1
 const defaultTimeoutMs = readNumber(process.env.VIBE_M9_REQUEST_TIMEOUT_MS, 45_000);
 const forcedTimeoutMs = readNumber(process.env.VIBE_M9_FORCED_TIMEOUT_MS, 1);
 const cliArgs = new Set(process.argv.slice(2));
+const createdProviderIds = new Set();
 const m9Targets = [
   {
     label: "Hermes",
@@ -67,6 +68,8 @@ console.log("\n[M9] Provider regression summary");
 for (const result of results) {
   console.log(`  ${result.ok ? "PASS" : "FAIL"} ${result.provider} / ${result.check}${result.detail ? ` - ${result.detail}` : ""}`);
 }
+
+await cleanupCreatedProviders();
 
 if (failed.length > 0) {
   process.exit(1);
@@ -210,6 +213,19 @@ async function upsertProvider(provider) {
       status: "online",
     },
   });
+  createdProviderIds.add(provider.id);
+}
+
+async function cleanupCreatedProviders() {
+  if (createdProviderIds.size === 0) return;
+
+  for (const agentId of createdProviderIds) {
+    try {
+      await postJson(`${appUrl}/agent-local/agents/delete`, { agentId }, defaultTimeoutMs);
+    } catch (error) {
+      console.warn(`Unable to clean up generated provider ${agentId}: ${sanitizeError(error)}`);
+    }
+  }
 }
 
 async function assertExistingProviderReady(provider) {
