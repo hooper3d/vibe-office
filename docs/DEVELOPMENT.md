@@ -296,11 +296,11 @@ Health fallback is not discovery. It may only confirm whether a manually configu
 
 ## Milestones
 
-### Current Recorded Milestone: M2.5 Workspace File Layer Prototype
+### Current Recorded Milestone: M4 Chief-led Task Room Prototype
 
-Status: recorded on 2026-06-18.
+Status: completed on 2026-06-18.
 
-The prototype has reached a usable local workspace file baseline. A Project directory is no longer only a registry reference: Vibe Office can list, search, and preview files through a local trusted layer, then attach explicitly selected file content to Direct Chat.
+The prototype now has a real Chief-led Task Room workflow. A selected Chief can receive a project-scoped task, Vibe Office can delegate one round of work to user-selected participant agents, participant results are collected as artifacts, and the Chief returns a final aggregation.
 
 Validated in browser:
 
@@ -308,7 +308,12 @@ Validated in browser:
 - Direct Chat can send to a selected real agent and render the user message plus agent reply in the center conversation.
 - The Workspace tab can list real project files, navigate folders, search text, preview files, and attach selected file context.
 - The Browser surface is separated into its own right-panel tab.
-- The Tasks tab focuses on real task/activity records instead of completed direct-message noise.
+- Task Room requires a Chief and at least one selected participant before dispatch.
+- Task Room creates parent `chief_delegation` runs and ProjectTask records.
+- Chief receives the first planning request with the selected participant list.
+- Vibe Office delegates one A2A task to each selected participant.
+- Participant results and Chief summary are stored as project-scoped text artifacts.
+- The Tasks tab shows per-agent task-room events inside the run card.
 - Switching Project hides conversation and output records from other Projects.
 - Refresh restores configured agents, projects, conversations, runs, tasks, and artifacts.
 - Agent profile management supports avatar upload, role selection, capability tags, notes, host/IP, runtime settings, delete, and edit-from-sidebar.
@@ -321,10 +326,11 @@ Important boundary:
 - Full file bodies are not persisted in localStorage; conversation history stores lightweight file references.
 - API keys are still prototype-only browser localStorage secrets.
 - A packaged release still needs native folder permission handling and secure local credential storage.
+- Chief-led Task Room is intentionally one-round in v0.1: one Chief plan, one delegated task per selected participant, and one Chief aggregation.
 
 Next milestone:
 
-- M4 Chief-led Task Room foundation: make Task Room a real project-scoped workflow surface with Chief selection, participant selection, parent task/run records, and explicit context boundaries.
+- M5 Artifact Viewer: make generated artifacts inspectable, copyable, and exportable while preserving Project Scope and credential safety.
 
 ### Milestone 0: Real Agent Onboarding
 
@@ -439,24 +445,32 @@ Acceptance:
 
 ### Milestone 4: Chief-led Task Room
 
+Status: completed on 2026-06-18.
+
 Goal:
 
 Task Room becomes real multi-agent coordination.
 
-M4 foundation progress:
+Completed:
 
 - Task Room composer can submit a project-scoped task request to the selected Chief agent.
 - Users can choose online participant agents before dispatch.
 - Vibe Office creates parent `chief_delegation` runs and ProjectTask records before the remote Chief response returns.
 - Chief responses are stored in a project-scoped task-room conversation.
+- Chief receives the selected participant list and returns a first-round plan.
+- Vibe Office sends one delegated A2A task to each selected participant.
+- Participant results are stored as project-scoped text artifacts.
+- Chief receives the participant results and returns one final aggregation.
+- Chief summary is stored as a project-scoped text artifact.
+- The Tasks tab shows per-agent task-room events inside the visible run card.
 - Workspace file context still follows the explicit preview-and-attach boundary from M2.5.
 
 Scope:
 
 - Chief receives the user's task.
 - User can manually override participants before dispatch.
-- Chief decides participant agents.
-- Chief sends delegated A2A tasks.
+- Chief plans work for the selected participant agents.
+- Vibe Office sends delegated A2A tasks to selected participants.
 - Task events show per-agent progress.
 - Results are collected into project artifacts.
 - No autonomous long-running multi-step planning in v0.1.
@@ -464,7 +478,7 @@ Scope:
 Chief-led Task Room v0.1 Boundary:
 
 - Chief can perform only one planning round.
-- Chief can delegate only one task per selected participant.
+- Vibe Office delegates only one task per selected participant after the Chief plan.
 - Participant agents do not recursively delegate.
 - Chief aggregates results once.
 - User can manually override participants before dispatch.
