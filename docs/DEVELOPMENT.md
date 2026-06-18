@@ -753,6 +753,7 @@ Implementation progress:
 - Sidebar agent rows now surface existing provider setup issues with a lightweight warning indicator, so historical mismatches are visible before chat or M9 regression.
 - Local trusted agent status now reports safe `registered` and `hasCredential` diagnostics, and Add/Edit Agent shows local registry and API key readiness without exposing credentials.
 - Add/Edit Agent now reuses the same setup agent id for connection testing and saving, then refreshes local trusted readiness immediately after a test writes provider metadata.
+- Agent connection testing now lives in `src/services/agentConnectionTestState.ts`, so App only applies UI state while the service owns setup validation, local trusted credential persistence, stripped-agent provider testing, and compatibility metadata creation.
 - Agent avatar file validation and data URL conversion now lives in `src/services/avatarFile.ts`, keeping `App.tsx` focused on state orchestration instead of file-reading details.
 - Split-pane pointer and keyboard resize calculations now live in `src/services/splitPaneState.ts`, keeping App focused on event wiring instead of UI math.
 - Local trusted registry regression coverage now verifies that metadata refreshes from the UI cannot erase a previously saved provider credential.

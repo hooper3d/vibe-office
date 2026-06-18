@@ -28,6 +28,7 @@ import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStor
 import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { readAvatarFile } from "./services/avatarFile";
+import { runAgentConnectionTest } from "./services/agentConnectionTestState";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import {
   applyAgentAvatarUpdate,
@@ -61,14 +62,11 @@ import {
   type DirectRequestResult,
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
-import { HermesA2AAdapter } from "./services/hermesA2AAdapter";
 import {
   deleteLocalTrustedAgent,
   getLocalTrustedAgentStatuses,
-  stripAgentCredential,
   upsertLocalTrustedAgent,
 } from "./services/localTrustedAgentRegistry";
-import { createA2ACompatibilityMetadata } from "./services/providerTypes";
 import { useProjectDialogState } from "./services/projectDialogState";
 import {
   applyMissingProjectSelection,
@@ -586,23 +584,16 @@ export function App() {
   async function runConnectionTest(form: FormData) {
     agentSetup.markConnectionRunning();
 
-    try {
-      const agent = createAgentFromHermesSetup(form, { id: activeSetupAgentId || undefined });
-      const setupIssue = getProviderSetupIssue(agent);
-      if (setupIssue) {
-        agentSetup.markConnectionFailed(setupIssue);
-        return;
-      }
-      if (!(await persistLocalTrustedAgent(agent))) return;
-      await refreshLocalTrustedAgentIssues([agent.id]);
-      const result = await new HermesA2AAdapter({ agent: stripAgentCredential(agent) }).testConnection();
+    const result = await runAgentConnectionTest({
+      form,
+      agentId: activeSetupAgentId || undefined,
+      onAgentPersisted: (agent) => refreshLocalTrustedAgentIssues([agent.id]),
+    });
 
-      agentSetup.markConnectionPassed(
-        createA2ACompatibilityMetadata(result),
-        `${result.card.name || agent.name} provider connection verified.`,
-      );
-    } catch (error) {
-      agentSetup.markConnectionFailed(getUserFacingAgentError(error));
+    if (result.status === "passed") {
+      agentSetup.markConnectionPassed(result.metadata, result.message);
+    } else {
+      agentSetup.markConnectionFailed(result.message);
     }
   }
 

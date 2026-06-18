@@ -8,6 +8,7 @@ import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, Pr
 import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "../domain/hermesSetup";
+import { runAgentConnectionTest } from "../services/agentConnectionTestState";
 import { applyMediaArtifactBackfillState } from "../services/artifactBackfillState";
 import { readAvatarFile } from "../services/avatarFile";
 import { resolveComposerSubmissionIntent } from "../services/composerSubmissionState";
@@ -762,6 +763,65 @@ test("agent setup form parsing keeps a stable setup id across test and save", ()
   assert.equal(saveResult.trustedAgent.apiKey, "local-trusted-secret");
   assert.equal(saveResult.agents[1].id, "agent-draft-stable");
   assert.equal(saveResult.agents[1].apiKey, undefined);
+});
+
+test("agent connection test persists credentials but tests with a stripped agent", async () => {
+  const form = new FormData();
+  form.set("name", "DeepSeek");
+  form.set("officeRole", "operator");
+  form.set("role", "browser / planning");
+  form.set("runtimeProvider", "openai");
+  form.set("endpoint", "https://api.deepseek.com/v1");
+  form.set("model", "deepseek-chat");
+  form.set("apiKey", "local-trusted-secret");
+
+  let persistedAgent: AgentInstance | undefined;
+  let refreshedAgentId = "";
+  let testedAgent: AgentInstance | undefined;
+
+  const result = await runAgentConnectionTest({
+    form,
+    agentId: "agent-connection-test",
+    async persistAgent(agentToPersist) {
+      persistedAgent = agentToPersist;
+    },
+    async onAgentPersisted(agentToRefresh) {
+      refreshedAgentId = agentToRefresh.id;
+    },
+    createAdapter(agentToTest) {
+      testedAgent = agentToTest;
+      return {
+        async testConnection() {
+          return {
+            mode: "openai-compatible",
+            card: {
+              name: "DeepSeek",
+              description: "OpenAI-compatible provider",
+              url: "https://api.deepseek.com/v1",
+              version: "0.1.0",
+              protocolVersion: "1.0",
+              capabilities: {
+                streaming: false,
+                pushNotifications: false,
+                stateTransitionHistory: true,
+              },
+              skills: [],
+            },
+          };
+        },
+      };
+    },
+  });
+
+  assert.equal(result.status, "passed");
+  assert.equal(result.agent.id, "agent-connection-test");
+  assert.equal(result.metadata.a2aTransportBinding, "openai-compatible-http");
+  assert.equal(result.message, "DeepSeek provider connection verified.");
+  assert.ok(persistedAgent);
+  assert.equal(persistedAgent.apiKey, "local-trusted-secret");
+  assert.equal(refreshedAgentId, "agent-connection-test");
+  assert.ok(testedAgent);
+  assert.equal(testedAgent.apiKey, undefined);
 });
 
 test("agent setup save keeps credentials in the trusted payload and out of UI state", () => {
