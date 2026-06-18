@@ -66,13 +66,15 @@ import {
 } from "./services/requestSubmissionState";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import {
-  applyTaskLifecycleRemoteUpdate,
+  applyTaskLifecycleWorkspaceUpdate,
+  isTaskLifecyclePollable,
+  resolveTaskLifecycleRequest,
+  resolveTaskRetryRequest,
+} from "./services/taskLifecycleRequestState";
+import {
   failTaskRetry,
   getRemoteTaskWorkState,
   getTaskEventDisplayLabel,
-  getTaskLifecycleAddress,
-  hasLifecycleUnsupportedEvent,
-  isTaskActive,
   isTaskTerminal,
   prepareTaskRetrySubmitting,
   recordCancelUnsupportedState,
@@ -393,10 +395,7 @@ export function App() {
   useEffect(() => {
     if (!selectedWorkspaceProject) return;
     const pollableTasks = scopedTasks.filter(
-      (task) =>
-        isTaskActive(task.state) &&
-        Boolean(getTaskLifecycleAddress(task, scopedRuns)) &&
-        !hasLifecycleUnsupportedEvent(task),
+      (task) => isTaskLifecyclePollable({ runs: scopedRuns, task }),
     );
     if (pollableTasks.length === 0) return;
 
@@ -414,87 +413,79 @@ export function App() {
   }
 
   async function refreshTaskLifecycle(taskId: string, options: { silent?: boolean } = {}) {
-    const task = tasks.find((item) => item.id === taskId);
-    if (!task) return;
-    const address = getTaskLifecycleAddress(task, runs);
-    if (!address) {
-      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote task.");
-      return;
-    }
-
-    const owner = agents.find((agent) => agent.id === task.ownerAgentId);
-    if (!owner) {
-      recordLifecycleUnsupported(task, "Task owner is no longer connected.");
+    const request = resolveTaskLifecycleRequest({ agents, runs, taskId, tasks });
+    if (request.kind === "ignore") return;
+    if (request.kind === "unsupported") {
+      recordLifecycleUnsupported(request.task, request.reason);
       return;
     }
 
     if (!options.silent) setTaskLifecycleBusyId(`refresh:${taskId}`);
 
     try {
-      const remoteTask = await refreshRemoteTaskLifecycle({ agent: owner, address });
-      applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task status refreshed.");
+      const remoteTask = await refreshRemoteTaskLifecycle({ agent: request.owner, address: request.address });
+      applyLifecycleTaskUpdate(request.task, remoteTask, request.owner.id, "Task status refreshed.");
     } catch (error) {
-      recordLifecycleUnsupported(task, getUserFacingAgentError(error));
+      recordLifecycleUnsupported(request.task, getUserFacingAgentError(error));
     } finally {
       if (!options.silent) setTaskLifecycleBusyId("");
     }
   }
 
   async function cancelTaskLifecycle(taskId: string) {
-    const task = tasks.find((item) => item.id === taskId);
-    if (!task) return;
-    const address = getTaskLifecycleAddress(task, runs);
-    if (!address) {
-      recordLifecycleUnsupported(task, "This task was created by local orchestration and is not linked to a remote task.");
-      return;
-    }
-
-    const owner = agents.find((agent) => agent.id === task.ownerAgentId);
-    if (!owner) {
-      recordLifecycleUnsupported(task, "Task owner is no longer connected.");
+    const request = resolveTaskLifecycleRequest({ agents, runs, taskId, tasks });
+    if (request.kind === "ignore") return;
+    if (request.kind === "unsupported") {
+      recordLifecycleUnsupported(request.task, request.reason);
       return;
     }
 
     setTaskLifecycleBusyId(`cancel:${taskId}`);
     try {
-      const remoteTask = await cancelRemoteTaskLifecycle({ agent: owner, address });
-      applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task cancel requested.");
+      const remoteTask = await cancelRemoteTaskLifecycle({ agent: request.owner, address: request.address });
+      applyLifecycleTaskUpdate(request.task, remoteTask, request.owner.id, "Task cancel requested.");
     } catch (error) {
-      recordCancelUnsupported(task, getUserFacingAgentError(error));
+      recordCancelUnsupported(request.task, getUserFacingAgentError(error));
     } finally {
       setTaskLifecycleBusyId("");
     }
   }
 
   async function retryTaskLifecycle(taskId: string) {
-    const task = tasks.find((item) => item.id === taskId);
-    if (!task) return false;
-    const taskProject = projects.find((project) => project.id === task.projectId);
-    if (!taskProject) return false;
-
-    const owner = agents.find((agent) => agent.id === task.ownerAgentId);
-    if (!owner) {
-      recordLifecycleUnsupported(task, "Task owner is no longer connected.");
+    const request = resolveTaskRetryRequest({ agents, projects, taskId, tasks });
+    if (request.kind === "ignore") return false;
+    if (request.kind === "unsupported") {
+      recordLifecycleUnsupported(request.task, request.reason);
       return false;
     }
 
     const retryAt = new Date().toISOString();
     setTaskLifecycleBusyId(`retry:${taskId}`);
-    setTasks((current) => prepareTaskRetrySubmitting({ tasks: current, task, ownerAgentId: owner.id, retryAt }));
+    setTasks((current) =>
+      prepareTaskRetrySubmitting({ tasks: current, task: request.task, ownerAgentId: request.owner.id, retryAt }),
+    );
 
     try {
       const remoteTask = await retryRemoteProjectTask({
-        agent: owner,
-        project: taskProject,
-        taskTitle: task.title,
-        previousFailure: task.summary,
+        agent: request.owner,
+        project: request.project,
+        taskTitle: request.task.title,
+        previousFailure: request.task.summary,
       });
-      applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Retry returned a task update.");
+      applyLifecycleTaskUpdate(request.task, remoteTask, request.owner.id, "Retry returned a task update.");
       return getRemoteTaskWorkState(remoteTask) !== "failed";
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorText = getUserFacingAgentError(error);
-      setTasks((current) => failTaskRetry({ tasks: current, task, ownerAgentId: owner.id, errorText, failedAt }));
+      setTasks((current) =>
+        failTaskRetry({
+          tasks: current,
+          task: request.task,
+          ownerAgentId: request.owner.id,
+          errorText,
+          failedAt,
+        }),
+      );
       return false;
     } finally {
       setTaskLifecycleBusyId("");
@@ -503,7 +494,7 @@ export function App() {
 
   function applyLifecycleTaskUpdate(task: ProjectTask, remoteTask: A2ATask, agentId: string, label: string) {
     const snapshot = requestStoreRef.current.snapshot();
-    const nextState = applyTaskLifecycleRemoteUpdate({
+    const nextState = applyTaskLifecycleWorkspaceUpdate({
       state: {
         artifacts: snapshot.artifacts,
         runs: snapshot.runs,

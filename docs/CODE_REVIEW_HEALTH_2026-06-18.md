@@ -23,7 +23,7 @@ npm run regression:providers:list
 
 Current service test coverage:
 
-- 38 service-level tests pass.
+- 39 service-level tests pass.
 - Browser smoke passes.
 - Build passes after including `localTrusted` in TypeScript checking.
 
@@ -72,13 +72,14 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 1379 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, Free Chat selection helpers, Task lifecycle state reducers, Output Area selectors, request submission state helpers, composer submission intent routing, retry submission state helpers, pending recovery submission helpers, artifact backfill state, and centralizing request workspace state application.
+- `src/App.tsx` is still about 1370 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, Free Chat selection helpers, Task lifecycle state reducers, Task lifecycle request resolution, Output Area selectors, request submission state helpers, composer submission intent routing, retry submission state helpers, pending recovery submission helpers, artifact backfill state, and centralizing request workspace state application.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
 - The new `src/components/OutputPanel.tsx` centralizes Free Chat history, project output tabs, Browser preview, grouped Outputs, and no-project right-panel state.
 - The new `src/services/agentSetupState.ts` centralizes add/edit/deduplicate/chief-normalization behavior and keeps credential-bearing payloads separate from UI agent state.
 - The new `src/services/projectSetupState.ts` centralizes Project validation, create/update state, delete eligibility, and project-scoped cleanup of conversations, messages, runs, tasks, and artifacts.
 - The new `src/services/conversationSelectionState.ts` centralizes Free Chat history sorting, title derivation, active conversation mapping, current direct-conversation resolution, and empty-chat reuse checks.
 - The new `src/services/taskLifecycleState.ts` centralizes remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
+- The new `src/services/taskLifecycleRequestState.ts` centralizes task lifecycle request resolution, retry context lookup, pollable task checks, and workspace task/run/artifact update application.
 - The new `src/services/outputSelectors.ts` centralizes Output Area run/task/artifact visibility, agent filtering, and output counts.
 - The new `src/services/requestSubmissionState.ts` centralizes optimistic Free Chat, Project Direct Chat, and Task Room submission state creation before remote provider execution.
 - The new `src/services/composerSubmissionState.ts` centralizes the composer entry routing for Free Chat, Project Chat, Task Room, and ignored submission states.
@@ -194,7 +195,7 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 38 tests pass. |
+| Service tests | Good | 39 tests pass. |
 | Browser smoke | Good | Smoke passes. |
 | Credential safety | Improved | P0 fixed and committed; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |

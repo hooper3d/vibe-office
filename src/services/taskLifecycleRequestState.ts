@@ -1,0 +1,140 @@
+import type { A2ATask } from "../domain/a2a";
+import type { ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
+import type { AgentInstance, Project } from "../domain/types";
+import {
+  applyTaskLifecycleRemoteUpdate,
+  getTaskLifecycleAddress,
+  hasLifecycleUnsupportedEvent,
+  isTaskActive,
+} from "./taskLifecycleState";
+
+export type TaskLifecycleWorkspaceState = {
+  artifacts: ProjectArtifact[];
+  runs: ProjectRun[];
+  tasks: ProjectTask[];
+};
+
+export type TaskLifecycleRequestResolution =
+  | {
+      kind: "ready";
+      task: ProjectTask;
+      owner: AgentInstance;
+      address: NonNullable<ReturnType<typeof getTaskLifecycleAddress>>;
+    }
+  | {
+      kind: "unsupported";
+      task: ProjectTask;
+      reason: string;
+    }
+  | {
+      kind: "ignore";
+    };
+
+export type TaskRetryRequestResolution =
+  | {
+      kind: "ready";
+      task: ProjectTask;
+      owner: AgentInstance;
+      project: Project;
+    }
+  | {
+      kind: "unsupported";
+      task: ProjectTask;
+      reason: string;
+    }
+  | {
+      kind: "ignore";
+    };
+
+export function resolveTaskLifecycleRequest({
+  agents,
+  runs,
+  taskId,
+  tasks,
+}: {
+  agents: AgentInstance[];
+  runs: ProjectRun[];
+  taskId: string;
+  tasks: ProjectTask[];
+}): TaskLifecycleRequestResolution {
+  const task = tasks.find((item) => item.id === taskId);
+  if (!task) return { kind: "ignore" };
+
+  const address = getTaskLifecycleAddress(task, runs);
+  if (!address) {
+    return {
+      kind: "unsupported",
+      task,
+      reason: "This task was created by local orchestration and is not linked to a remote task.",
+    };
+  }
+
+  const owner = agents.find((agent) => agent.id === task.ownerAgentId);
+  if (!owner) {
+    return {
+      kind: "unsupported",
+      task,
+      reason: "Task owner is no longer connected.",
+    };
+  }
+
+  return { kind: "ready", task, owner, address };
+}
+
+export function resolveTaskRetryRequest({
+  agents,
+  projects,
+  taskId,
+  tasks,
+}: {
+  agents: AgentInstance[];
+  projects: Project[];
+  taskId: string;
+  tasks: ProjectTask[];
+}): TaskRetryRequestResolution {
+  const task = tasks.find((item) => item.id === taskId);
+  if (!task) return { kind: "ignore" };
+
+  const project = projects.find((item) => item.id === task.projectId);
+  if (!project) return { kind: "ignore" };
+
+  const owner = agents.find((agent) => agent.id === task.ownerAgentId);
+  if (!owner) {
+    return {
+      kind: "unsupported",
+      task,
+      reason: "Task owner is no longer connected.",
+    };
+  }
+
+  return { kind: "ready", task, owner, project };
+}
+
+export function isTaskLifecyclePollable({ runs, task }: { runs: ProjectRun[]; task: ProjectTask }) {
+  return isTaskActive(task.state) && Boolean(getTaskLifecycleAddress(task, runs)) && !hasLifecycleUnsupportedEvent(task);
+}
+
+export function applyTaskLifecycleWorkspaceUpdate({
+  agentId,
+  label,
+  now,
+  remoteTask,
+  state,
+  task,
+}: {
+  agentId: string;
+  label: string;
+  now: () => string;
+  remoteTask: A2ATask;
+  state: TaskLifecycleWorkspaceState;
+  task: ProjectTask;
+}): TaskLifecycleWorkspaceState {
+  return applyTaskLifecycleRemoteUpdate({
+    state,
+    task,
+    remoteTask,
+    agentId,
+    label,
+    now,
+  });
+}

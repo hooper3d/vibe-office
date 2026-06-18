@@ -83,7 +83,12 @@ import {
 } from "../services/outputSelectors";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import {
-  applyTaskLifecycleRemoteUpdate,
+  applyTaskLifecycleWorkspaceUpdate,
+  isTaskLifecyclePollable,
+  resolveTaskLifecycleRequest,
+  resolveTaskRetryRequest,
+} from "../services/taskLifecycleRequestState";
+import {
   failTaskRetry,
   getTaskLifecycleAddress,
   prepareTaskRetrySubmitting,
@@ -975,7 +980,7 @@ test("task lifecycle reducer syncs remote task updates into tasks, runs, and art
   const localTask = task({ remoteTaskId: "remote-task-2", remoteContextId: "remote-context", summary: "Old summary." });
   const localRun = run({ state: "working", artifactIds: ["existing-artifact"] });
 
-  const next = applyTaskLifecycleRemoteUpdate({
+  const next = applyTaskLifecycleWorkspaceUpdate({
     state: {
       artifacts: [],
       runs: [localRun],
@@ -997,6 +1002,65 @@ test("task lifecycle reducer syncs remote task updates into tasks, runs, and art
   assert.deepEqual(next.runs[0].artifactIds, ["existing-artifact", "artifact-remote"]);
   assert.equal(next.artifacts[0].id, "artifact-remote");
   assert.equal(next.artifacts[0].summary, "Returned artifact.");
+});
+
+test("task lifecycle request state resolves ready, unsupported, and retry contexts", () => {
+  const remoteTask = task({ remoteTaskId: "remote-task-1", remoteContextId: "remote-context-1" });
+  const lifecycleReady = resolveTaskLifecycleRequest({
+    agents: [agent],
+    runs: [],
+    taskId: remoteTask.id,
+    tasks: [remoteTask],
+  });
+  assert.equal(lifecycleReady.kind, "ready");
+  if (lifecycleReady.kind === "ready") {
+    assert.equal(lifecycleReady.owner.id, agent.id);
+    assert.deepEqual(lifecycleReady.address, { taskId: "remote-task-1", contextId: "remote-context-1" });
+  }
+
+  const localTask = task({ id: "local-task" });
+  const lifecycleUnsupported = resolveTaskLifecycleRequest({
+    agents: [agent],
+    runs: [],
+    taskId: localTask.id,
+    tasks: [localTask],
+  });
+  assert.equal(lifecycleUnsupported.kind, "unsupported");
+  if (lifecycleUnsupported.kind === "unsupported") {
+    assert.match(lifecycleUnsupported.reason, /not linked to a remote task/);
+  }
+
+  const lifecycleMissingOwner = resolveTaskLifecycleRequest({
+    agents: [],
+    runs: [],
+    taskId: remoteTask.id,
+    tasks: [remoteTask],
+  });
+  assert.equal(lifecycleMissingOwner.kind, "unsupported");
+  if (lifecycleMissingOwner.kind === "unsupported") {
+    assert.match(lifecycleMissingOwner.reason, /owner is no longer connected/);
+  }
+
+  assert.equal(
+    resolveTaskLifecycleRequest({ agents: [agent], runs: [], taskId: "missing-task", tasks: [remoteTask] }).kind,
+    "ignore",
+  );
+
+  const retryReady = resolveTaskRetryRequest({
+    agents: [agent],
+    projects: [project],
+    taskId: localTask.id,
+    tasks: [localTask],
+  });
+  assert.equal(retryReady.kind, "ready");
+  if (retryReady.kind === "ready") {
+    assert.equal(retryReady.project.id, project.id);
+    assert.equal(retryReady.owner.id, agent.id);
+  }
+
+  assert.equal(isTaskLifecyclePollable({ runs: [run({ type: "direct_message", taskId: localTask.id })], task: localTask }), true);
+  assert.equal(isTaskLifecyclePollable({ runs: [], task: localTask }), false);
+  assert.equal(isTaskLifecyclePollable({ runs: [run({ type: "direct_message" })], task: task({ state: "completed" }) }), false);
 });
 
 test("task lifecycle helpers preserve unsupported and retry states", () => {

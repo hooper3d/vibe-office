@@ -774,6 +774,7 @@ Acceptance:
 - Project setup save/delete state now lives in `src/services/projectSetupState.ts`, covering project validation, create/update state, delete eligibility, and project-scoped cleanup of conversations, messages, runs, tasks, and artifacts.
 - Free Chat history and current direct-conversation selection now live in `src/services/conversationSelectionState.ts`, keeping per-agent history sorting, title derivation, active conversation maps, and empty-chat reuse out of `App.tsx`.
 - Task lifecycle state now lives in `src/services/taskLifecycleState.ts`, covering remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
+- Task lifecycle request resolution now lives in `src/services/taskLifecycleRequestState.ts`, covering refresh/cancel readiness, retry context lookup, pollable task checks, and workspace update application.
 - Output Area selection rules now live in `src/services/outputSelectors.ts`, keeping run/task/artifact visibility, agent filtering, and output counts out of the rendering components.
 - Request submission state now lives in `src/services/requestSubmissionState.ts`, covering optimistic Free Chat, Project Direct Chat, and Task Room conversation/message/run/task creation before remote provider execution.
 - Composer submission routing now lives in `src/services/composerSubmissionState.ts`, keeping Free Chat, Project Chat, Task Room, busy, empty, and missing-target entry decisions out of `App.tsx`.
