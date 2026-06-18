@@ -813,6 +813,7 @@ Acceptance:
 - Composer control now lives in `src/services/composerController.ts`, keeping submit intent resolution, busy-state guarding, and Free Chat / Project Chat / Task Room dispatch out of `App.tsx`.
 - Workspace chrome control now lives in `src/services/workspaceChromeController.ts`, keeping Browser preview submission and split-pane pointer/keyboard resizing out of `App.tsx`.
 - App synchronization control now lives in `src/services/appSyncController.ts`, keeping runtime-store sync, configured-agent sync, local trusted readiness refresh, UI/workspace persistence, theme persistence, and workspace-attachment reset out of `App.tsx`.
+- Pending request recovery control now lives in `src/services/pendingRecoveryController.ts`, keeping interrupted Free Chat / Project Chat recovery after refresh or app interruption out of `App.tsx`.
 - Free Chat history and current direct-conversation selection now live in `src/services/conversationSelectionState.ts`, keeping per-agent history sorting, title derivation, active conversation maps, and empty-chat reuse out of `App.tsx`.
 - Task lifecycle state now lives in `src/services/taskLifecycleState.ts`, covering remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
 - Task lifecycle request resolution now lives in `src/services/taskLifecycleRequestState.ts`, covering refresh/cancel readiness, retry context lookup, pollable task checks, and workspace update application.

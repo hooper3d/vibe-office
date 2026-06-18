@@ -46,7 +46,7 @@ import {
   normalizeConversationModeForScope,
 } from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
-import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
+import { usePendingRecoveryController } from "./services/pendingRecoveryController";
 import {
   createRequestRuntimeStore,
   type RequestWorkspaceState,
@@ -335,6 +335,17 @@ export function App() {
     setPreviewUrl,
     setSplitPercent,
   });
+  usePendingRecoveryController({
+    agents,
+    applyRequestWorkspaceState,
+    completeFreeChatRequest: directChatController.completeFreeChatRequest,
+    conversations,
+    freeChatProjectId: FREE_CHAT_PROJECT_ID,
+    messages,
+    projects,
+    requestStore: requestStoreRef.current,
+    resumeProjectDirectRequest: directChatController.resumeProjectDirectRequest,
+  });
   useAppSyncController({
     activeFreeChatConversationIds,
     agents,
@@ -381,47 +392,6 @@ export function App() {
     if (nextSelection.chatScope !== chatScope) setChatScope(nextSelection.chatScope);
     if (nextSelection.conversationMode !== conversationMode) setConversationMode(nextSelection.conversationMode);
   }, [chatScope, conversationMode, projects, selectedProjectId]);
-
-  useEffect(() => {
-    const submission = getNextPendingRecoverySubmission({
-      activeRequestIds: requestStoreRef.current.activeRequestIds(),
-      agents,
-      freeChatProjectId: FREE_CHAT_PROJECT_ID,
-      projects,
-      state: requestStoreRef.current.snapshot(),
-    });
-    if (submission.kind === "none") return;
-
-    if (submission.kind === "fail") {
-      applyRequestWorkspaceState(submission.state);
-      return;
-    }
-
-    const trackedRequestId = requestStoreRef.current.begin(submission.message);
-    applyRequestWorkspaceState(submission.state);
-
-    if (submission.recovery.kind === "free-chat") {
-      void directChatController.completeFreeChatRequest({
-        conversation: submission.recovery.conversation,
-        targetAgent: submission.recovery.targetAgent,
-        userMessageId: submission.message.id,
-        text: submission.recovery.text,
-      }).finally(() => {
-        requestStoreRef.current.end(trackedRequestId);
-      });
-      return;
-    }
-
-    void directChatController.resumeProjectDirectRequest({
-      message: submission.message,
-      conversation: submission.recovery.conversation,
-      project: submission.recovery.project,
-      targetAgent: submission.recovery.targetAgent,
-      text: submission.recovery.text,
-    }).finally(() => {
-      requestStoreRef.current.end(trackedRequestId);
-    });
-  }, [agents, conversations, messages, projects]);
 
   useEffect(() => {
     const backfilled = applyMediaArtifactBackfillState(requestStoreRef.current.snapshot());
