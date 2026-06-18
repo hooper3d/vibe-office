@@ -732,6 +732,8 @@ Implementation progress:
 - Shared local trusted JSON parsing, JSON/binary responses, safe error text, and provider HTTP forwarding now live in `localTrusted/http.ts`, keeping `localTrusted/vitePlugin.ts` focused on route registration.
 - Local trusted agent registry updates are now serialized and written through a temporary file before replacement, preventing concurrent upsert/delete requests from corrupting the local provider registry during browser smoke cleanup or rapid agent edits.
 - Local trusted agent registry now preserves non-sensitive display names so provider diagnostics can identify registered agents without exposing credentials.
+- Local trusted credential storage has been split out of the agent registry into `localTrusted/credentialStore.ts`; the registry file now stores provider metadata only, while credentials are read separately and hydrated inside the trusted layer.
+- Browser smoke now verifies that the local trusted agent registry remains valid JSON and does not contain `apiKey` fields after agent upsert/delete cleanup.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
 - M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.
 - M9 provider regression harness started.

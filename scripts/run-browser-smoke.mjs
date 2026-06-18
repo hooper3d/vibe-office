@@ -32,7 +32,7 @@ try {
   await cleanupSmokeAgents().catch((error) => {
     console.warn(`Unable to clean up smoke agents: ${error instanceof Error ? error.message : String(error)}`);
   });
-  await assertLocalTrustedRegistryJson();
+  await assertLocalTrustedRegistryBoundary();
   await browser.close();
 }
 
@@ -859,8 +859,9 @@ async function cleanupSmokeAgents() {
   );
 }
 
-async function assertLocalTrustedRegistryJson() {
+async function assertLocalTrustedRegistryBoundary() {
   const registryPath = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
+  const credentialPath = path.join(os.homedir(), ".vibe-office", "agent-credentials.local.json");
   let raw = "";
   try {
     raw = await readFile(registryPath, "utf8");
@@ -872,6 +873,16 @@ async function assertLocalTrustedRegistryJson() {
     JSON.parse(raw);
   } catch {
     throw new Error("Local trusted agent registry must remain valid JSON after browser smoke cleanup.");
+  }
+  if (raw.includes('"apiKey"')) {
+    throw new Error("Local trusted agent registry must not store API keys.");
+  }
+
+  try {
+    JSON.parse(await readFile(credentialPath, "utf8"));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
+    throw new Error("Local trusted credential store must remain valid JSON after browser smoke cleanup.");
   }
 }
 

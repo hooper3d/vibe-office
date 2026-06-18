@@ -43,7 +43,7 @@ VIBE_M9_DEEPSEEK_AGENT_ID=agent-deepseek
 VIBE_M9_MINIMAX_AGENT_ID=agent-minimax
 ```
 
-With existing agent IDs, credentials stay in the local trusted registry and are not copied into the shell.
+With existing agent IDs, credentials stay in the local trusted credential store and are not copied into the shell.
 
 Hermes-compatible:
 

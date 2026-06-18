@@ -380,12 +380,34 @@ async function readLocalTrustedRegistry() {
   const os = await import("node:os");
   const path = await import("node:path");
   const registryPath = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
+  const credentialPath = path.join(os.homedir(), ".vibe-office", "agent-credentials.local.json");
 
   try {
-    const raw = await fs.readFile(registryPath, "utf8");
+    const [raw, credentials] = await Promise.all([
+      fs.readFile(registryPath, "utf8"),
+      readJsonFile(fs, credentialPath),
+    ]);
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return parsed;
+    return Object.fromEntries(
+      Object.entries(parsed).map(([id, agent]) => [
+        id,
+        {
+          ...agent,
+          apiKey: typeof credentials[id]?.apiKey === "string" ? credentials[id].apiKey : agent.apiKey,
+        },
+      ]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function readJsonFile(fs, filePath) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { readLocalTrustedCredentials, writeLocalTrustedCredentials } from "./credentialStore";
 
 const LOCAL_TRUSTED_AGENT_REGISTRY_PATH = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
 let registryUpdateQueue = Promise.resolve();
@@ -63,22 +64,23 @@ export async function getLocalTrustedAgent(agentId: string) {
 
 export async function readLocalTrustedAgentRegistry(): Promise<Record<string, LocalTrustedAgentRecord>> {
   try {
-    const raw = await fs.readFile(LOCAL_TRUSTED_AGENT_REGISTRY_PATH, "utf8");
+    const [raw, credentials] = await Promise.all([
+      fs.readFile(LOCAL_TRUSTED_AGENT_REGISTRY_PATH, "utf8"),
+      readLocalTrustedCredentials(),
+    ]);
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
 
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .map(([id, value]) => {
-          try {
-            const agent = getVerifiedTrustedAgentRecord({ ...(value as object), id });
-            return [agent.id, agent] as const;
-          } catch {
-            return null;
-          }
-        })
-        .filter((entry): entry is readonly [string, LocalTrustedAgentRecord] => Boolean(entry)),
-    );
+    const registry: Record<string, LocalTrustedAgentRecord> = {};
+    Object.entries(parsed).forEach(([id, value]) => {
+      try {
+        const agent = getVerifiedTrustedAgentRecord({ ...(value as object), id });
+        registry[agent.id] = { ...agent, apiKey: credentials[agent.id]?.apiKey ?? agent.apiKey };
+      } catch {
+        // Invalid records are ignored so one bad agent does not break the local trusted layer.
+      }
+    });
+    return registry;
   } catch {
     return {};
   }
@@ -90,10 +92,19 @@ export async function writeLocalTrustedAgentRegistry(registry: Record<string, Lo
     registryDirectory,
     `agent-registry.local.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
   );
+  const metadataRegistry = Object.fromEntries(
+    Object.entries(registry).map(([id, agent]) => [id, stripLocalTrustedCredential(agent)]),
+  );
+  const credentials = Object.fromEntries(
+    Object.entries(registry)
+      .filter((entry): entry is [string, LocalTrustedAgentRecord & { apiKey: string }] => Boolean(entry[1].apiKey))
+      .map(([id, agent]) => [id, { apiKey: agent.apiKey }]),
+  );
 
   await fs.mkdir(registryDirectory, { recursive: true });
-  await fs.writeFile(temporaryPath, JSON.stringify(registry, null, 2), "utf8");
+  await fs.writeFile(temporaryPath, JSON.stringify(metadataRegistry, null, 2), "utf8");
   await fs.rename(temporaryPath, LOCAL_TRUSTED_AGENT_REGISTRY_PATH);
+  await writeLocalTrustedCredentials(credentials);
 }
 
 export function updateLocalTrustedAgentRegistry(
@@ -117,6 +128,11 @@ export function updateLocalTrustedAgentRegistry(
 function getVerifiedRuntimeProvider(value: unknown): LocalTrustedAgentRecord["runtimeProvider"] {
   if (value === "openai" || value === "anthropic") return value;
   return "hermes";
+}
+
+function stripLocalTrustedCredential(agent: LocalTrustedAgentRecord) {
+  const { apiKey: _apiKey, ...metadata } = agent;
+  return metadata;
 }
 
 function assertHttpUrl(value: string, label: string) {
