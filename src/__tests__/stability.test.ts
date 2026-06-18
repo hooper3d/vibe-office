@@ -2939,6 +2939,7 @@ test("output workspace keeps browser preview and project outputs in focused comp
   const outputWorkspace = await readFile(path.join(process.cwd(), "src", "components", "OutputWorkspace.tsx"), "utf8");
   const browserPreview = await readFile(path.join(process.cwd(), "src", "components", "BrowserPreview.tsx"), "utf8");
   const projectOutputs = await readFile(path.join(process.cwd(), "src", "components", "ProjectOutputs.tsx"), "utf8");
+  const projectOutputPrimitives = await readFile(path.join(process.cwd(), "src", "components", "ProjectOutputPrimitives.tsx"), "utf8");
 
   assert.match(outputWorkspace, /export \{ BrowserPreview \} from "\.\/BrowserPreview"/);
   assert.match(outputWorkspace, /export \{ ProjectOutputs \} from "\.\/ProjectOutputs"/);
@@ -2947,7 +2948,10 @@ test("output workspace keeps browser preview and project outputs in focused comp
   assert.match(projectOutputs, /export function ProjectOutputs/);
   assert.match(projectOutputs, /getOutputAgentGroups/);
   assert.match(projectOutputs, /assignPreviewToOutputGroups/);
-  assert.match(projectOutputs, /OutputTypeButton/);
+  assert.match(projectOutputs, /ProjectOutputPrimitives/);
+  assert.doesNotMatch(projectOutputs, /function OutputTypeButton|function PreviewOutputSection/);
+  assert.match(projectOutputPrimitives, /export function OutputTypeButton/);
+  assert.match(projectOutputPrimitives, /export function PreviewOutputSection/);
 });
 
 test("app shell delegates main workspace rendering to a focused component", async () => {
