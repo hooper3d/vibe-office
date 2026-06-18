@@ -33,7 +33,9 @@ import {
 } from "../services/taskRoomOrchestrator";
 import {
   createBrowserAgentHttpTransport,
+  createLocalTrustedProviderRequest,
   type AgentHttpTransport,
+  toLocalTrustedProviderRequestBody,
   toLocalTrustedProxyUrl,
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
@@ -339,16 +341,38 @@ test("request runtime store keeps active request ids with the latest workspace s
   assert.equal(store.activeRequestIds().has("request-1"), false);
 });
 
-test("agent http transport maps local trusted proxy URLs and normalizes provider errors", async () => {
+test("agent http transport delegates provider requests to the local trusted layer", async () => {
   assert.equal(toLocalTrustedProxyUrl("http://127.0.0.1:8642/v1/chat/completions"), "/hermes-local/v1/chat/completions");
   assert.equal(toLocalTrustedProxyUrl("https://hooper.ink/a2a?x=1"), "/hermes-hooper/a2a?x=1");
   assert.equal(toLocalTrustedProxyUrl("https://api.example.com/v1"), "https://api.example.com/v1");
+  assert.deepEqual(
+    toLocalTrustedProviderRequestBody("https://api.example.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+      },
+      body: "{\"model\":\"test\"}",
+    }),
+    {
+      url: "https://api.example.com/v1/chat/completions",
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+      },
+      body: "{\"model\":\"test\"}",
+    },
+  );
+  assert.equal(JSON.parse(String(createLocalTrustedProviderRequest("https://api.example.com/v1", {}).body)).url, "https://api.example.com/v1");
 
   const previousFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
-  globalThis.fetch = (async (url: string | URL | Request) => {
+  const requestedBodies: Array<{ url?: string }> = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     requestedUrls.push(String(url));
-    if (String(url).includes("fail")) {
+    requestedBodies.push(JSON.parse(String(init?.body || "{}")));
+    if (String(init?.body).includes("fail")) {
       return new Response(JSON.stringify({ error: { message: "bad key" } }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -371,7 +395,8 @@ test("agent http transport maps local trusted proxy URLs and normalizes provider
       }),
       { ok: true },
     );
-    assert.equal(requestedUrls[0], "/hermes-local/ok");
+    assert.equal(requestedUrls[0], "/agent-local/request");
+    assert.equal(requestedBodies[0].url, "http://127.0.0.1:8642/ok");
     await assert.rejects(
       () =>
         transport.requestJson("https://api.example.com/fail", {}, {

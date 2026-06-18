@@ -48,6 +48,29 @@ function localWorkspaceFileLayer(): Plugin {
   return {
     name: "vibe-office-local-workspace-file-layer",
     configureServer(server: ViteDevServer) {
+      server.middlewares.use("/agent-local/request", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local provider requests." });
+
+        try {
+          const body = await readJsonBody(req);
+          const providerRequest = getVerifiedProviderRequest(body);
+          const response = await fetch(providerRequest.url, {
+            method: providerRequest.method,
+            headers: providerRequest.headers,
+            body: providerRequest.body,
+          });
+          const contentType = response.headers.get("content-type") || "application/json";
+          const responseBody = await response.text();
+
+          res.statusCode = response.status;
+          res.setHeader("Content-Type", contentType);
+          res.setHeader("Cache-Control", "no-store");
+          res.end(responseBody);
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
+
       server.middlewares.use("/workspace-local/list", async (req, res) => {
         if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for workspace file requests." });
 
@@ -209,6 +232,51 @@ function localWorkspaceFileLayer(): Plugin {
       });
     },
   };
+}
+
+function getVerifiedProviderRequest(body: Record<string, unknown>) {
+  const url = String(body.url || "").trim();
+  const method = String(body.method || "GET").trim().toUpperCase();
+  const parsed = new URL(url);
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Provider requests must use http or https.");
+  }
+
+  if (!["GET", "POST"].includes(method)) {
+    throw new Error("Provider request method is not supported.");
+  }
+
+  return {
+    url,
+    method,
+    headers: getVerifiedProviderHeaders(body.headers),
+    body: typeof body.body === "string" && method !== "GET" ? body.body : undefined,
+  };
+}
+
+function getVerifiedProviderHeaders(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const headers: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = rawKey.toLowerCase();
+    if (!isForwardableProviderHeader(key)) continue;
+    if (typeof rawValue !== "string") continue;
+    headers[rawKey] = rawValue;
+  }
+
+  return headers;
+}
+
+function isForwardableProviderHeader(key: string) {
+  return [
+    "accept",
+    "authorization",
+    "anthropic-version",
+    "content-type",
+    "x-api-key",
+  ].includes(key);
 }
 
 async function getVerifiedRoot(rootInput: string) {

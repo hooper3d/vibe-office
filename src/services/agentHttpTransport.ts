@@ -9,13 +9,20 @@ export type AgentHttpRequestOptions = {
   failurePrefix?: string;
 };
 
+export type LocalTrustedProviderRequestBody = {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
+};
+
 export function createBrowserAgentHttpTransport(): AgentHttpTransport {
   return {
     async request(url: string, init: RequestInit, options: AgentHttpRequestOptions) {
-      return fetchWithTimeout(toLocalTrustedProxyUrl(url), init, options.timeoutMs, options.timeoutMessage);
+      return fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init), options.timeoutMs, options.timeoutMessage);
     },
     async requestJson<T>(url: string, init: RequestInit, options: AgentHttpRequestOptions) {
-      const response = await fetchWithTimeout(toLocalTrustedProxyUrl(url), init, options.timeoutMs, options.timeoutMessage);
+      const response = await fetchWithTimeout("/agent-local/request", createLocalTrustedProviderRequest(url, init), options.timeoutMs, options.timeoutMessage);
 
       if (!response.ok) {
         throw new Error(`${options.failurePrefix ?? "Agent request failed"}: ${response.status}${await readErrorSuffix(response)}`);
@@ -23,6 +30,26 @@ export function createBrowserAgentHttpTransport(): AgentHttpTransport {
 
       return (await response.json()) as T;
     },
+  };
+}
+
+export function createLocalTrustedProviderRequest(url: string, init: RequestInit): RequestInit {
+  return {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(toLocalTrustedProviderRequestBody(url, init)),
+  };
+}
+
+export function toLocalTrustedProviderRequestBody(url: string, init: RequestInit): LocalTrustedProviderRequestBody {
+  return {
+    url,
+    method: init.method ?? "GET",
+    headers: normalizeRequestHeaders(init.headers),
+    body: typeof init.body === "string" ? init.body : undefined,
   };
 }
 
@@ -40,6 +67,30 @@ export function toLocalTrustedProxyUrl(url: string) {
   }
 
   return url;
+}
+
+function normalizeRequestHeaders(headers: RequestInit["headers"]) {
+  const normalized: Record<string, string> = {};
+  if (!headers) return normalized;
+
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      normalized[key] = value;
+    });
+    return normalized;
+  }
+
+  if (Array.isArray(headers)) {
+    headers.forEach(([key, value]) => {
+      normalized[key] = value;
+    });
+    return normalized;
+  }
+
+  Object.entries(headers).forEach(([key, value]) => {
+    normalized[key] = String(value);
+  });
+  return normalized;
 }
 
 export async function readErrorSuffix(response: Response) {

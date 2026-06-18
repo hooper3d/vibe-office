@@ -703,12 +703,19 @@ Implementation progress:
 - Shared provider result and task helpers live in `src/services/providerTypes.ts`.
 - `HermesA2AAdapter` remains the unified provider entry, native fallback coordinator, and A2A compatibility metadata mapper.
 - Provider split tests cover OpenAI-compatible free chat, Anthropic-compatible project chat, and Hermes native fallback to chat compatibility.
+- Browser smoke tests now exercise provider retry/recovery through the local trusted provider endpoint.
 - M7-3 Output Area organization started.
 - Project Workspace now uses top-level `Workspace`, `Browser`, and `Outputs` tabs.
 - `Outputs` groups project work by agent first, then filters by `All`, `Tasks`, `Artifacts`, or `Preview`.
 - Task and artifact request flows now target the unified `outputs` mode instead of separate `runs` or `artifacts` UI modes.
 - UI state storage migrates legacy `runs` and `artifacts` output tabs to `outputs`.
-- Next stage should start M8 local trusted layer work for provider requests, workspace file access, and credential handling.
+- M8 local trusted layer work started.
+- Provider HTTP execution now goes through `POST /agent-local/request` before reaching Hermes, OpenAI-compatible, Anthropic-compatible, or native A2A endpoints.
+- Browser transport now sends a provider request command to the local trusted layer instead of directly calling remote provider URLs.
+- The local trusted provider endpoint only forwards supported HTTP methods and a small allowlist of provider headers.
+- Workspace list/read/search/media remains on `/workspace-local/*`.
+- Credential storage is still browser-local prototype storage; moving secrets into local secure storage is still pending.
+- Next M8 slice should move credential lookup/storage behind the local trusted layer.
 
 Acceptance:
 
@@ -789,7 +796,7 @@ For every development step:
 - No fake agents are reintroduced.
 - Project Scope is preserved.
 - Agent provider labels stay generic unless naming a real provider.
-- Local Hermes integration still works through `/hermes-local`.
+- Local Hermes integration works through the local trusted provider request path; the legacy `/hermes-local` proxy remains configured for compatibility.
 
 Behavioral Definition Of Done:
 
