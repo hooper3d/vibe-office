@@ -174,6 +174,7 @@ import {
   type WorkspaceFileAttachment,
   type WorkspaceFileReadResult,
 } from "../services/workspaceFileClient";
+import { createLocalTrustedAgentRegistryCommandRequest } from "../services/localTrustedAgentRegistry";
 
 const at = "2026-06-18T10:00:00.000Z";
 const freeChatProjectId = "default";
@@ -2433,6 +2434,68 @@ test("local trusted registry exposes safe agent status without credentials", asy
   }
 });
 
+test("local trusted agent registry commands upsert, report status, and delete safely", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
+  const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+  process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = localTrustedHome;
+
+  try {
+    const { executeAgentRegistryCommand } = await import("../../localTrusted/agentRegistryCommands");
+
+    const upsert = await executeAgentRegistryCommand({
+      command: "agent.upsert",
+      payload: {
+        agent: {
+          ...agent,
+          id: "agent-registry-command",
+          endpoint: "https://api.deepseek.com/v1",
+          a2aEndpoint: "https://api.deepseek.com/a2a",
+          agentCardUrl: "https://api.deepseek.com/.well-known/agent-card.json",
+          model: "deepseek-chat",
+          runtimeProvider: "openai",
+          apiKey: "local-command-secret",
+        },
+      },
+    });
+    const status = await executeAgentRegistryCommand({
+      command: "agent.status",
+      payload: { agentIds: ["agent-registry-command"] },
+    });
+    const registryRaw = await readFile(path.join(localTrustedHome, "agent-registry.local.json"), "utf8");
+    const credentialRaw = await readFile(path.join(localTrustedHome, "agent-credentials.local.json"), "utf8");
+
+    assert.deepEqual(upsert, { status: 200, body: { ok: true } });
+    assert.equal(registryRaw.includes("local-command-secret"), false);
+    assert.equal(JSON.parse(credentialRaw)["agent-registry-command"].apiKey, "local-command-secret");
+    assert.equal(
+      ((status.body as { statuses: Array<{ id: string; hasCredential: boolean }> }).statuses[0]?.hasCredential),
+      true,
+    );
+
+    const deleted = await executeAgentRegistryCommand({
+      command: "agent.delete",
+      payload: { agentId: "agent-registry-command" },
+    });
+    const missing = await executeAgentRegistryCommand({
+      command: "agent.status",
+      payload: { agentIds: ["agent-registry-command"] },
+    });
+
+    assert.deepEqual(deleted, { status: 200, body: { ok: true } });
+    assert.equal(
+      ((missing.body as { statuses: Array<{ registered: boolean }> }).statuses[0]?.registered),
+      false,
+    );
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+    } else {
+      process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = previousHome;
+    }
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
 test("local trusted provider commands stop missing provider keys before forwarding", async () => {
   const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
   const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
@@ -2527,6 +2590,19 @@ test("agent readiness status map preserves safe local trusted diagnostics", () =
   assert.deepEqual(Object.keys(replaced), ["agent-deepseek"]);
   assert.equal(replaced["agent-deepseek"].hasCredential, false);
   assert.equal(replaced["agent-deepseek"].registered, true);
+});
+
+test("local trusted agent registry client sends command-shaped requests", () => {
+  const request = createLocalTrustedAgentRegistryCommandRequest({
+    command: "agent.status",
+    payload: {
+      agentIds: ["agent-deepseek"],
+    },
+  });
+
+  assert.equal(request.method, "POST");
+  assert.equal(JSON.parse(String(request.body)).command, "agent.status");
+  assert.deepEqual(JSON.parse(String(request.body)).payload, { agentIds: ["agent-deepseek"] });
 });
 
 test("workspace file client sends command-shaped local trusted requests", () => {
@@ -2648,6 +2724,7 @@ test("local trusted middleware exposes command-only provider and workspace route
   const source = await readFile(path.join(process.cwd(), "localTrusted", "vitePlugin.ts"), "utf8");
 
   assert.match(source, /agent-local\/command/);
+  assert.match(source, /agent-local\/registry-command/);
   assert.doesNotMatch(source, /agent-local\/request/);
   assert.match(source, /workspace-local\/command/);
   assert.doesNotMatch(source, /workspace-local\/list/);

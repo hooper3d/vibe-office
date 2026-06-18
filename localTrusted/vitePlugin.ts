@@ -1,9 +1,5 @@
 import type { Plugin, ViteDevServer } from "vite";
-import {
-  getLocalTrustedAgentSafeStatuses,
-  getVerifiedTrustedAgentRecord,
-  updateLocalTrustedAgentRegistry,
-} from "./agentRegistry";
+import { executeAgentRegistryCommand } from "./agentRegistryCommands";
 import {
   getVerifiedProviderCommandRequest,
 } from "./providerRequests";
@@ -28,17 +24,8 @@ export function localTrustedLayerPlugin(): Plugin {
 
         try {
           const body = await readJsonBody(req);
-          const agent = getVerifiedTrustedAgentRecord(body.agent);
-          await updateLocalTrustedAgentRegistry((registry) => {
-            const existing = registry[agent.id];
-            registry[agent.id] = {
-              ...existing,
-              ...agent,
-              apiKey: agent.apiKey ?? existing?.apiKey,
-            };
-            return registry;
-          });
-          sendJson(res, 200, { ok: true });
+          const result = await executeAgentRegistryCommand({ command: "agent.upsert", payload: body });
+          sendJson(res, result.status, result.body);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }
@@ -49,13 +36,8 @@ export function localTrustedLayerPlugin(): Plugin {
 
         try {
           const body = await readJsonBody(req);
-          const agentId = String(body.agentId || "").trim();
-          if (!agentId) throw new Error("Agent id is required.");
-          await updateLocalTrustedAgentRegistry((registry) => {
-            delete registry[agentId];
-            return registry;
-          });
-          sendJson(res, 200, { ok: true });
+          const result = await executeAgentRegistryCommand({ command: "agent.delete", payload: body });
+          sendJson(res, result.status, result.body);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }
@@ -66,9 +48,20 @@ export function localTrustedLayerPlugin(): Plugin {
 
         try {
           const body = await readJsonBody(req);
-          const agentIds = Array.isArray(body.agentIds) ? body.agentIds.map((id) => String(id)) : undefined;
-          const statuses = await getLocalTrustedAgentSafeStatuses(agentIds);
-          sendJson(res, 200, { statuses });
+          const result = await executeAgentRegistryCommand({ command: "agent.status", payload: body });
+          sendJson(res, result.status, result.body);
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
+
+      server.middlewares.use("/agent-local/registry-command", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent registry commands." });
+
+        try {
+          const body = await readJsonBody(req);
+          const result = await executeAgentRegistryCommand(body);
+          sendJson(res, result.status, result.body);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }
