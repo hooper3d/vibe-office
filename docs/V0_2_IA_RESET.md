@@ -40,6 +40,8 @@ Rules:
 - No Project Scope.
 - No automatic workspace files.
 - No project output pressure.
+- Free Chat is the default fixed entry in the Project list.
+- Switching to Free Chat selects that fixed entry and removes project workspace scope.
 - Keep per-agent conversation history.
 - Support New Chat.
 - Support continuing an existing chat.
@@ -76,6 +78,7 @@ Examples:
 Rules:
 
 - Project Scope is active.
+- A real project must be explicitly selected before Project Workspace is active.
 - Local folder permissions are bound to the project.
 - Files are available through the local trusted layer.
 - Agents may read/search files only through Vibe Office-controlled permissions.
@@ -307,6 +310,9 @@ Acceptance:
 
 - Add Agent defaults to Basic setup, Behavior, Instance address, and Model provider sections.
 - Runtime task endpoints and local runtime tuning are hidden under advanced settings.
+- App defaults to the Free Chat list entry.
+- Project Workspace becomes active only after the user selects a real Project.
+- Switching back to Free Chat highlights the Free Chat entry, not a project workspace.
 - User can select Lucy and see Lucy's free chat history.
 - User can create a new Lucy free chat.
 - Free chat does not show project folder, project badge, or project outputs as primary chrome.

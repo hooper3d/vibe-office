@@ -6,8 +6,8 @@ export const initialAgents: AgentInstance[] = [];
 export const projects: Project[] = [
   {
     id: "default",
-    name: "Default Project",
-    namespace: "default",
+    name: "Free Chat",
+    namespace: "free-chat",
     description: "Free chat namespace for fast conversations.",
   },
   {

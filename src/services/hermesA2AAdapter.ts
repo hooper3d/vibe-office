@@ -82,6 +82,38 @@ export class HermesA2AAdapter {
     }
   }
 
+  async sendFreeChatMessage(text: string) {
+    const contextId = `free-chat:${this.agent.id}`;
+    const message: A2AMessage = {
+      messageId: crypto.randomUUID(),
+      role: "user",
+      contextId,
+      parts: [
+        {
+          kind: "text",
+          text,
+        },
+      ],
+      metadata: {
+        scope: "free-chat",
+        appContext: "Vibe Office Free Chat",
+        projectScope: "none",
+        routedBy: "vibe-office",
+        targetAgentId: this.agent.id,
+      },
+    };
+
+    try {
+      return await this.client.sendMessage(message, {
+        projectId: "free-chat",
+        namespace: contextId,
+        targetAgentId: this.agent.id,
+      });
+    } catch {
+      return this.sendHermesChatAsFreeChatTask(contextId, text);
+    }
+  }
+
   async getProjectTask(taskId: string, contextId: string) {
     return this.client.getTask(taskId, contextId);
   }
@@ -111,21 +143,61 @@ export class HermesA2AAdapter {
   }
 
   private async sendHermesChatAsA2ATask(project: Project, text: string): Promise<A2ATask> {
+    return this.sendHermesChatCompletionAsTask({
+      contextId: project.namespace,
+      text,
+      systemContent: `Vibe Office project namespace: ${project.namespace}. Keep this task scoped to this project.`,
+      metadata: {
+        adapter: "hermes-openai-compatible",
+        responseKind: "direct-message",
+        projectId: project.id,
+      },
+    });
+  }
+
+  private async sendHermesChatAsFreeChatTask(contextId: string, text: string): Promise<A2ATask> {
+    return this.sendHermesChatCompletionAsTask({
+      contextId,
+      text,
+      systemContent: "You are chatting with the user in Vibe Office Free Chat. No project scope, local files, tasks, or artifacts are attached.",
+      metadata: {
+        adapter: "hermes-openai-compatible",
+        responseKind: "free-chat",
+      },
+    });
+  }
+
+  private async sendHermesChatCompletionAsTask({
+    contextId,
+    text,
+    systemContent,
+    metadata,
+  }: {
+    contextId: string;
+    text: string;
+    systemContent?: string;
+    metadata: Record<string, unknown>;
+  }): Promise<A2ATask> {
+    const messages = [
+      ...(systemContent
+        ? [
+            {
+              role: "system",
+              content: systemContent,
+            },
+          ]
+        : []),
+      {
+        role: "user",
+        content: text,
+      },
+    ];
     const response = await fetchWithTimeout(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
       method: "POST",
       headers: this.buildHermesHeaders(true),
       body: JSON.stringify({
         model: this.agent.model,
-        messages: [
-          {
-            role: "system",
-            content: `Vibe Office project namespace: ${project.namespace}. Keep this task scoped to this project.`,
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
+        messages,
       }),
     }, this.timeoutMs, "Hermes chat completion timed out.");
 
@@ -145,14 +217,14 @@ export class HermesA2AAdapter {
 
     return {
       id: crypto.randomUUID(),
-      contextId: project.namespace,
+      contextId,
       status: {
         state: "completed",
         timestamp: now,
         message: {
           messageId: crypto.randomUUID(),
           role: "agent",
-          contextId: project.namespace,
+          contextId,
           parts: [
             {
               kind: "text",
@@ -161,11 +233,7 @@ export class HermesA2AAdapter {
           ],
         },
       },
-      metadata: {
-        adapter: "hermes-openai-compatible",
-        responseKind: "direct-message",
-        projectId: project.id,
-      },
+      metadata,
     };
   }
 

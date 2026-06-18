@@ -67,6 +67,7 @@ import {
 
 type OutputMode = "workspace" | "browser" | "runs" | "artifacts";
 type ConversationMode = "single" | "task-room";
+type ChatScope = "free" | "project";
 type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 type ThemeMode = "dark" | "light";
 type ParticipantTaskResult = {
@@ -99,6 +100,9 @@ type ConfirmAction =
     };
 
 const THEME_STORAGE_KEY = "vibe-office.theme";
+const FREE_CHAT_ENTRY_PROJECT_ID = "default";
+const FREE_CHAT_PROJECT_ID = "__free_chat__";
+const FREE_CHAT_NAMESPACE = "free-chat";
 const MAX_AVATAR_BYTES = 512 * 1024;
 const NON_CAPABILITY_TAGS = ["local", "hermes", "runtime"];
 const CAPABILITY_TAG_OPTIONS = [
@@ -146,7 +150,8 @@ export function App() {
     initialWorkspace.artifacts.length > 0 ? initialWorkspace.artifacts : projectArtifacts,
   );
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState("default");
+  const [selectedProjectId, setSelectedProjectId] = useState(FREE_CHAT_ENTRY_PROJECT_ID);
+  const [chatScope, setChatScope] = useState<ChatScope>("free");
   const [conversationMode, setConversationMode] = useState<ConversationMode>("single");
   const [outputMode, setOutputMode] = useState<OutputMode>("workspace");
   const [messageText, setMessageText] = useState("");
@@ -185,45 +190,47 @@ export function App() {
     () => availableTaskParticipants.filter((agent) => taskParticipantIds.includes(agent.id)),
     [availableTaskParticipants, taskParticipantIds],
   );
-  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0];
+  const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  const selectedWorkspaceProject = selectedProject?.id === FREE_CHAT_ENTRY_PROJECT_ID ? undefined : selectedProject;
   const scopedTasks = useMemo(
-    () => tasks.filter((task) => task.projectId === selectedProject.id),
-    [selectedProject.id, tasks],
+    () => (selectedWorkspaceProject ? tasks.filter((task) => task.projectId === selectedWorkspaceProject.id) : []),
+    [selectedWorkspaceProject, tasks],
   );
   const scopedRuns = useMemo(
-    () => runs.filter((run) => run.projectId === selectedProject.id),
-    [selectedProject.id, runs],
+    () => (selectedWorkspaceProject ? runs.filter((run) => run.projectId === selectedWorkspaceProject.id) : []),
+    [selectedWorkspaceProject, runs],
   );
   const latestChiefTask = useMemo(() => {
     const latestChiefRun = scopedRuns.find((run) => run.type === "chief_delegation" && run.taskId);
     return scopedTasks.find((task) => task.id === latestChiefRun?.taskId);
   }, [scopedRuns, scopedTasks]);
   const scopedArtifacts = useMemo(
-    () => artifacts.filter((artifact) => artifact.projectId === selectedProject.id),
-    [selectedProject.id, artifacts],
+    () => (selectedWorkspaceProject ? artifacts.filter((artifact) => artifact.projectId === selectedWorkspaceProject.id) : []),
+    [selectedWorkspaceProject, artifacts],
   );
+  const directConversationProjectId = chatScope === "free" ? FREE_CHAT_PROJECT_ID : selectedWorkspaceProject?.id ?? "";
   const currentConversation = useMemo(() => {
     if (!selectedAgent) return undefined;
     return conversations.find(
       (conversation) =>
-        conversation.projectId === selectedProject.id &&
+        conversation.projectId === directConversationProjectId &&
         conversation.mode === "direct" &&
         conversation.primaryAgentId === selectedAgent.id,
     );
-  }, [conversations, selectedAgent, selectedProject.id]);
+  }, [conversations, directConversationProjectId, selectedAgent]);
   const currentMessages = useMemo(() => {
     if (!currentConversation) return [];
     return messages.filter((message) => message.conversationId === currentConversation.id);
   }, [currentConversation, messages]);
   const taskRoomConversation = useMemo(() => {
-    if (!chiefAgent) return undefined;
+    if (!chiefAgent || !selectedWorkspaceProject) return undefined;
     return conversations.find(
       (conversation) =>
-        conversation.projectId === selectedProject.id &&
+        conversation.projectId === selectedWorkspaceProject.id &&
         conversation.mode === "task_room" &&
         conversation.chiefAgentId === chiefAgent.id,
     );
-  }, [chiefAgent, conversations, selectedProject.id]);
+  }, [chiefAgent, conversations, selectedWorkspaceProject]);
   const taskRoomMessages = useMemo(() => {
     if (!taskRoomConversation) return [];
     return messages.filter((message) => message.conversationId === taskRoomConversation.id);
@@ -231,11 +238,17 @@ export function App() {
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
-  }, [selectedProject.id]);
+  }, [chatScope, selectedWorkspaceProject?.id]);
+
+  useEffect(() => {
+    if (chatScope === "free" && conversationMode === "task-room") {
+      setConversationMode("single");
+    }
+  }, [chatScope, conversationMode]);
 
   useEffect(() => {
     setTaskParticipantIds(availableTaskParticipants.map((agent) => agent.id));
-  }, [availableTaskParticipants, chiefAgent?.id, selectedProject.id]);
+  }, [availableTaskParticipants, chiefAgent?.id, selectedWorkspaceProject?.id]);
 
   useEffect(() => {
     if (selectedAgent && selectedAgent.id !== selectedAgentId) {
@@ -313,6 +326,7 @@ export function App() {
   }, [themeMode]);
 
   useEffect(() => {
+    if (!selectedWorkspaceProject) return;
     const pollableTasks = scopedTasks.filter(
       (task) =>
         isTaskActive(task.state) &&
@@ -328,7 +342,7 @@ export function App() {
     }, 15000);
 
     return () => window.clearInterval(interval);
-  }, [agents, scopedTasks, selectedProject.id]);
+  }, [agents, scopedRuns, scopedTasks, selectedWorkspaceProject]);
 
   function toggleTheme() {
     setThemeMode((current) => (current === "dark" ? "light" : "dark"));
@@ -390,6 +404,8 @@ export function App() {
   async function retryTaskLifecycle(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
     if (!task) return;
+    const taskProject = projects.find((project) => project.id === task.projectId);
+    if (!taskProject) return;
 
     const owner = agents.find((agent) => agent.id === task.ownerAgentId);
     if (!owner) {
@@ -425,7 +441,7 @@ export function App() {
 
     try {
       const remoteTask = await new HermesA2AAdapter({ agent: owner }).sendProjectMessage(
-        selectedProject,
+        taskProject,
         ["Retry this failed project task.", "", `Task title: ${task.title}`, "", "Previous failure:", task.summary].join("\n"),
       );
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Retry returned a task update.");
@@ -721,6 +737,7 @@ export function App() {
   }
 
   function openProjectEditor(projectId: string) {
+    if (projectId === FREE_CHAT_ENTRY_PROJECT_ID) return;
     setEditingProjectId(projectId);
     setProjectFormError("");
     setShowProjectDialog(true);
@@ -790,10 +807,12 @@ export function App() {
 
     setProjects((current) => [...current, project]);
     setSelectedProjectId(project.id);
+    setChatScope("project");
     closeProjectDialog();
   }
 
   function requestDeleteProject(projectId: string) {
+    if (projectId === FREE_CHAT_ENTRY_PROJECT_ID) return;
     if (projects.length <= 1) return;
     setConfirmAction({ kind: "delete-project", projectId });
   }
@@ -801,15 +820,16 @@ export function App() {
   function deleteProject(projectId: string) {
     if (projects.length <= 1) return;
     const remainingProjects = projects.filter((project) => project.id !== projectId);
-    const fallbackProject = remainingProjects[0];
     setProjects(remainingProjects);
     setConversations((current) => current.filter((conversation) => conversation.projectId !== projectId));
     setMessages((current) => current.filter((message) => message.projectId !== projectId));
     setRuns((current) => current.filter((run) => run.projectId !== projectId));
     setTasks((current) => current.filter((task) => task.projectId !== projectId));
     setArtifacts((current) => current.filter((artifact) => artifact.projectId !== projectId));
-    if (selectedProjectId === projectId && fallbackProject) {
-      setSelectedProjectId(fallbackProject.id);
+    if (selectedProjectId === projectId) {
+      setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
+      setChatScope("free");
+      setConversationMode("single");
     }
     setConfirmAction(null);
   }
@@ -841,13 +861,121 @@ export function App() {
     );
   }
 
+  async function submitFreeChatMessage(text: string) {
+    if (!selectedAgent) return;
+
+    const targetAgent = selectedAgent;
+    const now = new Date().toISOString();
+    const existingConversation = conversations.find(
+      (item) =>
+        item.projectId === FREE_CHAT_PROJECT_ID &&
+        item.mode === "direct" &&
+        item.primaryAgentId === targetAgent.id,
+    );
+    const conversation =
+      existingConversation ??
+      createConversation({
+        projectId: FREE_CHAT_PROJECT_ID,
+        namespace: FREE_CHAT_NAMESPACE,
+        mode: "direct",
+        title: `${targetAgent.name} free chat`,
+        primaryAgentId: targetAgent.id,
+        participantAgentIds: [targetAgent.id],
+        createdAt: now,
+      });
+    const userMessageId = crypto.randomUUID();
+    const userMessage: ConversationMessage = {
+      id: userMessageId,
+      conversationId: conversation.id,
+      projectId: FREE_CHAT_PROJECT_ID,
+      role: "user",
+      contentParts: createTextParts(text),
+      status: "sending",
+      createdAt: now,
+    };
+
+    if (!existingConversation) {
+      setConversations((current) => [conversation, ...current]);
+    }
+    setMessages((current) => [...current, userMessage]);
+    setMessageText("");
+    setAttachedWorkspaceFiles([]);
+
+    try {
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text);
+      const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
+      const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
+            ? {
+                ...message,
+                status: "sent",
+              }
+            : message,
+        ),
+      );
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: FREE_CHAT_PROJECT_ID,
+          role: "agent",
+          agentId: targetAgent.id,
+          contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
+          a2aMessageId: remoteTask.status.message?.messageId,
+          status: "sent",
+          createdAt: completedAt,
+        },
+      ]);
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === conversation.id
+            ? {
+                ...item,
+                updatedAt: completedAt,
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === userMessageId
+            ? {
+                ...message,
+                status: "failed",
+              }
+            : message,
+        ),
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          conversationId: conversation.id,
+          projectId: FREE_CHAT_PROJECT_ID,
+          role: "system",
+          agentId: targetAgent.id,
+          contentParts: createTextParts(error instanceof Error ? error.message : "Agent request failed."),
+          status: "sent",
+          createdAt: failedAt,
+        },
+      ]);
+    }
+  }
+
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = messageText.trim();
     if (!text) return;
     if (composerSubmittingRef.current) return;
     if (conversationMode === "task-room") {
-      if (!chiefAgent) return;
+      if (!selectedWorkspaceProject || !chiefAgent) return;
       if (selectedTaskParticipants.length === 0) return;
       composerSubmittingRef.current = true;
       setIsComposerSubmitting(true);
@@ -860,6 +988,18 @@ export function App() {
       return;
     }
     if (!selectedAgent) return;
+    if (chatScope === "free") {
+      composerSubmittingRef.current = true;
+      setIsComposerSubmitting(true);
+      try {
+        await submitFreeChatMessage(text);
+      } finally {
+        composerSubmittingRef.current = false;
+        setIsComposerSubmitting(false);
+      }
+      return;
+    }
+    if (!selectedWorkspaceProject) return;
 
     composerSubmittingRef.current = true;
     setIsComposerSubmitting(true);
@@ -869,15 +1009,15 @@ export function App() {
       const activeConversationMode = "direct";
       const existingConversation = conversations.find(
         (item) =>
-          item.projectId === selectedProject.id &&
+          item.projectId === selectedWorkspaceProject.id &&
           item.mode === activeConversationMode &&
           item.primaryAgentId === targetAgent.id,
       );
       const conversation =
         existingConversation ??
         createConversation({
-          projectId: selectedProject.id,
-          namespace: selectedProject.namespace,
+          projectId: selectedWorkspaceProject.id,
+          namespace: selectedWorkspaceProject.namespace,
           mode: activeConversationMode,
           title: targetAgent.name,
           primaryAgentId: targetAgent.id,
@@ -892,12 +1032,12 @@ export function App() {
         size: file.size,
         attachedAt: file.attachedAt,
       }));
-      const agentRequestText = buildAgentRequestText(text, selectedProject, attachedWorkspaceFiles);
+      const agentRequestText = buildAgentRequestText(text, selectedWorkspaceProject, attachedWorkspaceFiles);
 
       const userMessage: ConversationMessage = {
         id: userMessageId,
         conversationId: conversation.id,
-        projectId: selectedProject.id,
+        projectId: selectedWorkspaceProject.id,
         role: "user",
         contentParts: createTextParts(text),
         workspaceContext,
@@ -907,7 +1047,7 @@ export function App() {
       };
       const optimisticRun: ProjectRun = {
         id: runId,
-        projectId: selectedProject.id,
+        projectId: selectedWorkspaceProject.id,
         conversationId: conversation.id,
         type: "direct_message",
         ownerAgentId: targetAgent.id,
@@ -928,10 +1068,10 @@ export function App() {
       setAttachedWorkspaceFiles([]);
 
       try {
-        const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, agentRequestText);
+        const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, agentRequestText);
         const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a task update.`;
         const mediaArtifact = createMediaArtifactFromText({
-          projectId: selectedProject.id,
+          projectId: selectedWorkspaceProject.id,
           taskId: remoteTask.id || runId,
           agentId: targetAgent.id,
           name: `${targetAgent.name} media`,
@@ -939,7 +1079,7 @@ export function App() {
           createdAt: remoteTask.status.timestamp ?? new Date().toISOString(),
         });
         const returnedArtifacts = [
-          ...mapA2AArtifacts(remoteTask, selectedProject.id, targetAgent.id),
+          ...mapA2AArtifacts(remoteTask, selectedWorkspaceProject.id, targetAgent.id),
           ...(mediaArtifact ? [mediaArtifact] : []),
         ];
         const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
@@ -963,7 +1103,7 @@ export function App() {
           const agentMessage: ConversationMessage = {
             id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
             conversationId: conversation.id,
-            projectId: selectedProject.id,
+            projectId: selectedWorkspaceProject.id,
             role: "agent",
             agentId: targetAgent.id,
             contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
@@ -984,10 +1124,10 @@ export function App() {
         if (shouldCreateTask && taskId) {
           const projectTask: ProjectTask = {
             id: taskId,
-            projectId: selectedProject.id,
-            contextId: remoteTask.contextId || selectedProject.namespace,
+            projectId: selectedWorkspaceProject.id,
+            contextId: remoteTask.contextId || selectedWorkspaceProject.namespace,
             remoteTaskId: remoteTask.id || taskId,
-            remoteContextId: remoteTask.contextId || selectedProject.namespace,
+            remoteContextId: remoteTask.contextId || selectedWorkspaceProject.namespace,
             title: text.length > 56 ? `${text.slice(0, 56)}...` : text,
             ownerAgentId: targetAgent.id,
             participantAgentIds,
@@ -1063,7 +1203,7 @@ export function App() {
           {
             id: crypto.randomUUID(),
             conversationId: conversation.id,
-            projectId: selectedProject.id,
+            projectId: selectedWorkspaceProject.id,
             role: "system",
             agentId: targetAgent.id,
             contentParts: createTextParts(error instanceof Error ? error.message : "Agent request failed."),
@@ -1081,7 +1221,7 @@ export function App() {
   }
 
   async function submitTaskRoomMessage(text: string) {
-    if (!chiefAgent) return;
+    if (!selectedWorkspaceProject || !chiefAgent) return;
 
     const targetAgent = chiefAgent;
     const participants = selectedTaskParticipants;
@@ -1089,17 +1229,17 @@ export function App() {
     const now = new Date().toISOString();
     const existingConversation = conversations.find(
       (item) =>
-        item.projectId === selectedProject.id &&
+        item.projectId === selectedWorkspaceProject.id &&
         item.mode === "task_room" &&
         item.chiefAgentId === targetAgent.id,
     );
     const conversation =
       existingConversation ??
       createConversation({
-        projectId: selectedProject.id,
-        namespace: selectedProject.namespace,
+        projectId: selectedWorkspaceProject.id,
+        namespace: selectedWorkspaceProject.namespace,
         mode: "task_room",
-        title: `${selectedProject.name} task room`,
+        title: `${selectedWorkspaceProject.name} task room`,
         chiefAgentId: targetAgent.id,
         participantAgentIds,
         createdAt: now,
@@ -1113,13 +1253,13 @@ export function App() {
       size: file.size,
       attachedAt: file.attachedAt,
     }));
-    const chiefRequestText = buildChiefTaskRequestText(text, selectedProject, targetAgent, participants, taskFiles);
+    const chiefRequestText = buildChiefTaskRequestText(text, selectedWorkspaceProject, targetAgent, participants, taskFiles);
     const taskTitle = text.length > 56 ? `${text.slice(0, 56)}...` : text;
 
     const userMessage: ConversationMessage = {
       id: userMessageId,
       conversationId: conversation.id,
-      projectId: selectedProject.id,
+      projectId: selectedWorkspaceProject.id,
       role: "user",
       contentParts: createTextParts(text),
       workspaceContext,
@@ -1130,7 +1270,7 @@ export function App() {
     };
     const projectTask: ProjectTask = {
       id: taskId,
-      projectId: selectedProject.id,
+      projectId: selectedWorkspaceProject.id,
       contextId: conversation.a2aContextId,
       title: taskTitle,
       ownerAgentId: targetAgent.id,
@@ -1152,7 +1292,7 @@ export function App() {
     };
     const projectRun: ProjectRun = {
       id: runId,
-      projectId: selectedProject.id,
+      projectId: selectedWorkspaceProject.id,
       conversationId: conversation.id,
       taskId,
       type: "chief_delegation",
@@ -1178,7 +1318,7 @@ export function App() {
     const taskArtifactIds: string[] = [];
 
     try {
-      const chiefPlanTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, chiefRequestText);
+      const chiefPlanTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, chiefRequestText);
       const chiefPlan = extractA2ATaskText(chiefPlanTask) ?? `${targetAgent.name} returned a Chief task plan.`;
       const chiefPlanAt = chiefPlanTask.status.timestamp ?? new Date().toISOString();
 
@@ -1196,7 +1336,7 @@ export function App() {
       const agentMessage: ConversationMessage = {
         id: chiefPlanTask.status.message?.messageId ?? crypto.randomUUID(),
         conversationId: conversation.id,
-        projectId: selectedProject.id,
+        projectId: selectedWorkspaceProject.id,
         role: "agent",
         agentId: targetAgent.id,
         contentParts: chiefPlanTask.status.message?.parts ?? createTextParts(chiefPlan),
@@ -1209,7 +1349,7 @@ export function App() {
       setMessages((current) => [...current, agentMessage]);
 
       const chiefMediaArtifact = createMediaArtifactFromText({
-        projectId: selectedProject.id,
+        projectId: selectedWorkspaceProject.id,
         taskId,
         agentId: targetAgent.id,
         name: "Chief media",
@@ -1294,8 +1434,8 @@ export function App() {
 
         try {
           const participantTask = await new HermesA2AAdapter({ agent: participant }).sendProjectMessage(
-            selectedProject,
-            buildParticipantTaskRequestText(text, selectedProject, targetAgent, participant, chiefPlan, taskFiles),
+            selectedWorkspaceProject,
+            buildParticipantTaskRequestText(text, selectedWorkspaceProject, targetAgent, participant, chiefPlan, taskFiles),
           );
           participantSummary = extractA2ATaskText(participantTask) ?? `${participant.name} returned a task result.`;
           participantState = mapA2AState(participantTask.status.state);
@@ -1307,7 +1447,7 @@ export function App() {
         }
 
         const participantArtifact = createTextArtifact({
-          projectId: selectedProject.id,
+          projectId: selectedWorkspaceProject.id,
           taskId,
           agentId: participant.id,
           name: `${participant.name} result`,
@@ -1348,20 +1488,20 @@ export function App() {
         );
       }
 
-      const aggregateRequestText = buildChiefAggregationRequestText(text, selectedProject, targetAgent, chiefPlan, participantResults, taskFiles);
+      const aggregateRequestText = buildChiefAggregationRequestText(text, selectedWorkspaceProject, targetAgent, chiefPlan, participantResults, taskFiles);
       let finalSummary = "";
       let finalState: WorkState = "completed";
       let finalAt = new Date().toISOString();
 
       try {
-        const aggregateTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, aggregateRequestText);
+        const aggregateTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, aggregateRequestText);
         finalSummary = extractA2ATaskText(aggregateTask) ?? `${targetAgent.name} aggregated the participant results.`;
         finalState = mapA2AState(aggregateTask.status.state);
         finalAt = aggregateTask.status.timestamp ?? finalAt;
         const aggregateMessage: ConversationMessage = {
           id: aggregateTask.status.message?.messageId ?? crypto.randomUUID(),
           conversationId: conversation.id,
-          projectId: selectedProject.id,
+          projectId: selectedWorkspaceProject.id,
           role: "agent",
           agentId: targetAgent.id,
           contentParts: aggregateTask.status.message?.parts ?? createTextParts(finalSummary),
@@ -1381,7 +1521,7 @@ export function App() {
           {
             id: crypto.randomUUID(),
             conversationId: conversation.id,
-            projectId: selectedProject.id,
+            projectId: selectedWorkspaceProject.id,
             role: "system",
             agentId: targetAgent.id,
             contentParts: createTextParts(finalSummary),
@@ -1394,7 +1534,7 @@ export function App() {
       }
 
       const finalArtifact = createTextArtifact({
-        projectId: selectedProject.id,
+        projectId: selectedWorkspaceProject.id,
         taskId,
         agentId: targetAgent.id,
         name: "Chief summary",
@@ -1505,7 +1645,7 @@ export function App() {
         {
           id: crypto.randomUUID(),
           conversationId: conversation.id,
-          projectId: selectedProject.id,
+          projectId: selectedWorkspaceProject.id,
           role: "system",
           agentId: targetAgent.id,
           contentParts: createTextParts(errorMessage),
@@ -1597,10 +1737,10 @@ export function App() {
                 <div className={`agent-row ${isActive ? "active" : ""}`} key={agent.id}>
                   <button
                     className="nav-item agent-item"
-                    onClick={() => {
-                      setSelectedAgentId(agent.id);
-                      setConversationMode("single");
-                    }}
+                  onClick={() => {
+                    setSelectedAgentId(agent.id);
+                    setConversationMode("single");
+                  }}
                   >
                     <AgentAvatar agent={agent} />
                     <span className="nav-item-content">
@@ -1648,38 +1788,50 @@ export function App() {
           <div className="nav-list">
             {projects.map((project) => {
               const isActive = selectedProjectId === project.id;
+              const isFreeChatProject = project.id === FREE_CHAT_ENTRY_PROJECT_ID;
+              const projectName = isFreeChatProject ? "Free Chat" : project.name;
+              const projectMeta = isFreeChatProject ? "personal conversations" : project.directory ?? project.namespace;
               return (
                 <div className={`project-row ${isActive ? "active" : ""}`} key={project.id}>
-                  <button className="project-item" onClick={() => setSelectedProjectId(project.id)}>
+                  <button
+                    className="project-item"
+                    onClick={() => {
+                      setSelectedProjectId(project.id);
+                      setChatScope(isFreeChatProject ? "free" : "project");
+                      setConversationMode("single");
+                    }}
+                  >
                       <span className="project-icon" aria-hidden="true">
-                        <Folder size={15} />
+                        {isFreeChatProject ? <MessageSquare size={15} /> : <Folder size={15} />}
                       </span>
                       <span>
-                        <span className="project-name">{project.name}</span>
-                        <span className="project-namespace">{project.directory ?? project.namespace}</span>
+                        <span className="project-name">{projectName}</span>
+                        <span className="project-namespace">{projectMeta}</span>
                       </span>
                     </button>
-                  <div className="row-actions" aria-label={`${project.name} project actions`}>
-                    <button
-                      className="icon-button mini-button"
-                      type="button"
-                      onClick={() => openProjectEditor(project.id)}
-                      aria-label={`Rename ${project.name}`}
-                      title="Rename project"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      className="icon-button mini-button danger-button"
-                      type="button"
-                      onClick={() => requestDeleteProject(project.id)}
-                      aria-label={`Delete ${project.name}`}
-                      title="Delete project"
-                      disabled={projects.length <= 1}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  {!isFreeChatProject ? (
+                    <div className="row-actions" aria-label={`${projectName} project actions`}>
+                      <button
+                        className="icon-button mini-button"
+                        type="button"
+                        onClick={() => openProjectEditor(project.id)}
+                        aria-label={`Rename ${projectName}`}
+                        title="Rename project"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        className="icon-button mini-button danger-button"
+                        type="button"
+                        onClick={() => requestDeleteProject(project.id)}
+                        aria-label={`Delete ${projectName}`}
+                        title="Delete project"
+                        disabled={projects.length <= 1}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
@@ -1705,24 +1857,52 @@ export function App() {
           <section className="conversation-panel" aria-label="Conversation">
             <div className="panel-header">
               <div>
-                <h2>{conversationMode === "single" ? selectedAgent?.name ?? "No agent connected" : "Chief-led task room"}</h2>
+                <h2>{conversationMode === "task-room" ? "Coordinate agents" : selectedAgent?.name ?? "No agent connected"}</h2>
               </div>
               <div className="panel-actions">
-                <span className="namespace-pill">{selectedProject.namespace}</span>
-                <button className="secondary-button compact-button" onClick={() => setConversationMode("single")}>
-                  Direct chat
+                <span className="namespace-pill">{chatScope === "free" ? "free chat" : selectedWorkspaceProject?.namespace ?? "no project"}</span>
+                <button
+                  className={`secondary-button compact-button ${chatScope === "free" ? "active" : ""}`}
+                  onClick={() => {
+                    setChatScope("free");
+                    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
+                    setConversationMode("single");
+                  }}
+                >
+                  Free chat
                 </button>
-                <button className="secondary-button compact-button" onClick={() => setConversationMode("task-room")} disabled={agents.length === 0}>
-                  Task room
+                <button
+                  className={`secondary-button compact-button ${chatScope === "project" && conversationMode === "single" ? "active" : ""}`}
+                  onClick={() => {
+                    if (!selectedWorkspaceProject) return;
+                    setChatScope("project");
+                    setConversationMode("single");
+                  }}
+                  disabled={!selectedWorkspaceProject}
+                  title={selectedWorkspaceProject ? "Use the selected project scope" : "Select a project first"}
+                >
+                  Project workspace
+                </button>
+                <button
+                  className={`secondary-button compact-button ${chatScope === "project" && conversationMode === "task-room" ? "active" : ""}`}
+                  onClick={() => {
+                    if (!selectedWorkspaceProject) return;
+                    setChatScope("project");
+                    setConversationMode("task-room");
+                  }}
+                  disabled={agents.length === 0 || !selectedWorkspaceProject}
+                  title={selectedWorkspaceProject ? "Coordinate selected agents in this project" : "Select a project first"}
+                >
+                  Coordinate
                 </button>
               </div>
             </div>
 
             {conversationMode === "single" && selectedAgent ? (
-              <DirectChat messages={currentMessages} />
+              <DirectChat messages={currentMessages} scope={chatScope} />
             ) : conversationMode === "single" ? (
               <NoAgentState onAddAgent={() => setShowSetup(true)} />
-            ) : (
+            ) : selectedWorkspaceProject ? (
               <TaskRoom
                 agents={agents}
                 chief={chiefAgent}
@@ -1731,6 +1911,8 @@ export function App() {
                 projectTask={latestChiefTask}
                 onToggleParticipant={toggleTaskParticipant}
               />
+            ) : (
+              <NoProjectState onSelectProject={() => setChatScope("free")} />
             )}
 
             <form className="composer" onSubmit={submitMessage}>
@@ -1764,13 +1946,19 @@ export function App() {
                   placeholder={
                     conversationMode === "single"
                       ? selectedAgent
-                        ? `Ask ${selectedAgent.name} in ${selectedProject.name}`
+                        ? chatScope === "free"
+                          ? `Chat with ${selectedAgent.name}`
+                          : selectedWorkspaceProject
+                            ? `Ask ${selectedAgent.name} in ${selectedWorkspaceProject.name}`
+                            : "Select a project first"
                         : "Add an agent provider first"
-                      : !chiefAgent
+                      : !selectedWorkspaceProject
+                        ? "Select a project first"
+                        : !chiefAgent
                         ? "Assign one connected agent as Chief first"
                         : selectedTaskParticipants.length === 0
                           ? "Select at least one participant first"
-                          : `Start a Chief-led task in ${selectedProject.name}`
+                          : `Start a Chief-led task in ${selectedWorkspaceProject.name}`
                   }
                   disabled={isComposerSubmitting}
                 />
@@ -1780,7 +1968,9 @@ export function App() {
                   aria-label="Send message"
                   disabled={
                     isComposerSubmitting ||
-                    (conversationMode === "single" ? !selectedAgent : !chiefAgent || selectedTaskParticipants.length === 0) ||
+                    (conversationMode === "single"
+                      ? !selectedAgent || (chatScope === "project" && !selectedWorkspaceProject)
+                      : !selectedWorkspaceProject || !chiefAgent || selectedTaskParticipants.length === 0) ||
                     messageText.trim().length === 0
                   }
                 >
@@ -1809,55 +1999,63 @@ export function App() {
           </div>
 
           <aside className="output-panel" aria-label="Output Workspace">
-            <div className="tabs" role="tablist" aria-label="Output modes">
-              <TabButton active={outputMode === "workspace"} onClick={() => setOutputMode("workspace")}>
-                Workspace
-              </TabButton>
-              <TabButton active={outputMode === "browser"} onClick={() => setOutputMode("browser")}>
-                Browser
-              </TabButton>
-              <TabButton active={outputMode === "runs"} onClick={() => setOutputMode("runs")}>
-                Tasks
-              </TabButton>
-              <TabButton active={outputMode === "artifacts"} onClick={() => setOutputMode("artifacts")}>
-                Artifacts
-              </TabButton>
-            </div>
+            {chatScope === "free" ? (
+              <FreeChatPanel agent={selectedAgent} messageCount={currentMessages.length} />
+            ) : selectedWorkspaceProject ? (
+              <>
+                <div className="tabs" role="tablist" aria-label="Output modes">
+                  <TabButton active={outputMode === "workspace"} onClick={() => setOutputMode("workspace")}>
+                    Workspace
+                  </TabButton>
+                  <TabButton active={outputMode === "browser"} onClick={() => setOutputMode("browser")}>
+                    Browser
+                  </TabButton>
+                  <TabButton active={outputMode === "runs"} onClick={() => setOutputMode("runs")}>
+                    Tasks
+                  </TabButton>
+                  <TabButton active={outputMode === "artifacts"} onClick={() => setOutputMode("artifacts")}>
+                    Artifacts
+                  </TabButton>
+                </div>
 
-            {outputMode === "workspace" ? (
-              <div className="workspace-mode">
-                <WorkspaceFiles
-                  project={selectedProject}
-                  attachedFiles={attachedWorkspaceFiles}
-                  onAttachFile={attachWorkspaceFile}
-                  onDetachFile={detachWorkspaceFile}
-                  onEditProject={() => openProjectEditor(selectedProject.id)}
-                />
-              </div>
-            ) : null}
-            {outputMode === "browser" ? (
-              <BrowserPreview
-                browserUrl={browserUrl}
-                previewUrl={previewUrl}
-                onBrowserUrlChange={setBrowserUrl}
-                onOpenPreview={openPreview}
-              />
-            ) : null}
-            {outputMode === "runs" ? (
-              <ProjectTasks
-                agents={agents}
-                runs={scopedRuns}
-                tasks={scopedTasks}
-                artifacts={scopedArtifacts}
-                busyActionId={taskLifecycleBusyId}
-                onCancelTask={cancelTaskLifecycle}
-                onRefreshTask={refreshTaskLifecycle}
-                onRetryTask={retryTaskLifecycle}
-              />
-            ) : null}
-            {outputMode === "artifacts" ? (
-              <ProjectArtifacts agents={agents} artifacts={scopedArtifacts} />
-            ) : null}
+                {outputMode === "workspace" ? (
+                  <div className="workspace-mode">
+                    <WorkspaceFiles
+                      project={selectedWorkspaceProject}
+                      attachedFiles={attachedWorkspaceFiles}
+                      onAttachFile={attachWorkspaceFile}
+                      onDetachFile={detachWorkspaceFile}
+                      onEditProject={() => openProjectEditor(selectedWorkspaceProject.id)}
+                    />
+                  </div>
+                ) : null}
+                {outputMode === "browser" ? (
+                  <BrowserPreview
+                    browserUrl={browserUrl}
+                    previewUrl={previewUrl}
+                    onBrowserUrlChange={setBrowserUrl}
+                    onOpenPreview={openPreview}
+                  />
+                ) : null}
+                {outputMode === "runs" ? (
+                  <ProjectTasks
+                    agents={agents}
+                    runs={scopedRuns}
+                    tasks={scopedTasks}
+                    artifacts={scopedArtifacts}
+                    busyActionId={taskLifecycleBusyId}
+                    onCancelTask={cancelTaskLifecycle}
+                    onRefreshTask={refreshTaskLifecycle}
+                    onRetryTask={retryTaskLifecycle}
+                  />
+                ) : null}
+                {outputMode === "artifacts" ? (
+                  <ProjectArtifacts agents={agents} artifacts={scopedArtifacts} />
+                ) : null}
+              </>
+            ) : (
+              <ProjectSelectionPanel onCreateProject={openProjectDialog} />
+            )}
           </aside>
         </div>
       </main>
@@ -2470,7 +2668,7 @@ function TabButton({
   );
 }
 
-function DirectChat({ messages }: { messages: ConversationMessage[] }) {
+function DirectChat({ messages, scope }: { messages: ConversationMessage[]; scope: ChatScope }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const latestMessageId = messages[messages.length - 1]?.id;
 
@@ -2484,11 +2682,86 @@ function DirectChat({ messages }: { messages: ConversationMessage[] }) {
         <div className="empty-state compact-empty">
           <MessageSquare size={32} />
           <h3>No messages yet</h3>
-          <p>Start a project-scoped direct chat with this connected agent.</p>
+          <p>{scope === "free" ? "Start a free chat with this agent. No project context is attached." : "Start a project-scoped chat with this connected agent."}</p>
         </div>
       ) : (
         <MessageRows messages={messages} />
       )}
+    </div>
+  );
+}
+
+function FreeChatPanel({ agent, messageCount }: { agent?: AgentInstance; messageCount: number }) {
+  return (
+    <section className="free-chat-panel" aria-label="Free chat context">
+      <div className="free-chat-header">
+        <span className="profile-block-icon">
+          <MessageSquare size={18} />
+        </span>
+        <div>
+          <h3>Free chat</h3>
+          <p>No project scope, files, tasks, or outputs are attached.</p>
+        </div>
+      </div>
+      {agent ? (
+        <div className="free-chat-agent">
+          <AgentAvatar agent={agent} size="small" />
+          <div>
+            <strong>{agent.name}</strong>
+            <span>{getOfficeRoleLabel(agent.officeRole, agent.isChief)}</span>
+          </div>
+          <span className={agent.status === "online" ? "status-badge success" : "status-badge danger"}>{agent.status}</span>
+        </div>
+      ) : null}
+      <div className="free-chat-facts">
+        <div>
+          <span>History</span>
+          <strong>{messageCount}</strong>
+        </div>
+        <div>
+          <span>Project</span>
+          <strong>None</strong>
+        </div>
+        <div>
+          <span>Workspace files</span>
+          <strong>Off</strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProjectSelectionPanel({ onCreateProject }: { onCreateProject: () => void }) {
+  return (
+    <section className="free-chat-panel" aria-label="Project workspace selection">
+      <div className="free-chat-header">
+        <span className="profile-block-icon">
+          <Folder size={18} />
+        </span>
+        <div>
+          <h3>No project selected</h3>
+          <p>Select a project from the left list when you are ready to work with project scope.</p>
+        </div>
+      </div>
+      <button className="secondary-button" type="button" onClick={onCreateProject}>
+        <Plus size={16} />
+        Create project
+      </button>
+    </section>
+  );
+}
+
+function NoProjectState({ onSelectProject }: { onSelectProject: () => void }) {
+  return (
+    <div className="conversation-body">
+      <div className="empty-state compact-empty">
+        <Folder size={32} />
+        <h3>No project selected</h3>
+        <p>Select a project from the left list, or continue in Free chat.</p>
+        <button className="secondary-button" type="button" onClick={onSelectProject}>
+          Free chat
+        </button>
+      </div>
     </div>
   );
 }

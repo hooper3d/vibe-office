@@ -562,6 +562,12 @@ label > span:not(.field-label):not(.field-help),
   padding: 0 12px;
 }
 
+.compact-button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .primary-button,
 .secondary-button,
 .primary-icon-button,
@@ -1007,6 +1013,86 @@ label > span:not(.field-label):not(.field-help),
   display: grid;
   gap: 14px;
   margin-top: 8px;
+}
+
+.free-chat-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
+.free-chat-header,
+.free-chat-agent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.free-chat-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.free-chat-header p,
+.free-chat-agent span {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.free-chat-agent {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.free-chat-agent strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.free-chat-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.free-chat-facts div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.free-chat-facts span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.free-chat-facts strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-badge.success,

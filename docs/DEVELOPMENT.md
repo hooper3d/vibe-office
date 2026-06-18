@@ -603,6 +603,11 @@ Scope:
   - Default path: Basic setup, Behavior, Instance address, Model provider.
   - Advanced path: namespace, timeout, generated task endpoint, generated capability URL.
   - A basic connected agent may be only an OpenAI-compatible chat provider with a role note and capability tags.
+- Second M7 slice: make Free Chat the default context.
+  - Show Free Chat as the default fixed entry in the Project list.
+  - Project Workspace activates only after the user selects a real Project.
+  - Switching back to Free Chat selects the Free Chat entry.
+  - Free Chat messages persist separately from project runs, tasks, artifacts, and file context.
 - Add per-agent free chat history.
 - Add New Chat for each agent.
 - Keep free chat outside Project Scope.
@@ -617,6 +622,9 @@ Acceptance:
 
 - Add Agent feels like adding a model-backed agent, not configuring an A2A server.
 - A2A/runtime endpoints and local tuning are available only in advanced settings.
+- Fresh app load highlights the Free Chat entry.
+- Selecting a Project activates Project Workspace tabs and project-scoped composer copy.
+- Free Chat does not create ProjectRun, ProjectTask, or ProjectArtifact records.
 - User can select Lucy and see Lucy's free chat history.
 - User can create a new Lucy free chat.
 - Free chat does not show project folder, project badge, or project outputs as primary chrome.
