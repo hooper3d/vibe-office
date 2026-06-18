@@ -13,6 +13,13 @@ import {
 } from "./providerRequests";
 import { readGeneratedMedia } from "./generatedMedia";
 import {
+  forwardProviderRequest,
+  getSafeErrorMessage,
+  readJsonBody,
+  sendBinary,
+  sendJson,
+} from "./http";
+import {
   listWorkspaceDirectory,
   readWorkspaceTextFile,
   searchWorkspaceFiles,
@@ -64,18 +71,7 @@ export function localTrustedLayerPlugin(): Plugin {
         try {
           const body = await readJsonBody(req);
           const providerRequest = await getVerifiedProviderCommandRequest(body);
-          const response = await fetch(providerRequest.url, {
-            method: providerRequest.method,
-            headers: providerRequest.headers,
-            body: providerRequest.body,
-          });
-          const contentType = response.headers.get("content-type") || "application/json";
-          const responseBody = await response.text();
-
-          res.statusCode = response.status;
-          res.setHeader("Content-Type", contentType);
-          res.setHeader("Cache-Control", "no-store");
-          res.end(responseBody);
+          await forwardProviderRequest(res, providerRequest);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }
@@ -92,18 +88,7 @@ export function localTrustedLayerPlugin(): Plugin {
             assertProviderTargetBelongsToAgent(providerRequest.url, trustedAgent);
             injectLocalTrustedCredential(providerRequest.headers, trustedAgent);
           }
-          const response = await fetch(providerRequest.url, {
-            method: providerRequest.method,
-            headers: providerRequest.headers,
-            body: providerRequest.body,
-          });
-          const contentType = response.headers.get("content-type") || "application/json";
-          const responseBody = await response.text();
-
-          res.statusCode = response.status;
-          res.setHeader("Content-Type", contentType);
-          res.setHeader("Cache-Control", "no-store");
-          res.end(responseBody);
+          await forwardProviderRequest(res, providerRequest);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }
@@ -160,44 +145,4 @@ export function localTrustedLayerPlugin(): Plugin {
       });
     },
   };
-}
-
-function readJsonBody(req: NodeJS.ReadableStream) {
-  return new Promise<Record<string, unknown>>((resolve, reject) => {
-    let raw = "";
-    req.on("data", (chunk) => {
-      raw += chunk;
-    });
-    req.on("end", () => {
-      try {
-        resolve(raw ? JSON.parse(raw) : {});
-      } catch {
-        reject(new Error("Invalid JSON request."));
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-function sendJson(res: { statusCode: number; setHeader: (name: string, value: string) => void; end: (body: string) => void }, status: number, body: unknown) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json");
-  res.end(JSON.stringify(body));
-}
-
-function sendBinary(
-  res: { statusCode: number; setHeader: (name: string, value: string) => void; end: (body: Buffer) => void },
-  status: number,
-  body: Buffer,
-  contentType: string,
-) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", contentType);
-  res.setHeader("Cache-Control", "no-store");
-  res.end(body);
-}
-
-function getSafeErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return "Workspace file request failed.";
 }
