@@ -20,6 +20,8 @@ try {
   await runTimeoutFailureSmoke();
   await runDirectRetrySmoke();
   await runTaskRoomRetrySmoke();
+  await runDirectPendingRecoverySmoke();
+  await runTaskRoomPendingRecoverySmoke();
   console.log("Browser smoke checks passed.");
 } finally {
   await browser.close();
@@ -126,6 +128,61 @@ async function runTaskRoomRetrySmoke() {
   }
 }
 
+async function runDirectPendingRecoverySmoke() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await installSmokeProviderRoute(page, "Recovered pending direct reply.");
+    await page.goto(appUrl);
+    await seedStorage(page, createDirectPendingRecoverySeed());
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".app-shell");
+
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+      const message = state.messages.find((item) => item.id === "smoke-direct-pending-message");
+      return message?.status === "sent" && message.requestAttempt === 2;
+    });
+
+    const state = await collectDirectPendingRecoveryState(page);
+    assertEqual(state.userMessageStatus, "sent", "direct pending recovery should mark the original user message sent");
+    assertEqual(state.userMessageAttempt, 2, "direct pending recovery should keep one stable request identity and advance the attempt");
+    assertIncludes(state.conversationText, "Recovered pending direct reply.", "direct pending recovery should render the recovered agent reply");
+    assertEqual(state.retryText, "", "direct pending recovery should not leave a Retry action after success");
+  } finally {
+    await context.close();
+  }
+}
+
+async function runTaskRoomPendingRecoverySmoke() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(appUrl);
+    await seedStorage(page, createTaskRoomPendingRecoverySeed());
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".app-shell");
+
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+      const message = state.messages.find((item) => item.id === "smoke-task-room-pending-message");
+      const task = state.tasks.find((item) => item.id === "smoke-task-room-pending-task");
+      const run = state.runs.find((item) => item.id === "smoke-task-room-pending-run");
+      return message?.status === "failed" && task?.state === "failed" && run?.state === "failed";
+    });
+
+    const state = await collectTaskRoomPendingRecoveryState(page);
+    assertEqual(state.userMessageStatus, "failed", "task room pending recovery should fail the interrupted user message");
+    assertEqual(state.failureKind, "Interrupted", "task room pending recovery should show an interrupted failure label");
+    assertIncludes(state.failureText, "Task Room was interrupted before the agent returned.", "task room pending recovery should explain what happened");
+    assertEqual(state.taskState, "failed", "task room pending recovery should fail the project task");
+    assertEqual(state.runState, "failed", "task room pending recovery should fail the project run");
+    assertEqual(state.retryText, "Retry", "task room pending recovery should leave a visible Retry action");
+  } finally {
+    await context.close();
+  }
+}
+
 async function installSmokeProviderRoute(page, content) {
   await page.route("**/smoke-openai/**", async (route) => {
     await route.fulfill({
@@ -214,6 +271,38 @@ async function collectTaskRoomRetryState(page) {
   });
 }
 
+async function collectDirectPendingRecoveryState(page) {
+  return page.evaluate(() => {
+    const clean = (value) => value?.trim().replace(/\s+/g, " ") ?? "";
+    const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+    const message = state.messages.find((item) => item.id === "smoke-direct-pending-message");
+    return {
+      conversationText: clean(document.querySelector(".conversation-body")?.textContent),
+      retryText: clean(document.querySelector(".message-retry-button")?.textContent),
+      userMessageStatus: message?.status ?? "",
+      userMessageAttempt: message?.requestAttempt ?? 0,
+    };
+  });
+}
+
+async function collectTaskRoomPendingRecoveryState(page) {
+  return page.evaluate(() => {
+    const clean = (value) => value?.trim().replace(/\s+/g, " ") ?? "";
+    const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+    const message = state.messages.find((item) => item.id === "smoke-task-room-pending-message");
+    const task = state.tasks.find((item) => item.id === "smoke-task-room-pending-task");
+    const run = state.runs.find((item) => item.id === "smoke-task-room-pending-run");
+    return {
+      failureKind: clean(document.querySelector(".message-error-kind")?.textContent),
+      failureText: clean(document.querySelector(".message-error-text")?.textContent),
+      retryText: clean(document.querySelector(".message-retry-button")?.textContent),
+      userMessageStatus: message?.status ?? "",
+      taskState: task?.state ?? "",
+      runState: run?.state ?? "",
+    };
+  });
+}
+
 function createRefreshSeed() {
   const now = "2026-06-18T12:00:00.000Z";
   const agent = createSmokeAgent("smoke-agent-refresh", "Lucy");
@@ -243,6 +332,57 @@ function createRefreshSeed() {
       conversationMode: "single",
       outputMode: "workspace",
       activeFreeChatConversationIds: {},
+    },
+  };
+}
+
+function createDirectPendingRecoverySeed() {
+  const now = "2026-06-18T12:00:00.000Z";
+  const agent = createSmokeAgent("smoke-agent-direct-pending", "Smoke Agent");
+  const conversation = {
+    id: "smoke-direct-pending-conversation",
+    projectId: "__free_chat__",
+    mode: "direct",
+    title: "Pending direct smoke chat",
+    primaryAgentId: agent.id,
+    participantAgentIds: [agent.id],
+    a2aContextId: "free-chat:smoke-agent-direct-pending",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const message = {
+    id: "smoke-direct-pending-message",
+    conversationId: conversation.id,
+    projectId: "__free_chat__",
+    role: "user",
+    contentParts: [{ kind: "text", text: "Recover this pending direct message." }],
+    requestId: "smoke-direct-pending-request",
+    requestAttempt: 1,
+    requestStartedAt: now,
+    status: "sending",
+    createdAt: now,
+  };
+
+  return {
+    agents: [agent],
+    workspace: {
+      version: 1,
+      projects: [],
+      conversations: [conversation],
+      messages: [message],
+      runs: [],
+      tasks: [],
+      artifacts: [],
+    },
+    ui: {
+      selectedAgentId: agent.id,
+      selectedProjectId: "default",
+      chatScope: "free",
+      conversationMode: "single",
+      outputMode: "workspace",
+      activeFreeChatConversationIds: {
+        [agent.id]: conversation.id,
+      },
     },
   };
 }
@@ -297,6 +437,76 @@ function createTimeoutSeed(idPrefix = "timeout") {
       activeFreeChatConversationIds: {
         [agent.id]: conversation.id,
       },
+    },
+  };
+}
+
+function createTaskRoomPendingRecoverySeed() {
+  const seed = createTaskRoomRetrySeed();
+  const now = "2026-06-18T12:00:00.000Z";
+  const conversation = seed.workspace.conversations[0];
+  const chief = seed.agents[0];
+  const participant = seed.agents[1];
+  const project = seed.workspace.projects[0];
+  const task = {
+    id: "smoke-task-room-pending-task",
+    projectId: project.id,
+    contextId: conversation.a2aContextId,
+    title: "Recover interrupted task room request",
+    ownerAgentId: chief.id,
+    participantAgentIds: [participant.id],
+    state: "submitting",
+    summary: "Task submitted to Chief.",
+    events: [
+      {
+        id: "smoke-task-room-pending-task-submitted",
+        taskId: "smoke-task-room-pending-task",
+        agentId: chief.id,
+        label: "Task submitted to Chief.",
+        state: "submitting",
+        timestamp: now,
+      },
+    ],
+    artifactIds: [],
+    updatedAt: now,
+  };
+  const run = {
+    id: "smoke-task-room-pending-run",
+    projectId: project.id,
+    conversationId: conversation.id,
+    taskId: task.id,
+    type: "chief_delegation",
+    ownerAgentId: chief.id,
+    participantAgentIds: [chief.id, participant.id],
+    state: "submitting",
+    summary: "Chief-led task submitted.",
+    eventIds: ["smoke-task-room-pending-run-submitted"],
+    artifactIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  const message = {
+    id: "smoke-task-room-pending-message",
+    conversationId: conversation.id,
+    projectId: project.id,
+    role: "user",
+    contentParts: [{ kind: "text", text: "Recover interrupted task room request." }],
+    taskId: task.id,
+    runId: run.id,
+    requestId: "smoke-task-room-pending-request",
+    requestAttempt: 1,
+    requestStartedAt: now,
+    status: "sending",
+    createdAt: now,
+  };
+
+  return {
+    ...seed,
+    workspace: {
+      ...seed.workspace,
+      messages: [message],
+      runs: [run],
+      tasks: [task],
     },
   };
 }

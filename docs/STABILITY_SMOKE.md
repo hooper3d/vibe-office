@@ -102,7 +102,44 @@ Notes:
 - Provider calls are intercepted inside the isolated Playwright browser context and return deterministic OpenAI-compatible responses.
 - The smoke verifies Vibe Office retry state, not external provider availability.
 
+## Pending Reload Recovery Smoke
+
+Purpose:
+
+- Verify a Direct Chat request that was `sending` during reload can be recovered without creating a detached conversation.
+- Verify a Task Room request that was `sending` during reload becomes an understandable interrupted failure with Retry.
+- Verify recovery preserves the original user message and request identity.
+
+Latest check:
+
+- Date: 2026-06-18
+- Command: `npm run smoke:browser`
+- App URL: `http://127.0.0.1:5180/`
+- Seeded Direct Chat state:
+  - Active agent: `Smoke Agent`
+  - Active scope: `Free Chat`
+  - Pending user message: `status: sending`
+- Seeded Task Room state:
+  - Active project: `Retry Smoke Project`
+  - Active mode: `Task Room`
+  - Pending user message linked to a submitting project task/run
+- Browser-visible result:
+  - Direct Chat pending recovery renders `Recovered pending direct reply.`
+  - Direct Chat original user message becomes `sent`
+  - Direct Chat original request attempt becomes `2`
+  - Task Room pending recovery shows failure label `Interrupted`
+  - Task Room failure text explains that Task Room was interrupted before the agent returned
+  - Task Room project task becomes `failed`
+  - Task Room project run becomes `failed`
+  - Task Room interrupted user message keeps a visible Retry action
+- Result: passed.
+
+Notes:
+
+- Direct Chat recovery uses an intercepted deterministic OpenAI-compatible response inside the isolated Playwright context.
+- Task Room recovery intentionally does not auto-resume the full multi-agent orchestration after reload; it fails clearly and leaves Retry.
+
 ## Still Needed
 
-- Browser-visible interrupted pending request recovery for Direct Chat after reload.
-- Browser-visible interrupted pending request recovery for Task Room after reload.
+- Browser-visible Project Direct Chat pending recovery with attached workspace context.
+- Browser-visible local trusted layer outage during workspace file recovery.
