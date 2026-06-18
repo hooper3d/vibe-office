@@ -703,6 +703,7 @@ label > span:not(.field-label):not(.field-help),
 
 .output-panel {
   background: var(--surface);
+  padding: 20px 16px 20px 20px;
 }
 
 .splitter {
@@ -1010,7 +1011,6 @@ label > span:not(.field-label):not(.field-help),
 
 .task-summary,
 .assignment-row,
-.output-item,
 .test-panel,
 .diagnostics,
 .advanced-settings {
@@ -1315,20 +1315,20 @@ textarea::placeholder {
 .tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 0;
   border-bottom: 1px solid var(--border);
   background: transparent;
   padding: 0;
 }
 
 .tab-button {
-  height: 36px;
+  height: 34px;
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -1359,8 +1359,8 @@ textarea::placeholder {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 14px;
-  margin-top: 14px;
+  gap: 12px;
+  margin-top: 12px;
   overflow: hidden;
 }
 
@@ -1406,7 +1406,7 @@ textarea::placeholder {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1444,13 +1444,15 @@ textarea::placeholder {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .workspace-file-grid {
   display: grid;
   flex: 1 1 auto;
   grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1.15fr);
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
 }
 
@@ -1467,14 +1469,14 @@ textarea::placeholder {
 .workspace-preview {
   overflow: auto;
   max-height: none;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
+  border-top: 0;
+  padding-top: 0;
 }
 
 .workspace-preview {
   grid-template-rows: auto minmax(0, 1fr);
   border-left: 1px solid var(--border);
-  padding-left: 16px;
+  padding-left: 12px;
 }
 
 .workspace-path-row {
@@ -1514,17 +1516,16 @@ textarea::placeholder {
   min-width: 0;
   align-items: flex-start;
   gap: 10px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-primary);
-  padding: 8px;
+  padding: 8px 6px;
   text-align: left;
 }
 
 .workspace-file-row:hover,
 .workspace-search-result:hover {
-  border-color: var(--border);
   background: var(--surface-soft);
 }
 
@@ -1655,9 +1656,9 @@ textarea::placeholder {
 .empty-state.tall {
   margin-top: 16px;
   min-height: 420px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-soft);
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .compact-empty {
@@ -1672,10 +1673,11 @@ textarea::placeholder {
 }
 
 .inline-empty {
-  border: 1px dashed var(--border);
-  border-radius: 8px;
+  border: 0;
+  border-top: 1px dashed var(--border);
+  border-radius: 0;
   color: var(--text-secondary);
-  padding: 12px;
+  padding: 12px 0;
   font-size: 12px;
   line-height: 18px;
 }
@@ -1685,7 +1687,13 @@ textarea::placeholder {
 }
 
 .output-item {
-  padding: 16px;
+  padding: 14px 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .task-event-list {
@@ -1785,16 +1793,17 @@ textarea::placeholder {
 .artifact-detail {
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-soft);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .artifact-browser {
   display: grid;
   align-content: start;
-  gap: 6px;
-  padding: 8px;
+  gap: 0;
+  border-right: 1px solid var(--border);
+  padding: 0 10px 0 0;
 }
 
 .artifact-list-item {
@@ -1803,18 +1812,23 @@ textarea::placeholder {
   align-items: center;
   gap: 8px;
   width: 100%;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
   background: transparent;
   color: var(--text-primary);
-  padding: 10px;
+  padding: 10px 8px;
   text-align: left;
 }
 
 .artifact-list-item:hover,
 .artifact-list-item.selected {
-  border-color: var(--border);
-  background: var(--surface);
+  background: var(--surface-soft);
+}
+
+.artifact-list-item.selected {
+  border-left-color: var(--accent);
 }
 
 .artifact-list-item h3 {
@@ -1835,7 +1849,7 @@ textarea::placeholder {
 }
 
 .artifact-detail {
-  padding: 14px;
+  padding: 0 0 0 2px;
 }
 
 .artifact-detail-header {
