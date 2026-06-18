@@ -2825,6 +2825,62 @@ test("M9 provider regression fails selected targets that are not ready", async (
   }
 });
 
+test("local agent credential updater applies M9 target presets without leaking keys", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-m9-credential-"));
+  const secret = "super-secret-m9-test-key";
+
+  try {
+    await writeFile(
+      path.join(localTrustedHome, "agent-registry.local.json"),
+      JSON.stringify(
+        {
+          "agent-minimax": {
+            id: "agent-minimax",
+            name: "MiniMax",
+            endpoint: "https://api.minimaxi.com/v1",
+            a2aEndpoint: "https://api.minimaxi.com/a2a",
+            agentCardUrl: "https://api.minimaxi.com/.well-known/agent-card.json",
+            model: "MiniMax-M3",
+            runtimeProvider: "openai",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const result = spawnSync(process.execPath, ["scripts/update-local-agent-credential.mjs"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VIBE_OFFICE_LOCAL_TRUSTED_HOME: localTrustedHome,
+        VIBE_AGENT_ID: "agent-minimax",
+        VIBE_AGENT_M9_TARGET: "minimax",
+        VIBE_AGENT_API_KEY: secret,
+      },
+    });
+    const registryRaw = await readFile(path.join(localTrustedHome, "agent-registry.local.json"), "utf8");
+    const credentialRaw = await readFile(path.join(localTrustedHome, "agent-credentials.local.json"), "utf8");
+    const registry = JSON.parse(registryRaw);
+    const credentials = JSON.parse(credentialRaw);
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    assert.equal(result.status, 0);
+    assert.match(output, /m9Target=minimax/);
+    assert.match(output, /m9Readiness=READY:agent-minimax/);
+    assert.equal(output.includes(secret), false);
+    assert.equal(registryRaw.includes(secret), false);
+    assert.equal(registry["agent-minimax"].runtimeProvider, "anthropic");
+    assert.equal(registry["agent-minimax"].endpoint, "https://api.minimax.io/anthropic");
+    assert.equal(registry["agent-minimax"].model, "MiniMax-M3");
+    assert.equal(credentials["agent-minimax"].apiKey, secret);
+  } finally {
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
 test("provider setup detects obvious runtime endpoint mismatches", () => {
   assert.match(
     getProviderSetupIssue({

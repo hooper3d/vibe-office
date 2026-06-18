@@ -41,14 +41,16 @@ Readiness lines include an `action=` hint:
 If the UI state looks correct but the local trusted readiness still reports `MISSING_KEY`, update the local trusted credential record from environment variables. The command never prints the key:
 
 ```bash
-VIBE_AGENT_ID=agent-deepseek VIBE_AGENT_API_KEY=... npm run local-agent:credential
+VIBE_AGENT_ID=agent-deepseek VIBE_AGENT_M9_TARGET=deepseek VIBE_AGENT_API_KEY=... npm run local-agent:credential
 ```
 
 For a provider mismatch, the same command can update safe metadata while saving the credential:
 
 ```bash
-VIBE_AGENT_ID=agent-minimax VIBE_AGENT_RUNTIME_PROVIDER=anthropic VIBE_AGENT_BASE_URL=https://api.minimax.io/anthropic VIBE_AGENT_MODEL=MiniMax-M3 VIBE_AGENT_API_KEY=... npm run local-agent:credential
+VIBE_AGENT_ID=agent-minimax VIBE_AGENT_M9_TARGET=minimax VIBE_AGENT_API_KEY=... npm run local-agent:credential
 ```
+
+`VIBE_AGENT_M9_TARGET` applies safe provider defaults for the target and prints a safe readiness summary such as `m9Readiness=READY:agent-minimax`. It never prints the API key.
 
 Do not paste real keys into source files, docs, screenshots, shell scripts, or committed logs.
 
