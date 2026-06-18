@@ -1298,17 +1298,17 @@ textarea::placeholder {
 .tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-soft);
-  padding: 4px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  padding: 0;
 }
 
 .tab-button {
   height: 36px;
   border: 0;
-  border-radius: 8px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
   font-size: 14px;
@@ -1316,9 +1316,16 @@ textarea::placeholder {
 }
 
 .tab-button.active {
-  background: var(--surface-raised);
+  border-bottom-color: var(--accent);
+  background: transparent;
   color: var(--text-primary);
   box-shadow: none;
+}
+
+.tab-button:hover {
+  border-bottom-color: var(--accent-border);
+  background: transparent;
+  color: var(--text-primary);
 }
 
 .browser-workspace,
@@ -1335,8 +1342,8 @@ textarea::placeholder {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 16px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 14px;
   overflow: hidden;
 }
 
@@ -1382,11 +1389,11 @@ textarea::placeholder {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-soft);
-  padding: 16px;
+  gap: 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .workspace-files-header,
@@ -1426,7 +1433,7 @@ textarea::placeholder {
   display: grid;
   flex: 1 1 auto;
   grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1.15fr);
-  gap: 12px;
+  gap: 16px;
   min-height: 0;
 }
 
@@ -1444,11 +1451,13 @@ textarea::placeholder {
   overflow: auto;
   max-height: none;
   border-top: 1px solid var(--border);
-  padding-top: 10px;
+  padding-top: 12px;
 }
 
 .workspace-preview {
   grid-template-rows: auto minmax(0, 1fr);
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
 }
 
 .workspace-path-row {
@@ -1499,7 +1508,7 @@ textarea::placeholder {
 .workspace-file-row:hover,
 .workspace-search-result:hover {
   border-color: var(--border);
-  background: var(--surface);
+  background: var(--surface-soft);
 }
 
 .workspace-file-row svg,
@@ -1545,11 +1554,12 @@ textarea::placeholder {
   max-height: none;
   margin: 0;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   color: var(--text-primary);
-  padding: 12px;
+  padding: 12px 0 0;
   font-size: 12px;
   line-height: 18px;
   white-space: pre-wrap;
