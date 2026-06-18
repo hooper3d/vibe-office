@@ -692,8 +692,11 @@ Implementation progress:
 - M7-1 structure slimming started.
 - Output Workspace views are now split out of `App.tsx` into `src/components/OutputWorkspace.tsx`.
 - The extracted views are `WorkspaceFiles`, `BrowserPreview`, `ProjectTasks`, and `ProjectArtifacts`.
+- Setup Wizard is now split out of `App.tsx` into `src/components/SetupWizard.tsx`.
+- Shared agent profile constants live in `src/domain/agentProfile.ts`.
+- Shared agent display primitives live in `src/components/AgentPrimitives.tsx`.
 - `App.tsx` remains the state and request orchestration owner for this slice.
-- Next M7-1 slices should extract Setup Wizard and continue separating provider adapters from UI orchestration.
+- Next M7-1 slice should continue separating provider adapters from UI orchestration.
 
 Acceptance:
 
