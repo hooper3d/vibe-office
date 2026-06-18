@@ -33,9 +33,7 @@ import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStor
 import { getUserFacingAgentError } from "./services/agentErrorText";
 import {
   createBackfilledMediaArtifacts,
-  createTextParts,
 } from "./services/artifactState";
-import { buildAgentRequestText } from "./services/agentRequestText";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
 import {
   applyActiveFreeChatConversation,
@@ -71,6 +69,12 @@ import {
   type TaskRoomRequestState,
   type TaskRoomRequestStep,
 } from "./services/taskRoomOrchestrator";
+import {
+  createConversation,
+  prepareFreeChatSubmission,
+  prepareProjectDirectSubmission,
+  prepareTaskRoomSubmission,
+} from "./services/requestSubmissionState";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import {
   applyTaskLifecycleRemoteUpdate,
@@ -958,52 +962,24 @@ export function App() {
     if (!selectedAgent) return;
 
     const targetAgent = selectedAgent;
-    const now = new Date().toISOString();
-    const existingConversation =
-      currentConversation?.projectId === FREE_CHAT_PROJECT_ID &&
-      currentConversation.mode === "direct" &&
-      currentConversation.primaryAgentId === targetAgent.id
-        ? currentConversation
-        : undefined;
-    const conversation =
-      existingConversation ??
-      createConversation({
-        projectId: FREE_CHAT_PROJECT_ID,
-        namespace: FREE_CHAT_NAMESPACE,
-        mode: "direct",
-        title: `${targetAgent.name} free chat`,
-        primaryAgentId: targetAgent.id,
-        participantAgentIds: [targetAgent.id],
-        createdAt: now,
-      });
-    const userMessageId = crypto.randomUUID();
-    const requestId = crypto.randomUUID();
-    const userMessage: ConversationMessage = {
-      id: userMessageId,
-      conversationId: conversation.id,
-      projectId: FREE_CHAT_PROJECT_ID,
-      role: "user",
-      contentParts: createTextParts(text),
-      requestId,
-      requestAttempt: 1,
-      requestStartedAt: now,
-      status: "sending",
-      createdAt: now,
-    };
+    const submission = prepareFreeChatSubmission({
+      state: requestStoreRef.current.snapshot(),
+      currentConversation,
+      targetAgent,
+      text,
+      freeChatProjectId: FREE_CHAT_PROJECT_ID,
+      freeChatNamespace: FREE_CHAT_NAMESPACE,
+    });
+    const { conversation, requestId, userMessageId } = submission;
 
-    if (!existingConversation) {
-      const nextConversations = [conversation, ...requestStoreRef.current.snapshot().conversations];
-      requestStoreRef.current.sync({ conversations: nextConversations });
-      setConversations(nextConversations);
-    }
     setActiveFreeChatConversationIds((current) => ({
       ...current,
       [targetAgent.id]: conversation.id,
     }));
     requestStoreRef.current.begin(requestId);
-    const nextMessages = [...requestStoreRef.current.snapshot().messages, userMessage];
-    requestStoreRef.current.sync({ messages: nextMessages });
-    setMessages(nextMessages);
+    requestStoreRef.current.replace(submission.state);
+    setConversations(submission.state.conversations);
+    setMessages(submission.state.messages);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
 
@@ -1183,77 +1159,27 @@ export function App() {
     setIsComposerSubmitting(true);
     try {
       const targetAgent = selectedAgent;
-      const now = new Date().toISOString();
-      const activeConversationMode = "direct";
-      const existingConversation = conversations.find(
-        (item) =>
-          item.projectId === selectedWorkspaceProject.id &&
-          item.mode === activeConversationMode &&
-          item.primaryAgentId === targetAgent.id,
-      );
-      const conversation =
-        existingConversation ??
-        createConversation({
-          projectId: selectedWorkspaceProject.id,
-          namespace: selectedWorkspaceProject.namespace,
-          mode: activeConversationMode,
-          title: targetAgent.name,
-          primaryAgentId: targetAgent.id,
-          participantAgentIds: [targetAgent.id],
-          createdAt: now,
-        });
-      const runId = crypto.randomUUID();
-      const userMessageId = crypto.randomUUID();
-      const requestId = crypto.randomUUID();
-      const participantAgentIds = [targetAgent.id];
-      const workspaceContext = attachedWorkspaceFiles.map((file) => ({
-        path: file.path,
-        size: file.size,
-        attachedAt: file.attachedAt,
-      }));
-      const agentRequestText = buildAgentRequestText(text, selectedWorkspaceProject, attachedWorkspaceFiles);
-
-      const userMessage: ConversationMessage = {
-        id: userMessageId,
-        conversationId: conversation.id,
-        projectId: selectedWorkspaceProject.id,
-        role: "user",
-        contentParts: createTextParts(text),
-        workspaceContext,
-        runId,
-        requestId,
-        requestAttempt: 1,
-        requestStartedAt: now,
-        status: "sending",
-        createdAt: now,
-      };
-      const optimisticRun: ProjectRun = {
-        id: runId,
-        projectId: selectedWorkspaceProject.id,
-        conversationId: conversation.id,
-        type: "direct_message",
-        ownerAgentId: targetAgent.id,
+      const submission = prepareProjectDirectSubmission({
+        state: requestStoreRef.current.snapshot(),
+        project: selectedWorkspaceProject,
+        targetAgent,
+        text,
+        files: attachedWorkspaceFiles,
+      });
+      const {
+        agentRequestText,
+        conversation,
         participantAgentIds,
-        state: "submitting",
-        summary: "Project chat request submitted.",
-        eventIds: [`${runId}-submitted`],
-        artifactIds: [],
-        createdAt: now,
-        updatedAt: now,
-      };
+        requestId,
+        runId,
+        userMessageId,
+      } = submission;
 
-      if (!existingConversation) {
-        const nextConversations = [conversation, ...requestStoreRef.current.snapshot().conversations];
-        requestStoreRef.current.sync({ conversations: nextConversations });
-        setConversations(nextConversations);
-      }
       requestStoreRef.current.begin(requestId);
-      const projectDirectSnapshot = requestStoreRef.current.snapshot();
-      const nextMessages = [...projectDirectSnapshot.messages, userMessage];
-      const nextRuns = [optimisticRun, ...projectDirectSnapshot.runs];
-      requestStoreRef.current.sync({ messages: nextMessages, runs: nextRuns });
-      setMessages(nextMessages);
-      setRuns(nextRuns);
+      requestStoreRef.current.replace(submission.state);
+      setConversations(submission.state.conversations);
+      setMessages(submission.state.messages);
+      setRuns(submission.state.runs);
       setMessageText("");
       setAttachedWorkspaceFiles([]);
 
@@ -1282,104 +1208,23 @@ export function App() {
 
     const targetAgent = chiefAgent;
     const participants = selectedTaskParticipants;
-    const participantAgentIds = participants.map((agent) => agent.id);
-    const now = new Date().toISOString();
-    const existingConversation = conversations.find(
-      (item) =>
-        item.projectId === selectedWorkspaceProject.id &&
-        item.mode === "task_room" &&
-        item.chiefAgentId === targetAgent.id,
-    );
-    const conversation =
-      existingConversation ??
-      createConversation({
-        projectId: selectedWorkspaceProject.id,
-        namespace: selectedWorkspaceProject.namespace,
-        mode: "task_room",
-        title: `${selectedWorkspaceProject.name} task room`,
-        chiefAgentId: targetAgent.id,
-        participantAgentIds,
-        createdAt: now,
-      });
-    const taskId = crypto.randomUUID();
-    const runId = crypto.randomUUID();
-    const userMessageId = crypto.randomUUID();
-    const requestId = crypto.randomUUID();
     const taskFiles = [...attachedWorkspaceFiles];
-    const workspaceContext = taskFiles.map((file) => ({
-      path: file.path,
-      size: file.size,
-      attachedAt: file.attachedAt,
-    }));
-    const taskTitle = text.length > 56 ? `${text.slice(0, 56)}...` : text;
+    const submission = prepareTaskRoomSubmission({
+      state: requestStoreRef.current.snapshot(),
+      project: selectedWorkspaceProject,
+      chief: targetAgent,
+      participants,
+      text,
+      files: taskFiles,
+    });
+    const { conversation, requestId, runId, taskId, userMessageId } = submission;
 
-    const userMessage: ConversationMessage = {
-      id: userMessageId,
-      conversationId: conversation.id,
-      projectId: selectedWorkspaceProject.id,
-      role: "user",
-      contentParts: createTextParts(text),
-      workspaceContext,
-      taskId,
-      runId,
-      requestId,
-      requestAttempt: 1,
-      requestStartedAt: now,
-      status: "sending",
-      createdAt: now,
-    };
-    const projectTask: ProjectTask = {
-      id: taskId,
-      projectId: selectedWorkspaceProject.id,
-      contextId: conversation.a2aContextId,
-      title: taskTitle,
-      ownerAgentId: targetAgent.id,
-      participantAgentIds,
-      state: "submitting",
-      summary: "Task submitted to Chief.",
-      events: [
-        {
-          id: `${taskId}-submitted`,
-          taskId,
-          agentId: targetAgent.id,
-          label: "Task submitted to Chief.",
-          state: "submitting",
-          timestamp: now,
-        },
-      ],
-      artifactIds: [],
-      updatedAt: now,
-    };
-    const projectRun: ProjectRun = {
-      id: runId,
-      projectId: selectedWorkspaceProject.id,
-      conversationId: conversation.id,
-      taskId,
-      type: "chief_delegation",
-      ownerAgentId: targetAgent.id,
-      participantAgentIds: [targetAgent.id, ...participantAgentIds],
-      state: "submitting",
-      summary: "Chief-led task submitted.",
-      eventIds: [`${runId}-submitted`],
-      artifactIds: [],
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    if (!existingConversation) {
-      const nextConversations = [conversation, ...requestStoreRef.current.snapshot().conversations];
-      requestStoreRef.current.sync({ conversations: nextConversations });
-      setConversations(nextConversations);
-    }
     requestStoreRef.current.begin(requestId);
-    const taskRoomSnapshot = requestStoreRef.current.snapshot();
-    const nextMessages = [...taskRoomSnapshot.messages, userMessage];
-    const nextTasks = [projectTask, ...taskRoomSnapshot.tasks.filter((task) => task.id !== taskId)];
-    const nextRuns = [projectRun, ...taskRoomSnapshot.runs];
-    requestStoreRef.current.sync({ messages: nextMessages, tasks: nextTasks, runs: nextRuns });
-    setMessages(nextMessages);
-    setTasks(nextTasks);
-    setRuns(nextRuns);
+    requestStoreRef.current.replace(submission.state);
+    setConversations(submission.state.conversations);
+    setMessages(submission.state.messages);
+    setTasks(submission.state.tasks);
+    setRuns(submission.state.runs);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
     setOutputMode("outputs");
@@ -1592,39 +1437,6 @@ export function App() {
       ) : null}
     </div>
   );
-}
-
-function createConversation({
-  projectId,
-  namespace,
-  mode,
-  title,
-  primaryAgentId,
-  chiefAgentId,
-  participantAgentIds,
-  createdAt,
-}: {
-  projectId: string;
-  namespace: string;
-  mode: Conversation["mode"];
-  title: string;
-  primaryAgentId?: string;
-  chiefAgentId?: string;
-  participantAgentIds: string[];
-  createdAt: string;
-}): Conversation {
-  return {
-    id: crypto.randomUUID(),
-    projectId,
-    mode,
-    title,
-    primaryAgentId,
-    chiefAgentId,
-    participantAgentIds,
-    a2aContextId: namespace,
-    createdAt,
-    updatedAt: createdAt,
-  };
 }
 
 async function readAvatarFile(file?: File): Promise<{ dataUrl?: string; error?: string }> {

@@ -20,6 +20,11 @@ import {
   prepareTaskRoomMessageRetry,
 } from "../services/requestRetryState";
 import {
+  prepareFreeChatSubmission,
+  prepareProjectDirectSubmission,
+  prepareTaskRoomSubmission,
+} from "../services/requestSubmissionState";
+import {
   applyTaskRoomAggregationCompleted,
   applyTaskRoomChiefPlanCompleted,
   applyTaskRoomParticipantCompleted,
@@ -933,6 +938,72 @@ test("output selectors keep chat records separate from trackable project outputs
   assert.deepEqual(filterRunsByAgent(runs, participant.id).map((item) => item.id), ["run-direct-task", "run-chief"]);
   assert.deepEqual(filterTasksByAgent(tasks, participant.id).map((item) => item.id), ["task-chief", "task-direct", "task-standalone"]);
   assert.deepEqual(filterArtifactsByAgent([artifact], participant.id).map((item) => item.id), ["artifact-1"]);
+});
+
+test("request submission helpers create stable optimistic chat and task state", () => {
+  let idIndex = 0;
+  const createId = () => `generated-${++idIndex}`;
+  const files = [
+    {
+      path: "src/App.tsx",
+      content: "export function App() {}",
+      size: 24,
+      attachedAt: at,
+      truncated: false,
+    },
+  ];
+
+  const freeChat = prepareFreeChatSubmission({
+    state: directRequestState({ conversations: [], messages: [] }),
+    targetAgent: agent,
+    text: "hello",
+    freeChatProjectId,
+    freeChatNamespace: "free-chat",
+    now: () => at,
+    createId,
+  });
+  assert.equal(freeChat.state.conversations.length, 1);
+  assert.equal(freeChat.state.messages[0].status, "sending");
+  assert.equal(freeChat.state.messages[0].requestId, "generated-2");
+  assert.equal(freeChat.conversation.primaryAgentId, agent.id);
+
+  const projectDirect = prepareProjectDirectSubmission({
+    state: directRequestState({ conversations: [], messages: [], runs: [] }),
+    project,
+    targetAgent: participant,
+    text: "review this file",
+    files,
+    now: () => at,
+    createId,
+  });
+  assert.equal(projectDirect.state.conversations[0].projectId, project.id);
+  assert.equal(projectDirect.state.messages[0].runId, "generated-3");
+  assert.deepEqual(projectDirect.state.messages[0].workspaceContext, [
+    {
+      path: "src/App.tsx",
+      size: 24,
+      attachedAt: at,
+    },
+  ]);
+  assert.equal(projectDirect.state.runs[0].type, "direct_message");
+  assert.match(projectDirect.agentRequestText, /review this file/);
+  assert.match(projectDirect.agentRequestText, /src\/App\.tsx/);
+
+  const taskRoom = prepareTaskRoomSubmission({
+    state: taskRoomRequestState({ conversations: [], messages: [], runs: [], tasks: [] }),
+    project,
+    chief: agent,
+    participants: [participant],
+    text: "coordinate one small release draft",
+    files,
+    now: () => at,
+    createId,
+  });
+  assert.equal(taskRoom.state.conversations[0].mode, "task_room");
+  assert.equal(taskRoom.state.messages[0].taskId, "generated-6");
+  assert.equal(taskRoom.state.tasks[0].state, "submitting");
+  assert.equal(taskRoom.state.runs[0].type, "chief_delegation");
+  assert.deepEqual(taskRoom.state.runs[0].participantAgentIds, [agent.id, participant.id]);
 });
 
 test("local trusted registry preserves credentials when metadata is rewritten without keys", async () => {
