@@ -50,7 +50,7 @@ async function runRefreshRestoreSmoke() {
     await page.waitForSelector(".app-shell");
     const after = await collectChromeState(page);
 
-    assertEqual(after.activeAgent, before.activeAgent, "active agent should survive reload");
+    assertEqual(after.activeAgentName, before.activeAgentName, "active agent should survive reload");
     assertEqual(after.activeProject, before.activeProject, "active project should survive reload");
     assertEqual(after.activeOutputTab, before.activeOutputTab, "active output tab should survive reload");
     assertEqual(after.composerPlaceholder, before.composerPlaceholder, "composer placeholder should survive reload");
@@ -288,6 +288,7 @@ async function collectChromeState(page) {
     const clean = (value) => value?.trim().replace(/\s+/g, " ") ?? "";
     return {
       activeAgent: clean(document.querySelector(".agent-row.active .nav-item")?.textContent),
+      activeAgentName: clean(document.querySelector(".agent-row.active .nav-item-name")?.textContent),
       activeProject: clean(document.querySelector(".project-row.active .project-item")?.textContent),
       activeOutputTab: clean(document.querySelector(".tab-button.active")?.textContent),
       composerPlaceholder: document.querySelector("textarea")?.getAttribute("placeholder") ?? "",

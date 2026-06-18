@@ -22,6 +22,7 @@ export type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 export function SetupWizard({
   testState,
   testMessage,
+  isSaving,
   onClose,
   onRunTest,
   onResetTest,
@@ -32,6 +33,7 @@ export function SetupWizard({
 }: {
   testState: ConnectionTestState;
   testMessage: string;
+  isSaving: boolean;
   onClose: () => void;
   onRunTest: (form: FormData) => void;
   onResetTest: () => void;
@@ -270,17 +272,18 @@ export function SetupWizard({
 
           <div className="setup-actions">
             {profileAgent ? (
-              <button type="button" className="danger-action-button" onClick={() => onDeleteAgent(profileAgent.id)}>
+              <button type="button" className="danger-action-button" onClick={() => onDeleteAgent(profileAgent.id)} disabled={isSaving}>
                 <Trash2 size={16} />
                 Delete agent
               </button>
             ) : null}
             <span className="setup-action-spacer" />
-            <button type="button" className="secondary-button" onClick={onClose}>
+            <button type="button" className="secondary-button" onClick={onClose} disabled={isSaving}>
               Cancel
             </button>
-            <button type="submit" className="primary-button" disabled={!profileAgent && testState !== "passed"}>
-              {profileAgent ? "Save changes" : "Add agent"}
+            <button type="submit" className="primary-button" disabled={isSaving || (!profileAgent && testState !== "passed")}>
+              {isSaving ? <Loader2 className="spin" size={16} /> : null}
+              {isSaving ? "Saving" : profileAgent ? "Save changes" : "Add agent"}
             </button>
           </div>
         </form>

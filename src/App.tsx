@@ -166,6 +166,7 @@ export function App() {
   const [testState, setTestState] = useState<ConnectionTestState>("idle");
   const [testMessage, setTestMessage] = useState("");
   const [lastConnectionMetadata, setLastConnectionMetadata] = useState<A2ACompatibilityMetadata | null>(null);
+  const [isSavingAgent, setIsSavingAgent] = useState(false);
   const [localTrustedAgentIssues, setLocalTrustedAgentIssues] = useState<Record<string, string[]>>({});
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
@@ -345,16 +346,10 @@ export function App() {
       };
     }
 
-    void getLocalTrustedAgentStatuses(agentIds)
-      .then((statuses) => {
-        if (cancelled) return;
-        setLocalTrustedAgentIssues(
-          Object.fromEntries(statuses.map((status) => [status.id, status.issues])),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setLocalTrustedAgentIssues({});
-      });
+    void refreshLocalTrustedAgentIssues(agentIds, {
+      replace: true,
+      isCancelled: () => cancelled,
+    });
 
     return () => {
       cancelled = true;
@@ -605,6 +600,26 @@ export function App() {
     }
   }
 
+  async function refreshLocalTrustedAgentIssues(
+    agentIds: string[],
+    options: { replace?: boolean; isCancelled?: () => boolean } = {},
+  ) {
+    if (agentIds.length === 0) {
+      setLocalTrustedAgentIssues({});
+      return;
+    }
+
+    try {
+      const statuses = await getLocalTrustedAgentStatuses(agentIds);
+      if (options.isCancelled?.()) return;
+      const nextIssues = Object.fromEntries(statuses.map((status) => [status.id, status.issues]));
+      setLocalTrustedAgentIssues((current) => (options.replace ? nextIssues : { ...current, ...nextIssues }));
+    } catch {
+      if (options.isCancelled?.()) return;
+      if (options.replace) setLocalTrustedAgentIssues({});
+    }
+  }
+
   function resetConnectionTest() {
     if (testState !== "idle") {
       setTestState("idle");
@@ -639,6 +654,7 @@ export function App() {
 
   async function saveDemoAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSavingAgent) return;
     const form = new FormData(event.currentTarget);
     const newAgent = createAgentFromHermesSetup(form);
     const setupIssue = getProviderSetupIssue(newAgent);
@@ -648,19 +664,26 @@ export function App() {
       setTestMessage(setupIssue);
       return;
     }
-    const saveResult = applyAgentSetupSave({
-      agents,
-      submittedAgent: newAgent,
-      editingAgentId: setupAgentId,
-      metadata: lastConnectionMetadata,
-    });
 
-    if (!(await persistLocalTrustedAgent(saveResult.trustedAgent))) return;
-    setAgents(saveResult.agents);
-    if (saveResult.selectedAgentId) {
-      setSelectedAgentId(saveResult.selectedAgentId);
+    setIsSavingAgent(true);
+    try {
+      const saveResult = applyAgentSetupSave({
+        agents,
+        submittedAgent: newAgent,
+        editingAgentId: setupAgentId,
+        metadata: lastConnectionMetadata,
+      });
+
+      if (!(await persistLocalTrustedAgent(saveResult.trustedAgent))) return;
+      await refreshLocalTrustedAgentIssues([saveResult.trustedAgent.id]);
+      setAgents(saveResult.agents);
+      if (saveResult.selectedAgentId) {
+        setSelectedAgentId(saveResult.selectedAgentId);
+      }
+      closeSetup();
+    } finally {
+      setIsSavingAgent(false);
     }
-    closeSetup();
   }
 
   function requestDeleteAgent(agentId: string) {
@@ -674,6 +697,10 @@ export function App() {
     const remainingAgents = normalizeChief(agents.filter((agent) => agent.id !== agentId));
     const fallbackAgent = remainingAgents.find((agent) => agent.isChief) ?? remainingAgents[0];
     setAgents(remainingAgents);
+    setLocalTrustedAgentIssues((current) => {
+      const { [agentId]: _deletedAgentIssues, ...remainingIssues } = current;
+      return remainingIssues;
+    });
     if (selectedAgentId === agentId) {
       setSelectedAgentId(fallbackAgent?.id ?? "");
     }
@@ -1342,6 +1369,7 @@ export function App() {
         <SetupWizard
           testState={testState}
           testMessage={testMessage}
+          isSaving={isSavingAgent}
           onClose={closeSetup}
           onRunTest={runConnectionTest}
           onResetTest={resetConnectionTest}
