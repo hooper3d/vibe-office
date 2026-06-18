@@ -244,6 +244,45 @@ Transport binding
 
 The frontend should stay simple and explicit. It should show whether an agent is connected, whether task status tracking is available, and whether cancel is available, without exposing protocol names as primary UI copy.
 
+## Basic Agent Onboarding
+
+The default Add Agent flow should feel like connecting an LLM provider and assigning a responsibility.
+
+Minimum visible setup:
+
+```txt
+Basic setup
+- Agent name
+- Office role
+- Capability tags
+
+Behavior
+- Role note
+
+Instance address
+- Instance location
+- Host / IP
+
+Model provider
+- Provider type
+- Base URL
+- Model / Agent ID
+- API key
+- Test connection
+```
+
+The first connected agent can be only a model-backed chat agent. It does not need full memory, workspace tools, task lifecycle support, or A2A-native runtime support on day one.
+
+Enhancement layers:
+
+- Personality and memory
+- Project folder permissions
+- Read/search/write tools
+- Task lifecycle tracking
+- External runtime / A2A integration
+
+Advanced details should be available for users who need them, but they should not define the main onboarding experience.
+
 ## Proposed M7
 
 ### Milestone 7: IA Reset - Agent Free Chat + Project Workspace
@@ -262,9 +301,12 @@ Scope:
 - Start reorganizing Output Area around agent/type grouping.
 - Make default agent onboarding feel like adding an LLM provider.
 - Move A2A-specific fields to advanced integration settings.
+- Treat Basic Agent onboarding as the first M7 implementation slice.
 
 Acceptance:
 
+- Add Agent defaults to Basic setup, Behavior, Instance address, and Model provider sections.
+- Runtime task endpoints and local runtime tuning are hidden under advanced settings.
 - User can select Lucy and see Lucy's free chat history.
 - User can create a new Lucy free chat.
 - Free chat does not show project folder, project badge, or project outputs as primary chrome.

@@ -3695,7 +3695,11 @@ function SetupWizard({
         <div className="setup-header agent-dialog-header">
           <div>
             <h2 id="setup-title">{profileAgent ? "Edit Agent" : "Add Agent"}</h2>
-            <p>{profileAgent ? "Update this agent profile and runtime connection." : "Create a new agent profile and runtime connection."}</p>
+            <p>
+              {profileAgent
+                ? "Update this model-backed agent and its optional runtime details."
+                : "Connect a model-backed agent. Add richer runtime capabilities later."}
+            </p>
           </div>
           <button className="icon-button" onClick={onClose} aria-label={profileAgent ? "Close Edit Agent" : "Close Add Agent"}>
             <XCircle size={18} />
@@ -3705,13 +3709,13 @@ function SetupWizard({
         <form className="setup-form" onSubmit={onSaveAgent} onChange={onResetTest}>
           <section className="profile-section" aria-label="Agent profile">
             <div className="profile-panel">
-              <section className="profile-block identity-block" aria-label="Identity">
+              <section className="profile-block identity-block" aria-label="Basic setup">
                 <div className="profile-block-title">
                   <span className="profile-title-line">
                     <span className="profile-block-icon">
                       <UserRound size={18} />
                     </span>
-                    <span>Identity</span>
+                    <span>Basic setup</span>
                   </span>
                   <span className="avatar-stack">
                     {profileAgent ? (
@@ -3747,18 +3751,36 @@ function SetupWizard({
                     </label>
                     <OfficeRoleSelector selectedRole={profileOfficeRole} />
                     <CapabilityTagSelector options={capabilityOptions} selectedTags={profileTags} />
-                    <p className="profile-note">Local registry identity used for organizing and routing your own agents.</p>
+                    <p className="profile-note">Name the agent, choose its office responsibility, and mark what kind of work it should handle.</p>
                   </div>
                 </div>
               </section>
 
-              <section className="profile-block" aria-label="Instance location">
+              <section className="profile-block" aria-label="Behavior">
+                <div className="profile-block-title">
+                  <span className="profile-title-line">
+                    <span className="profile-block-icon">
+                      <Tags size={18} />
+                    </span>
+                    <span>Behavior</span>
+                  </span>
+                </div>
+                <div className="profile-block-content">
+                  <label className="notes-field">
+                    <FieldLabel help="Local responsibility note for routing and future prompt behavior." label="Role note" />
+                    <textarea name="role" defaultValue={profileNote} placeholder="What should this agent do, avoid, or hand off?" />
+                  </label>
+                  <p className="profile-note">Keep this short and specific. Example: release note drafting and editing, not code changes.</p>
+                </div>
+              </section>
+
+              <section className="profile-block" aria-label="Instance address">
                 <div className="profile-block-title">
                   <span className="profile-title-line">
                     <span className="profile-block-icon">
                       <MapPin size={18} />
                     </span>
-                    <span>Instance location</span>
+                    <span>Instance address</span>
                   </span>
                 </div>
                 <div className="profile-block-content form-grid compact-grid">
@@ -3773,30 +3795,13 @@ function SetupWizard({
                 </div>
               </section>
 
-              <section className="profile-block" aria-label="Notes">
-                <div className="profile-block-title">
-                  <span className="profile-title-line">
-                    <span className="profile-block-icon">
-                      <Tags size={18} />
-                    </span>
-                    <span>Notes</span>
-                  </span>
-                </div>
-                <div className="profile-block-content">
-                  <label className="notes-field">
-                    <FieldLabel help="Private note for your own reference. It is not added to chat prompts." label="Notes" />
-                    <textarea name="role" defaultValue={profileNote} placeholder="Private note about this agent, optional" />
-                  </label>
-                </div>
-              </section>
-
-              <section className="profile-block runtime-block" aria-label="Provider connection">
+              <section className="profile-block runtime-block" aria-label="Model provider">
                 <div className="profile-block-title">
                   <span className="profile-title-line">
                     <span className="profile-block-icon">
                       <Server size={18} />
                     </span>
-                    <span>Provider connection</span>
+                    <span>Model provider</span>
                   </span>
                 </div>
                 <div className="profile-block-content runtime-content">
@@ -3806,7 +3811,7 @@ function SetupWizard({
                       <label>
                         Provider type
                         <select defaultValue="hermes" aria-label="Runtime type">
-                          <option value="hermes">Hermes</option>
+                          <option value="hermes">OpenAI-compatible</option>
                         </select>
                       </label>
                       <label>
@@ -3830,22 +3835,21 @@ function SetupWizard({
                     </div>
                   </div>
 
-                  <div className="runtime-group">
-                    <span className="runtime-group-title">Optional local settings</span>
-                    <div className="form-grid technical-fields">
-                      <label>
-                        Namespace prefix
-                        <input name="namespace" defaultValue={profileAgent ? "vibe-office" : ""} placeholder="Optional namespace prefix" />
-                      </label>
-                      <label>
-                        Timeout
-                        <input name="timeout" defaultValue={profileAgent?.timeoutSeconds ? `${profileAgent.timeoutSeconds}s` : "60s"} placeholder="60s" />
-                      </label>
-                    </div>
-                  </div>
-
                   <details className="advanced-runtime-settings">
-                    <summary>Advanced integration</summary>
+                    <summary>Advanced settings</summary>
+                    <div className="runtime-group">
+                      <span className="runtime-group-title">Local runtime</span>
+                      <div className="form-grid technical-fields">
+                        <label>
+                          Namespace prefix
+                          <input name="namespace" defaultValue={profileAgent ? "vibe-office" : ""} placeholder="Optional namespace prefix" />
+                        </label>
+                        <label>
+                          Timeout
+                          <input name="timeout" defaultValue={profileAgent?.timeoutSeconds ? `${profileAgent.timeoutSeconds}s` : "60s"} placeholder="60s" />
+                        </label>
+                      </div>
+                    </div>
                     <div className="runtime-group">
                       <span className="runtime-group-title">Generated integration endpoints</span>
                       <div className="form-grid technical-fields">
@@ -3879,8 +3883,8 @@ function SetupWizard({
 
                   <div className="diagnostics">
                     <DiagnosticRow label="Provider reachable" state={testState} />
-                    <DiagnosticRow label="Task interface ready" state={testState} />
-                    <DiagnosticRow label="Capabilities discovered" state={testState} />
+                    <DiagnosticRow label="Model response ready" state={testState} />
+                    <DiagnosticRow label="Profile metadata ready" state={testState} />
                     {testMessage ? <div className={`test-message ${testState}`}>{testMessage}</div> : null}
                   </div>
                 </div>

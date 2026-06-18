@@ -1945,7 +1945,7 @@ textarea::placeholder {
   align-items: start;
   gap: 24px;
   border-top: 1px solid var(--border);
-  padding: 20px 0;
+  padding: 16px 0;
 }
 
 .profile-block:first-child {
@@ -1989,7 +1989,7 @@ textarea::placeholder {
 
 .profile-block-content {
   min-width: 0;
-  gap: 16px;
+  gap: 12px;
 }
 
 .identity-content {
@@ -2202,7 +2202,7 @@ textarea::placeholder {
 }
 
 .notes-field textarea {
-  min-height: 92px;
+  min-height: 76px;
 }
 
 .file-action-button {
@@ -2218,7 +2218,7 @@ textarea::placeholder {
 }
 
 .runtime-content {
-  gap: 18px;
+  gap: 14px;
 }
 
 .runtime-group {
@@ -2352,6 +2352,12 @@ textarea::placeholder {
 }
 
 .setup-actions {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding-top: 12px;
   justify-content: flex-end;
 }
 

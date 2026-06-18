@@ -599,6 +599,10 @@ List Area + Conversation Area + Output Area
 
 Scope:
 
+- First M7 slice: simplify Add Agent into Basic Agent onboarding.
+  - Default path: Basic setup, Behavior, Instance address, Model provider.
+  - Advanced path: namespace, timeout, generated task endpoint, generated capability URL.
+  - A basic connected agent may be only an OpenAI-compatible chat provider with a role note and capability tags.
 - Add per-agent free chat history.
 - Add New Chat for each agent.
 - Keep free chat outside Project Scope.
@@ -611,6 +615,8 @@ Scope:
 
 Acceptance:
 
+- Add Agent feels like adding a model-backed agent, not configuring an A2A server.
+- A2A/runtime endpoints and local tuning are available only in advanced settings.
 - User can select Lucy and see Lucy's free chat history.
 - User can create a new Lucy free chat.
 - Free chat does not show project folder, project badge, or project outputs as primary chrome.
