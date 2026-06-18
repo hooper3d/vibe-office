@@ -748,6 +748,7 @@ Implementation progress:
 - Local trusted registry writes now preserve existing credentials during metadata-only rewrites, while still removing credentials when an agent is deleted.
 - Add/Edit Agent now labels provider types as Hermes, OpenAI-compatible, and Anthropic-compatible, and blocks obvious endpoint/provider mismatches before connection tests or saves.
 - Add/Edit Agent now blocks MiniMax M3 records saved as OpenAI-compatible; the M9 MiniMax target must be Anthropic-compatible.
+- Sidebar agent rows now surface existing provider setup issues with a lightweight warning indicator, so historical mismatches are visible before chat or M9 regression.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:

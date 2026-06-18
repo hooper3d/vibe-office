@@ -405,6 +405,24 @@ label > span:not(.field-label):not(.field-help),
   white-space: nowrap;
 }
 
+.nav-item-badges {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.setup-warning-pill {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+
 .nav-item-meta {
   display: flex;
   align-items: center;

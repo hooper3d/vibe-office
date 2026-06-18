@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Bot,
   Folder,
   MessageSquare,
@@ -11,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { getOfficeRoleLabel } from "../domain/agentProfile";
+import { getProviderSetupIssue } from "../domain/hermesSetup";
 import type { AgentInstance, Project } from "../domain/types";
 import type { ThemeMode } from "../services/themeStorage";
 import { AgentAvatar, StatusDot } from "./AgentPrimitives";
@@ -81,6 +83,7 @@ export function AppSidebar({
           {agents.map((agent) => {
             const isActive = selectedAgentId === agent.id;
             const isResponding = respondingAgentIds.has(agent.id);
+            const setupIssue = getProviderSetupIssue(agent);
             return (
               <div className={`agent-row ${isActive ? "active" : ""}`} key={agent.id}>
                 <button className="nav-item agent-item" onClick={() => onSelectAgent(agent.id)}>
@@ -88,11 +91,18 @@ export function AppSidebar({
                   <span className="nav-item-content">
                     <span className="nav-item-title">
                       <span className="nav-item-name">{agent.name}</span>
-                      <span className="chief-dot">{getOfficeRoleLabel(agent.officeRole, agent.isChief)}</span>
+                      <span className="nav-item-badges">
+                        {setupIssue ? (
+                          <span className="setup-warning-pill" title={setupIssue} aria-label={`Setup issue: ${setupIssue}`}>
+                            <AlertTriangle size={11} />
+                          </span>
+                        ) : null}
+                        <span className="chief-dot">{getOfficeRoleLabel(agent.officeRole, agent.isChief)}</span>
+                      </span>
                     </span>
                     <span className="nav-item-meta">
                       <StatusDot status={isResponding ? "checking" : agent.status} />
-                      {isResponding ? "responding" : agent.tags.slice(0, 2).join(" / ")}
+                      {isResponding ? "responding" : setupIssue ? "setup issue" : agent.tags.slice(0, 2).join(" / ")}
                     </span>
                   </span>
                 </button>
