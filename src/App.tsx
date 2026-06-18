@@ -96,6 +96,7 @@ import {
   recordLifecycleUnsupportedState,
 } from "./services/taskLifecycleState";
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
+import { getSplitPercentFromClientX, nudgeSplitPercent } from "./services/splitPaneState";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
@@ -1179,8 +1180,7 @@ export function App() {
 
   function updateSplitFromClientX(container: HTMLElement, clientX: number) {
     const rect = container.getBoundingClientRect();
-    const next = ((clientX - rect.left) / rect.width) * 100;
-    setSplitPercent(Math.min(70, Math.max(35, next)));
+    setSplitPercent(getSplitPercentFromClientX({ clientX, left: rect.left, width: rect.width }));
   }
 
   function startSplitDrag(event: PointerEvent<HTMLDivElement>) {
@@ -1204,10 +1204,7 @@ export function App() {
   }
 
   function nudgeSplit(direction: "left" | "right") {
-    setSplitPercent((current) => {
-      const next = direction === "left" ? current - 4 : current + 4;
-      return Math.min(70, Math.max(35, next));
-    });
+    setSplitPercent((current) => nudgeSplitPercent(current, direction));
   }
 
   return (

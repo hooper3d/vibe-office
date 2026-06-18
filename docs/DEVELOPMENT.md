@@ -753,6 +753,7 @@ Implementation progress:
 - Local trusted agent status now reports safe `registered` and `hasCredential` diagnostics, and Add/Edit Agent shows local registry and API key readiness without exposing credentials.
 - Add/Edit Agent now reuses the same setup agent id for connection testing and saving, then refreshes local trusted readiness immediately after a test writes provider metadata.
 - Agent avatar file validation and data URL conversion now lives in `src/services/avatarFile.ts`, keeping `App.tsx` focused on state orchestration instead of file-reading details.
+- Split-pane pointer and keyboard resize calculations now live in `src/services/splitPaneState.ts`, keeping App focused on event wiring instead of UI math.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:

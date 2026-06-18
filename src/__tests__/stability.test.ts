@@ -86,6 +86,7 @@ import {
   setProjectFormErrorState,
 } from "../services/projectDialogState";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
+import { getSplitPercentFromClientX, nudgeSplitPercent } from "../services/splitPaneState";
 import {
   countTrackableTaskOutputs,
   filterArtifactsByAgent,
@@ -2405,4 +2406,15 @@ test("workspace storage migrates recoverable state and falls back safely", () =>
       saveWorkspaceState(emptyWorkspaceState);
     }),
   );
+});
+
+test("split pane state clamps pointer and keyboard changes", () => {
+  assert.equal(getSplitPercentFromClientX({ clientX: 540, left: 0, width: 1000 }), 54);
+  assert.equal(getSplitPercentFromClientX({ clientX: 200, left: 0, width: 1000 }), 35);
+  assert.equal(getSplitPercentFromClientX({ clientX: 900, left: 0, width: 1000 }), 70);
+  assert.equal(getSplitPercentFromClientX({ clientX: 500, left: 100, width: 0 }), 35);
+  assert.equal(nudgeSplitPercent(54, "left"), 50);
+  assert.equal(nudgeSplitPercent(54, "right"), 58);
+  assert.equal(nudgeSplitPercent(35, "left"), 35);
+  assert.equal(nudgeSplitPercent(70, "right"), 70);
 });
