@@ -161,6 +161,7 @@ Project:
 - name
 - namespace
 - description
+- directory optional local folder reference used by the local trusted layer
 
 Conversation:
 
@@ -175,6 +176,8 @@ Conversation:
 - createdAt
 - updatedAt
 
+Free Chat uses a fixed non-project entry in the sidebar, but persisted free-chat conversations are stored under a separate internal free-chat project id so they do not create ProjectRun, ProjectTask, ProjectArtifact, or workspace-file context records.
+
 ConversationMessage:
 
 - id
@@ -185,7 +188,11 @@ ConversationMessage:
 - contentParts
 - a2aMessageId
 - taskId
+- runId
+- workspaceContext lightweight attached file references
 - status: sending | sent | failed
+- errorKind: timeout | network | auth | not_found | context | interrupted | unknown
+- errorText
 - createdAt
 
 ProjectRun:
@@ -198,6 +205,7 @@ ProjectRun:
 - ownerAgentId
 - participantAgentIds
 - state
+- summary
 - eventIds
 - artifactIds
 - createdAt
@@ -347,6 +355,34 @@ Next phase:
 
 - M7 IA Reset: split Agent Free Chat from Project Workspace and return the product to the core `List Area + Conversation Area + Output Area` skeleton.
 - Source design note: `docs/V0_2_IA_RESET.md`.
+
+### Stability Pass: Request Lifecycle and Recovery
+
+Status: in progress on 2026-06-18.
+
+Goal:
+
+Stabilize the platform before expanding the next product stage. The core requirement is that conversations do not feel random after refresh, agent/project switches, provider timeouts, or local workspace errors.
+
+Completed:
+
+- Direct Chat, Project Chat, and Task Room user messages persist `sending`, `sent`, and `failed` status.
+- Refresh recovery detects orphaned pending user messages and either resumes recoverable direct requests or marks interrupted task-room requests as retryable failures.
+- Current active requests disable the composer and show the existing responding indicator so users can see that the agent is working.
+- Failed user messages show typed failure labels and a Retry action instead of only a loose system message.
+- Run summaries are persisted so the right Output Area can restore useful run context after refresh.
+- Workspace attached-file context recovery is explicit and can fail as a context error without silently dropping the request.
+- Provider errors are normalized before reaching user-facing conversation, lifecycle, and connection-test surfaces.
+- Workspace file list/read/search errors are normalized before reaching the Workspace panel.
+- Chat history for OpenAI-compatible, Anthropic-compatible, and Hermes-compatible chat requests is built from the latest message snapshot instead of a stale render closure.
+- Local storage reads and writes for UI state, agents, workspace state, content parts, and theme preference are guarded.
+
+Still open:
+
+- Move key request execution orchestration from React component state into a local trusted layer or dedicated request store.
+- Add durable request ids / attempt ids so retry, reload recovery, and in-flight provider calls can be tracked independently from message ids.
+- Add browser-visible regression checks for refresh recovery, provider timeout, and retry flows.
+- Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 
 ### Milestone 0: Real Agent Onboarding
 
