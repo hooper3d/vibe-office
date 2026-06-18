@@ -45,6 +45,7 @@ import {
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { A2AClient } from "../services/a2aClient";
+import { applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
 import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentStorage";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
@@ -482,6 +483,87 @@ test("configured agent storage does not restore legacy browser credentials", () 
 
     assert.equal(loadedAgent.apiKey, undefined);
   });
+});
+
+test("agent setup save keeps credentials in the trusted payload and out of UI state", () => {
+  const existingAgent: AgentInstance = {
+    ...agent,
+    apiKey: "old-secret",
+    avatarUrl: "data:image/png;base64,old-avatar",
+    status: "offline",
+  };
+  const submittedAgent: AgentInstance = {
+    ...agent,
+    id: "agent-new-form-id",
+    name: "Lucy Updated",
+    apiKey: "new-secret",
+    avatarUrl: "data:image/png;base64,new-avatar",
+    officeRole: "chief",
+    model: "updated-model",
+  };
+
+  const result = applyAgentSetupSave({
+    agents: [existingAgent, participant],
+    submittedAgent,
+    editingAgentId: existingAgent.id,
+    metadata: { supportsTaskLifecycle: true },
+  });
+
+  assert.equal(result.mode, "updated");
+  assert.equal(result.selectedAgentId, existingAgent.id);
+  assert.equal(result.trustedAgent.id, existingAgent.id);
+  assert.equal(result.trustedAgent.apiKey, "new-secret");
+  assert.equal(result.agents[0].id, existingAgent.id);
+  assert.equal(result.agents[0].name, "Lucy Updated");
+  assert.equal(result.agents[0].apiKey, undefined);
+  assert.equal(result.agents[0].avatarUrl, "data:image/png;base64,old-avatar");
+  assert.equal(result.agents[0].status, "offline");
+  assert.equal(result.agents[0].supportsTaskLifecycle, true);
+});
+
+test("agent setup save deduplicates providers and keeps one chief", () => {
+  const existingAgent: AgentInstance = {
+    ...participant,
+    endpoint: "https://api.deepseek.com/v1/",
+    model: "deepseek-chat",
+    runtimeProvider: "openai",
+    officeRole: "writer",
+    isChief: false,
+  };
+  const submittedAgent: AgentInstance = {
+    ...agent,
+    id: "agent-form-id",
+    endpoint: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+    runtimeProvider: "openai",
+    officeRole: "chief",
+    apiKey: "secret",
+  };
+
+  const result = applyAgentSetupSave({
+    agents: [agent, existingAgent],
+    submittedAgent,
+  });
+
+  assert.equal(result.mode, "deduplicated");
+  assert.equal(result.selectedAgentId, undefined);
+  assert.equal(result.trustedAgent.id, existingAgent.id);
+  assert.equal(result.trustedAgent.apiKey, "secret");
+  assert.equal(result.agents[0].isChief, false);
+  assert.equal(result.agents[0].officeRole, "operator");
+  assert.equal(result.agents[1].id, existingAgent.id);
+  assert.equal(result.agents[1].isChief, true);
+  assert.equal(result.agents[1].apiKey, undefined);
+});
+
+test("agent chief normalization preserves legacy chief fallback", () => {
+  const normalized = normalizeChief([
+    { ...agent, officeRole: undefined, isChief: false },
+    { ...participant, officeRole: undefined, isChief: false },
+  ]);
+
+  assert.equal(normalized[0].isChief, true);
+  assert.equal(normalized[1].isChief, false);
 });
 
 test("local trusted registry preserves credentials when metadata is rewritten without keys", async () => {

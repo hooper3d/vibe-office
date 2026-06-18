@@ -39,7 +39,7 @@ No API key values were read into this report.
 
 ### P0-1 Credential Store Could Be Overwritten During Metadata Sync
 
-Status: **fixed in working tree, not committed yet**.
+Status: **fixed and committed**.
 
 Symptom:
 
@@ -72,9 +72,10 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 1941 lines after extracting the right Output Area shell.
+- `src/App.tsx` is still about 1868 lines after extracting the right Output Area shell and Agent setup save-state helpers.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
 - The new `src/components/OutputPanel.tsx` centralizes Free Chat history, project output tabs, Browser preview, grouped Outputs, and no-project right-panel state.
+- The new `src/services/agentSetupState.ts` centralizes add/edit/deduplicate/chief-normalization behavior and keeps credential-bearing payloads separate from UI agent state.
 
 Impact:
 
@@ -115,7 +116,7 @@ Working-tree update:
 
 ### P1-3 Historical Handoff Docs Had Stale Credential Statements
 
-Status: **fixed in working tree**.
+Status: **fixed and committed**.
 
 Evidence:
 
@@ -183,9 +184,9 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 23 tests pass. |
+| Service tests | Good | 26 tests pass. |
 | Browser smoke | Good | Smoke passes. |
-| Credential safety | Improved | P0 fixed in working tree; still prototype storage. |
+| Credential safety | Improved | P0 fixed and committed; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |
 | Request lifecycle | Medium/Good | Much better after Stability Pass, but real provider interruptions still need more UX polish. |
 | UI architecture | Medium | Components split, but `App.tsx` remains too large. |

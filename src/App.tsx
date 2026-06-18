@@ -39,6 +39,7 @@ import {
   mapA2AArtifacts,
 } from "./services/artifactState";
 import { buildAgentRequestText } from "./services/agentRequestText";
+import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
 import {
   completeFreeChatRequestState,
   completeProjectDirectRequestState,
@@ -770,93 +771,19 @@ export function App() {
       setTestMessage(setupIssue);
       return;
     }
-    const safeNewAgent = stripAgentCredential(newAgent);
-
-    if (setupAgentId) {
-      const trustedAgent = { ...newAgent, id: setupAgentId };
-      if (!(await persistLocalTrustedAgent(trustedAgent))) return;
-      setAgents((current) =>
-        current.map((agent) =>
-          agent.id === setupAgentId
-            ? {
-                ...stripAgentCredential(agent),
-                ...safeNewAgent,
-                id: agent.id,
-                avatarUrl: agent.avatarUrl,
-                isChief: newAgent.officeRole === "chief",
-                status: agent.status,
-                ...(lastConnectionMetadata ?? {}),
-              }
-            : newAgent.officeRole === "chief"
-              ? { ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole }
-              : agent,
-        ),
-      );
-      setSelectedAgentId(setupAgentId);
-      closeSetup();
-      return;
-    }
-
-    const normalizedEndpoint = newAgent.endpoint.replace(/\/$/, "");
-    const duplicateAgent = agents.find(
-      (agent) =>
-        agent.endpoint.replace(/\/$/, "") === normalizedEndpoint &&
-        agent.model === newAgent.model &&
-        (agent.runtimeProvider ?? "hermes") === (newAgent.runtimeProvider ?? "hermes"),
-    );
-
-    if (duplicateAgent) {
-      const trustedAgent = { ...newAgent, id: duplicateAgent.id };
-      if (!(await persistLocalTrustedAgent(trustedAgent))) return;
-      setAgents((current) =>
-        current.map((agent) =>
-          agent.id === duplicateAgent.id
-            ? {
-                ...stripAgentCredential(agent),
-                ...safeNewAgent,
-                id: agent.id,
-                avatarUrl: agent.avatarUrl,
-                isChief: newAgent.officeRole === "chief",
-                status: agent.status,
-                ...(lastConnectionMetadata ?? {}),
-              }
-            : newAgent.officeRole === "chief"
-              ? { ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole }
-              : agent,
-        ),
-      );
-      closeSetup();
-      return;
-    }
-
-    if (!(await persistLocalTrustedAgent(newAgent))) return;
-    setAgents((current) => {
-      const addedAgent = { ...safeNewAgent, ...(lastConnectionMetadata ?? {}), isChief: newAgent.officeRole === "chief" };
-      if (newAgent.officeRole !== "chief") return [...current, addedAgent];
-      return [...current.map((agent) => ({ ...agent, isChief: false, officeRole: agent.officeRole === "chief" ? "operator" : agent.officeRole })), addedAgent];
+    const saveResult = applyAgentSetupSave({
+      agents,
+      submittedAgent: newAgent,
+      editingAgentId: setupAgentId,
+      metadata: lastConnectionMetadata,
     });
-    setSelectedAgentId(newAgent.id);
-    closeSetup();
-  }
 
-  function normalizeChief(agentsToNormalize: AgentInstance[]) {
-    if (agentsToNormalize.length === 0) return agentsToNormalize;
-    if (agentsToNormalize.some((agent) => agent.officeRole)) {
-      return agentsToNormalize.map((agent) => ({
-        ...agent,
-        isChief: agent.officeRole === "chief",
-      }));
+    if (!(await persistLocalTrustedAgent(saveResult.trustedAgent))) return;
+    setAgents(saveResult.agents);
+    if (saveResult.selectedAgentId) {
+      setSelectedAgentId(saveResult.selectedAgentId);
     }
-    if (agentsToNormalize.some((agent) => agent.isChief)) {
-      return agentsToNormalize.map((agent) => ({
-        ...agent,
-        isChief: agent.isChief === true,
-      }));
-    }
-    return agentsToNormalize.map((agent, index) => ({
-      ...agent,
-      isChief: index === 0,
-    }));
+    closeSetup();
   }
 
   function requestDeleteAgent(agentId: string) {
