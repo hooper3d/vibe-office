@@ -819,6 +819,7 @@ Acceptance:
 - App maintenance control now lives in `src/services/appMaintenanceController.ts`, keeping generated-media artifact backfill and silent Project Task polling out of `App.tsx`.
 - App action control now lives in `src/services/appActionController.ts`, keeping theme toggle, delete confirmation dispatch, and workspace file attach/detach handlers out of `App.tsx`.
 - App bootstrap state now lives in `src/services/appBootstrapState.ts`, keeping Free Chat fixed ids, seed workspace defaults, output-mode normalization, and initial chat-scope derivation out of `App.tsx`.
+- App conversation view state now lives in `src/services/appConversationViewState.ts`, keeping Free Chat history, current direct conversation, Task Room conversation, pending flags, and active composer pending derivation out of `App.tsx`.
 - Free Chat history and current direct-conversation selection now live in `src/services/conversationSelectionState.ts`, keeping per-agent history sorting, title derivation, active conversation maps, and empty-chat reuse out of `App.tsx`.
 - Task lifecycle state now lives in `src/services/taskLifecycleState.ts`, covering remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
 - Task lifecycle request resolution now lives in `src/services/taskLifecycleRequestState.ts`, covering refresh/cancel readiness, retry context lookup, pollable task checks, and workspace update application.

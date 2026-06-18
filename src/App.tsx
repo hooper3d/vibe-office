@@ -31,13 +31,7 @@ import { useAppMaintenanceController } from "./services/appMaintenanceController
 import { useAppSelectionController } from "./services/appSelectionController";
 import { useAppSyncController } from "./services/appSyncController";
 import { useComposerController } from "./services/composerController";
-import {
-  buildFreeChatHistory,
-  getConversationMessages,
-  hasPendingUserRequest,
-  resolveCurrentDirectConversation,
-  resolveTaskRoomConversation,
-} from "./services/conversationSelectionState";
+import { deriveAppConversationViewState } from "./services/appConversationViewState";
 import { useDirectChatController } from "./services/directChatController";
 import { useProjectDialogState } from "./services/projectDialogState";
 import { useProjectSetupController } from "./services/projectSetupController";
@@ -189,55 +183,35 @@ export function App() {
     () => deriveAgentReadinessIssues({ agents, localTrustedIssues: localTrustedAgentIssues }),
     [agents, localTrustedAgentIssues],
   );
-  const directConversationProjectId = chatScope === "free" ? FREE_CHAT_PROJECT_ID : selectedWorkspaceProject?.id ?? "";
-  const activeFreeChatConversationId = selectedAgent ? activeFreeChatConversationIds[selectedAgent.id] : undefined;
-  const freeChatHistory = useMemo(
+  const conversationView = useMemo(
     () =>
-      buildFreeChatHistory({
-        agent: selectedAgent,
-        conversations,
-        messages,
-        freeChatProjectId: FREE_CHAT_PROJECT_ID,
-      }),
-    [conversations, messages, selectedAgent],
-  );
-  const currentConversation = useMemo(
-    () =>
-      resolveCurrentDirectConversation({
-        agent: selectedAgent,
-        activeFreeChatConversationId,
+      deriveAppConversationViewState({
+        activeFreeChatConversationIds,
         chatScope,
+        chiefAgent,
         conversations,
-        directConversationProjectId,
-        freeChatHistory,
+        conversationMode,
+        freeChatProjectId: FREE_CHAT_PROJECT_ID,
+        messages,
+        selectedAgent,
+        selectedWorkspaceProject,
       }),
-    [activeFreeChatConversationId, chatScope, conversations, directConversationProjectId, freeChatHistory, selectedAgent],
-  );
-  const currentMessages = useMemo(
-    () => getConversationMessages({ conversation: currentConversation, messages }),
-    [currentConversation, messages],
-  );
-  const currentConversationHasPendingRequest = useMemo(
-    () => hasPendingUserRequest(currentMessages),
-    [currentMessages],
-  );
-  const taskRoomConversation = useMemo(
-    () => resolveTaskRoomConversation({ chiefAgent, conversations, project: selectedWorkspaceProject }),
-    [chiefAgent, conversations, selectedWorkspaceProject],
-  );
-  const taskRoomMessages = useMemo(
-    () => getConversationMessages({ conversation: taskRoomConversation, messages }),
-    [messages, taskRoomConversation],
-  );
-  const taskRoomHasPendingRequest = useMemo(
-    () => hasPendingUserRequest(taskRoomMessages),
-    [taskRoomMessages],
+    [
+      activeFreeChatConversationIds,
+      chatScope,
+      chiefAgent,
+      conversations,
+      conversationMode,
+      messages,
+      selectedAgent,
+      selectedWorkspaceProject,
+    ],
   );
   const freeChatController = useFreeChatController({
     activeFreeChatConversationIds,
     chatScope,
-    currentConversation,
-    currentMessages,
+    currentConversation: conversationView.currentConversation,
+    currentMessages: conversationView.currentMessages,
     freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
     freeChatNamespace: FREE_CHAT_NAMESPACE,
     freeChatProjectId: FREE_CHAT_PROJECT_ID,
@@ -254,7 +228,7 @@ export function App() {
     agents,
     applyRequestWorkspaceState,
     attachedWorkspaceFiles,
-    currentConversation,
+    currentConversation: conversationView.currentConversation,
     freeChatNamespace: FREE_CHAT_NAMESPACE,
     freeChatProjectId: FREE_CHAT_PROJECT_ID,
     projects,
@@ -265,8 +239,6 @@ export function App() {
     setAttachedWorkspaceFiles,
     setMessageText,
   });
-  const activeComposerHasPendingRequest =
-    conversationMode === "single" ? currentConversationHasPendingRequest : taskRoomHasPendingRequest;
   const respondingAgentIds = useMemo(() => getRespondingAgentIds(conversations, messages), [conversations, messages]);
   const {
     cancelTaskLifecycle,
@@ -420,14 +392,14 @@ export function App() {
           } as CSSProperties}
         >
           <ConversationWorkspace
-            activeComposerHasPendingRequest={activeComposerHasPendingRequest}
+            activeComposerHasPendingRequest={conversationView.activeComposerHasPendingRequest}
             agents={agents}
             attachedWorkspaceFiles={attachedWorkspaceFiles}
             chatScope={chatScope}
             chiefAgent={chiefAgent}
             conversationMode={conversationMode}
-            currentConversationHasPendingRequest={currentConversationHasPendingRequest}
-            currentMessages={currentMessages}
+            currentConversationHasPendingRequest={conversationView.currentConversationHasPendingRequest}
+            currentMessages={conversationView.currentMessages}
             isComposerSubmitting={composerController.isComposerSubmitting}
             latestChiefTask={latestChiefTask}
             messageText={messageText}
@@ -435,8 +407,8 @@ export function App() {
             selectedTaskParticipantCount={selectedTaskParticipants.length}
             selectedWorkspaceProject={selectedWorkspaceProject}
             taskParticipantIds={taskParticipantIds}
-            taskRoomHasPendingRequest={taskRoomHasPendingRequest}
-            taskRoomMessages={taskRoomMessages}
+            taskRoomHasPendingRequest={conversationView.taskRoomHasPendingRequest}
+            taskRoomMessages={conversationView.taskRoomMessages}
             onAddAgent={agentSetup.openAddAgentDialog}
             onDetachWorkspaceFile={appActionController.detachWorkspaceFile}
             onMessageTextChange={setMessageText}
@@ -472,9 +444,9 @@ export function App() {
             browserUrl={browserUrl}
             busyActionId={taskLifecycleBusyId}
             chatScope={chatScope}
-            freeChatActiveConversationId={currentConversation?.id}
+            freeChatActiveConversationId={conversationView.currentConversation?.id}
             freeChatAgent={selectedAgent}
-            freeChatHistories={freeChatHistory}
+            freeChatHistories={conversationView.freeChatHistory}
             outputMode={outputMode}
             previewUrl={previewUrl}
             project={selectedWorkspaceProject}

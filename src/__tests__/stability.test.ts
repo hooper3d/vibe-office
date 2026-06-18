@@ -92,6 +92,7 @@ import {
   FREE_CHAT_ENTRY_PROJECT_ID,
   normalizeOutputMode,
 } from "../services/appBootstrapState";
+import { deriveAppConversationViewState } from "../services/appConversationViewState";
 import {
   applyMissingProjectSelection,
   applyProjectDelete,
@@ -1509,6 +1510,74 @@ test("conversation selection derives messages, pending state, and task room conv
     }),
     undefined,
   );
+});
+
+test("app conversation view state derives active direct and task room chrome", () => {
+  const olderFreeConversation = conversation({
+    id: "free-older-view",
+    projectId: freeChatProjectId,
+    primaryAgentId: agent.id,
+    updatedAt: "2026-06-18T10:01:00.000Z",
+  });
+  const newerFreeConversation = conversation({
+    id: "free-newer-view",
+    projectId: freeChatProjectId,
+    primaryAgentId: agent.id,
+    updatedAt: "2026-06-18T10:02:00.000Z",
+  });
+  const taskConversation = conversation({
+    id: "task-room-view",
+    projectId: project.id,
+    mode: "task_room",
+    chiefAgentId: agent.id,
+  });
+  const freeMessage = userMessage({
+    id: "free-view-message",
+    conversationId: olderFreeConversation.id,
+    projectId: freeChatProjectId,
+    status: "sent",
+  });
+  const taskPendingMessage = userMessage({
+    id: "task-view-pending",
+    conversationId: taskConversation.id,
+    projectId: project.id,
+    status: "sending",
+  });
+
+  const freeView = deriveAppConversationViewState({
+    activeFreeChatConversationIds: { [agent.id]: olderFreeConversation.id },
+    chatScope: "free",
+    chiefAgent: agent,
+    conversationMode: "single",
+    conversations: [newerFreeConversation, olderFreeConversation, taskConversation],
+    freeChatProjectId,
+    messages: [freeMessage, taskPendingMessage],
+    selectedAgent: agent,
+    selectedWorkspaceProject: project,
+  });
+
+  assert.equal(freeView.activeFreeChatConversationId, olderFreeConversation.id);
+  assert.equal(freeView.currentConversation?.id, olderFreeConversation.id);
+  assert.deepEqual(freeView.currentMessages.map((message) => message.id), [freeMessage.id]);
+  assert.equal(freeView.currentConversationHasPendingRequest, false);
+  assert.equal(freeView.taskRoomConversation?.id, taskConversation.id);
+  assert.equal(freeView.taskRoomHasPendingRequest, true);
+  assert.equal(freeView.activeComposerHasPendingRequest, false);
+
+  const taskRoomView = deriveAppConversationViewState({
+    activeFreeChatConversationIds: {},
+    chatScope: "project",
+    chiefAgent: agent,
+    conversationMode: "task-room",
+    conversations: [newerFreeConversation, olderFreeConversation, taskConversation],
+    freeChatProjectId,
+    messages: [freeMessage, taskPendingMessage],
+    selectedAgent: agent,
+    selectedWorkspaceProject: project,
+  });
+
+  assert.equal(taskRoomView.directConversationProjectId, project.id);
+  assert.equal(taskRoomView.activeComposerHasPendingRequest, true);
 });
 
 test("free chat active map and empty-chat reuse are stable", () => {
