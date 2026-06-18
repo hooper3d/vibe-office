@@ -1,3 +1,5 @@
+import type { A2ASendMessageParams } from "../domain/a2a";
+
 export type AgentHttpTransport = {
   request(url: string, init: RequestInit, options: AgentHttpRequestOptions): Promise<Response>;
   requestJson<T>(url: string, init: RequestInit, options: AgentHttpRequestOptions): Promise<T>;
@@ -35,6 +37,32 @@ export type LocalTrustedProviderCommand =
         system?: string;
         messages: Array<{ role: "user" | "assistant"; content: string }>;
         maxTokens?: number;
+      };
+    }
+  | {
+      agentId: string;
+      command: "a2a.getAgentCard";
+      payload?: Record<string, never>;
+    }
+  | {
+      agentId: string;
+      command: "a2a.messageSend";
+      payload: A2ASendMessageParams;
+    }
+  | {
+      agentId: string;
+      command: "a2a.tasksGet";
+      payload: {
+        id: string;
+        contextId: string;
+      };
+    }
+  | {
+      agentId: string;
+      command: "a2a.tasksCancel";
+      payload: {
+        id: string;
+        contextId: string;
       };
     };
 

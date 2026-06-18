@@ -40,6 +40,7 @@ import {
   toLocalTrustedProxyUrl,
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
+import { A2AClient } from "../services/a2aClient";
 import { saveConfiguredAgents } from "../services/agentStorage";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
@@ -547,30 +548,26 @@ test("provider adapter routes Anthropic-compatible project chat through local pr
 });
 
 test("provider adapter falls Hermes native A2A failures back to Hermes chat compatibility", async () => {
-  const requestUrls: string[] = [];
-  const requestJsonUrls: string[] = [];
-  const transport: AgentHttpTransport = {
-    async request(url: string) {
-      requestUrls.push(url);
-      return new Response(JSON.stringify({ error: "native unavailable" }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      });
+  const commands: LocalTrustedProviderCommand[] = [];
+  const fallbackTransport: AgentHttpTransport = {
+    async request() {
+      throw new Error("Native A2A should use local provider commands.");
     },
-    async requestJson<T>(url: string) {
-      requestJsonUrls.push(url);
-      return {
-        choices: [
-          {
-            message: {
-              content: "Hermes compatibility response.",
-            },
-          },
-        ],
-      } as T;
+    async requestJson() {
+      throw new Error("Hermes fallback should use local provider commands.");
     },
     async commandJson<T>(command: LocalTrustedProviderCommand) {
-      requestJsonUrls.push(command.command);
+      commands.push(command);
+      if (command.command === "a2a.messageSend") {
+        return {
+          jsonrpc: "2.0",
+          id: "smoke-a2a",
+          error: {
+            code: -32000,
+            message: "native unavailable",
+          },
+        } as T;
+      }
       return {
         choices: [
           {
@@ -592,11 +589,58 @@ test("provider adapter falls Hermes native A2A failures back to Hermes chat comp
     a2aProtocolVersion: "1.0",
   };
 
-  const task = await new HermesA2AAdapter({ agent: nativeHermesAgent, transport }).sendProjectMessage(project, "Recover through chat.");
+  const task = await new HermesA2AAdapter({ agent: nativeHermesAgent, transport: fallbackTransport }).sendProjectMessage(project, "Recover through chat.");
 
-  assert.equal(requestUrls[0], "https://native.example/a2a");
-  assert.equal(requestJsonUrls[0], "openai.chatCompletions");
+  assert.equal(commands[0].command, "a2a.messageSend");
+  assert.equal(commands[1].command, "openai.chatCompletions");
   assert.equal(task.metadata?.adapter, "hermes-openai-compatible");
+});
+
+test("A2A client delegates capability and task lifecycle calls to local provider commands", async () => {
+  const commands: LocalTrustedProviderCommand[] = [];
+  const transport: AgentHttpTransport = {
+    async request() {
+      throw new Error("A2A client should use local provider commands when an agent id is available.");
+    },
+    async requestJson() {
+      throw new Error("A2A client should use local provider commands when an agent id is available.");
+    },
+    async commandJson<T>(command: LocalTrustedProviderCommand) {
+      commands.push(command);
+      if (command.command === "a2a.getAgentCard") {
+        return {
+          name: "Native Smoke",
+          url: "https://native.example/a2a",
+          version: "1.0",
+          protocolVersion: "1.0",
+        } as T;
+      }
+      return {
+        jsonrpc: "2.0",
+        id: "local-test",
+        result: a2aTask(`${command.command} ok`),
+      } as T;
+    },
+  };
+  const client = new A2AClient({
+    endpoint: "https://native.example/a2a",
+    agentId: "agent-native",
+    protocolVersion: "1.0",
+    transport,
+  });
+
+  const card = await client.getAgentCard("https://native.example/.well-known/agent-card.json");
+  const taskResult = await client.getTask("task-1", "context-1");
+  const cancelResult = await client.cancelTask("task-1", "context-1");
+
+  assert.equal(card.name, "Native Smoke");
+  assert.equal(taskResult.status.message?.parts[0].kind, "text");
+  assert.equal(cancelResult.status.message?.parts[0].kind, "text");
+  assert.deepEqual(commands.map((command) => command.command), ["a2a.getAgentCard", "a2a.tasksGet", "a2a.tasksCancel"]);
+  const getCommand = commands.find((command) => command.command === "a2a.tasksGet");
+  const cancelCommand = commands.find((command) => command.command === "a2a.tasksCancel");
+  assert.equal(getCommand?.payload.id, "task-1");
+  assert.equal(cancelCommand?.payload.contextId, "context-1");
 });
 
 test("canonical host redirect keeps local storage on one loopback origin", () => {

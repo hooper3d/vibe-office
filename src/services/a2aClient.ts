@@ -38,6 +38,20 @@ export class A2AClient {
   }
 
   async getAgentCard(agentCardUrl = `${this.endpoint}/.well-known/agent-card.json`) {
+    if (this.agentId) {
+      return this.transport.commandJson<A2AAgentCard>(
+        {
+          agentId: this.agentId,
+          command: "a2a.getAgentCard",
+        },
+        {
+          timeoutMs: this.timeoutMs,
+          timeoutMessage: "Provider capability request timed out.",
+          agentId: this.agentId,
+        },
+      );
+    }
+
     const response = await this.transport.request(agentCardUrl, {
       headers: this.buildHeaders(false),
     }, {
@@ -54,7 +68,7 @@ export class A2AClient {
   }
 
   async sendMessage(message: A2AMessage, metadata?: Record<string, unknown>) {
-    return this.rpc<A2ASendMessageParams, A2ATask>("message/send", {
+    return this.rpc<A2ASendMessageParams, A2ATask>("message/send", "a2a.messageSend", {
       message,
       configuration: {
         acceptedOutputModes: ["text/plain", "application/json"],
@@ -66,20 +80,41 @@ export class A2AClient {
   }
 
   async getTask(taskId: string, contextId: string) {
-    return this.rpc<{ id: string; contextId: string }, A2ATask>("tasks/get", {
+    return this.rpc<{ id: string; contextId: string }, A2ATask>("tasks/get", "a2a.tasksGet", {
       id: taskId,
       contextId,
     });
   }
 
   async cancelTask(taskId: string, contextId: string) {
-    return this.rpc<{ id: string; contextId: string }, A2ATask>("tasks/cancel", {
+    return this.rpc<{ id: string; contextId: string }, A2ATask>("tasks/cancel", "a2a.tasksCancel", {
       id: taskId,
       contextId,
     });
   }
 
-  private async rpc<TParams, TResult>(method: string, params: TParams) {
+  private async rpc<TParams, TResult>(
+    method: string,
+    command: "a2a.messageSend" | "a2a.tasksGet" | "a2a.tasksCancel",
+    params: TParams,
+  ) {
+    if (this.agentId) {
+      const payload = await this.transport.commandJson<A2AJsonRpcResponse<TResult>>(
+        {
+          agentId: this.agentId,
+          command,
+          payload: params as A2ASendMessageParams & { id: string; contextId: string },
+        },
+        {
+          timeoutMs: this.timeoutMs,
+          timeoutMessage: "Agent task request timed out.",
+          agentId: this.agentId,
+        },
+      );
+
+      return this.readRpcResult(payload);
+    }
+
     const request: A2AJsonRpcRequest<TParams> = {
       jsonrpc: "2.0",
       id: crypto.randomUUID(),
@@ -102,6 +137,10 @@ export class A2AClient {
     }
 
     const payload = (await response.json()) as A2AJsonRpcResponse<TResult>;
+    return this.readRpcResult(payload);
+  }
+
+  private readRpcResult<TResult>(payload: A2AJsonRpcResponse<TResult>) {
     if (payload.error) {
       throw new Error(payload.error.message);
     }

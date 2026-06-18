@@ -719,9 +719,11 @@ Implementation progress:
 - The local trusted provider endpoint validates that an agent-scoped request targets that registered agent before injecting credentials.
 - OpenAI-compatible and Anthropic-compatible adapters now call `POST /agent-local/command` with `agentId`, provider action, and semantic message payloads.
 - The local trusted command endpoint owns provider URL construction, model selection, JSON body assembly, and credential injection for OpenAI-compatible and Anthropic-compatible chat.
+- Native A2A capability and task lifecycle calls now use the same local trusted command boundary for `getAgentCard`, `message/send`, `tasks/get`, and `tasks/cancel`.
+- The local trusted command endpoint now owns A2A JSON-RPC envelope construction and A2A version header injection.
 - Workspace list/read/search/media remains on `/workspace-local/*`.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
-- Next M8 slice should move native A2A task/capability request construction behind the same local command boundary.
+- M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.
 
 Acceptance:
 
