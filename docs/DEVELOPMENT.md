@@ -790,6 +790,7 @@ Implementation progress:
 - M9 provider regression script now accepts `--target hermes|deepseek|minimax` filters, including npm-forwarded bare target arguments, so a single provider can be verified without unrelated unready providers failing the run.
 - M9 provider regression now fails selected unready targets as setup failures instead of silently skipping them, so the default Hermes + DeepSeek + MiniMax matrix cannot pass unless all three target records are ready.
 - M9 status on 2026-06-19: Hermes passes all six checks; DeepSeek is blocked by `MISSING_KEY`; MiniMax is blocked by `PROVIDER_MISMATCH` because the current local trusted record is OpenAI-compatible instead of Anthropic-compatible.
+- `docs/M7_M9_COMPLETION_AUDIT_2026-06-19.md` records the current M7/M8/M9 evidence audit: M7 is complete for the current prototype structure, M8 is implemented as a development local trusted bridge with secure packaging pending, and M9 remains incomplete until DeepSeek and MiniMax are both READY and the full matrix passes.
 
 Acceptance:
 
