@@ -83,6 +83,15 @@ export async function forwardProviderRequest(
 }
 
 export function getSafeErrorMessage(error: unknown, fallback = "Workspace file request failed.") {
-  if (error instanceof Error) return error.message;
-  return fallback;
+  return redactSensitiveText(error instanceof Error ? error.message : fallback);
+}
+
+export function redactSensitiveText(text: string) {
+  return text
+    .replace(/("(?:apiKey|api_key|x-api-key|token|access_token)"\s*:\s*")[^"]+(")/gi, "$1[redacted]$2")
+    .replace(/(authorization\s*[:=]\s*(?:Bearer\s+)?["']?)[^&\s"',;}]+/gi, "$1[redacted]")
+    .replace(/((?:x-api-key|api[_-]?key|apikey|token|access_token)\s*[:=]\s*["']?)[^&\s"',;}]+/gi, "$1[redacted]")
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1[redacted]")
+    .replace(/([?&](?:api[_-]?key|apikey|token|access_token)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(/(https?:\/\/)([^/\s:@]+):([^@\s/]+)@/gi, "$1[redacted]@");
 }

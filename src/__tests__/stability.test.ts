@@ -2873,6 +2873,22 @@ test("local trusted middleware exposes command-only provider and workspace route
   assert.doesNotMatch(source, /workspace-local\/search/);
 });
 
+test("local trusted safe error messages redact secrets before returning to the UI", async () => {
+  const { getSafeErrorMessage, redactSensitiveText } = await import("../../localTrusted/http");
+  const raw =
+    'Authorization: Bearer secret-token api_key=query-secret x-api-key: header-secret {"apiKey":"json-secret"} https://user:pass@example.com/path?token=url-secret';
+  const redacted = redactSensitiveText(raw);
+
+  assert.equal(redacted.includes("secret-token"), false);
+  assert.equal(redacted.includes("query-secret"), false);
+  assert.equal(redacted.includes("header-secret"), false);
+  assert.equal(redacted.includes("json-secret"), false);
+  assert.equal(redacted.includes("user:pass"), false);
+  assert.equal(redacted.includes("url-secret"), false);
+  assert.match(redacted, /Authorization: Bearer \[redacted\]/i);
+  assert.match(getSafeErrorMessage(new Error(raw)), /\[redacted\]/);
+});
+
 test("output workspace keeps browser preview and project outputs in focused components", async () => {
   const outputWorkspace = await readFile(path.join(process.cwd(), "src", "components", "OutputWorkspace.tsx"), "utf8");
   const browserPreview = await readFile(path.join(process.cwd(), "src", "components", "BrowserPreview.tsx"), "utf8");
