@@ -9,7 +9,7 @@ const localTrustedDirectoryMode = 0o700;
 const localTrustedPrivateFileMode = 0o600;
 
 const agentId = readRequiredEnv("VIBE_AGENT_ID");
-const apiKey = readRequiredEnv("VIBE_AGENT_API_KEY");
+const apiKey = readOptionalEnv("VIBE_AGENT_API_KEY");
 const m9Target = readOptionalM9Target(process.env.VIBE_AGENT_M9_TARGET);
 const targetPreset = m9Target ? getM9TargetPreset(m9Target) : undefined;
 const runtimeProvider = readOptionalRuntimeProvider(process.env.VIBE_AGENT_RUNTIME_PROVIDER || targetPreset?.runtimeProvider);
@@ -31,10 +31,13 @@ const nextAgent = {
 delete nextAgent.apiKey;
 
 const credentials = await readJsonObject(credentialPath);
-const nextCredentials = {
-  ...credentials,
-  [agentId]: { apiKey },
-};
+const nextCredentials = apiKey
+  ? {
+      ...credentials,
+      [agentId]: { apiKey },
+    }
+  : credentials;
+const hasKey = typeof nextCredentials[agentId]?.apiKey === "string" && nextCredentials[agentId].apiKey.length > 0;
 
 await ensureLocalTrustedPrivateDirectory(localTrustedHome);
 await writeJsonAtomic(registryPath, {
@@ -48,8 +51,9 @@ console.log(
     `Updated local trusted credential for ${agentId}.`,
     `provider=${nextAgent.runtimeProvider || "hermes"}`,
     `model=${nextAgent.model || "unknown"}`,
-    "hasKey=true",
-    ...(m9Target ? [`m9Target=${m9Target}`, `m9Readiness=${getM9Readiness(m9Target, agentId, nextAgent, true)}`] : []),
+    `hasKey=${hasKey}`,
+    ...(apiKey ? ["credential=updated"] : ["credential=preserved"]),
+    ...(m9Target ? [`m9Target=${m9Target}`, `m9Readiness=${getM9Readiness(m9Target, agentId, nextAgent, hasKey)}`] : []),
   ].join(" "),
 );
 

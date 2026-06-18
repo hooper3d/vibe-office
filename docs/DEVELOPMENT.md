@@ -759,6 +759,7 @@ Implementation progress:
 - Sidebar agent rows now surface existing provider setup issues with a lightweight warning indicator, so historical mismatches are visible before chat or M9 regression.
 - Local trusted agent status now reports safe `registered` and `hasCredential` diagnostics, and Add/Edit Agent shows local registry and API key readiness without exposing credentials.
 - Add/Edit Agent now reuses the same setup agent id for connection testing and saving, then refreshes local trusted readiness immediately after a test writes provider metadata.
+- The M9 local credential repair script can now repair provider metadata without re-entering an API key; existing saved credentials are preserved, while missing-key readiness still asks for a key explicitly.
 - Agent connection testing now lives in `src/services/agentConnectionTestState.ts`, so App only applies UI state while the service owns setup validation, local trusted credential persistence, stripped-agent provider testing, and compatibility metadata creation.
 - Agent setup control now lives in `src/services/agentSetupController.ts`, keeping Add/Edit Agent connection testing, saving, local trusted upsert/delete, selected-agent fallback, and avatar updates out of `App.tsx`.
 - Local trusted agent readiness refresh now lives in `src/services/agentReadinessState.ts`, keeping App focused on applying the returned status/issue maps instead of fetching and merging provider diagnostics itself.

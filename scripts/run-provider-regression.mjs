@@ -617,7 +617,7 @@ function getTargetReadiness(target, agents) {
       `expected=${getRuntimeProviderLabel(target)}`,
       `actual=${providerMismatch.runtimeProvider}`,
       `action=${getReadinessAction("provider-mismatch", target)}`,
-      `repair=${getCredentialRepairHint(target, providerMismatch.id)}`,
+      `repair=${getCredentialRepairHint(target, providerMismatch.id, "provider-mismatch")}`,
     ].join(" ");
   }
 
@@ -626,7 +626,7 @@ function getTargetReadiness(target, agents) {
     return [
       `MISSING_KEY ${missingKey.id}`,
       `action=${getReadinessAction("missing-key", target)}`,
-      `repair=${getCredentialRepairHint(target, missingKey.id)}`,
+      `repair=${getCredentialRepairHint(target, missingKey.id, "missing-key")}`,
     ].join(" ");
   }
 
@@ -663,13 +663,19 @@ function getReadinessAction(reason, target) {
   return "add-or-register-agent";
 }
 
-function getCredentialRepairHint(target, agentId) {
-  return [
+function getCredentialRepairHint(target, agentId, reason) {
+  const commandParts = [
     `VIBE_AGENT_ID=${agentId}`,
     `VIBE_AGENT_M9_TARGET=${target.key}`,
-    "VIBE_AGENT_API_KEY=<key>",
-    "npm run local-agent:credential",
-  ].join(" ");
+  ];
+  if (reason === "missing-key") commandParts.push("VIBE_AGENT_API_KEY=<key>");
+  commandParts.push("npm run local-agent:credential");
+
+  const hint = commandParts.join(" ");
+  if (reason === "provider-mismatch" && target.requiresKey) {
+    return `${hint} optionalKey=VIBE_AGENT_API_KEY=<key>`;
+  }
+  return hint;
 }
 
 function getAgentRuntimeProvider(agent, fallback) {
