@@ -687,6 +687,14 @@ Scope:
 - Make default agent onboarding feel like adding an LLM provider.
 - Move A2A-specific fields to advanced integration settings.
 
+Implementation progress:
+
+- M7-1 structure slimming started.
+- Output Workspace views are now split out of `App.tsx` into `src/components/OutputWorkspace.tsx`.
+- The extracted views are `WorkspaceFiles`, `BrowserPreview`, `ProjectTasks`, and `ProjectArtifacts`.
+- `App.tsx` remains the state and request orchestration owner for this slice.
+- Next M7-1 slices should extract Setup Wizard and continue separating provider adapters from UI orchestration.
+
 Acceptance:
 
 - Add Agent feels like adding a model-backed agent, not configuring an A2A server.
