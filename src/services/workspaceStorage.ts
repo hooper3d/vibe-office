@@ -34,16 +34,7 @@ export function loadWorkspaceState(): WorkspaceState {
     if (!raw) return emptyWorkspaceState;
 
     const parsed = JSON.parse(raw) as Partial<StoredWorkspaceState>;
-    if (parsed.version !== STORAGE_VERSION) return emptyWorkspaceState;
-
-    return {
-      projects: normalizeArray(parsed.projects),
-      conversations: normalizeArray(parsed.conversations),
-      messages: normalizeArray(parsed.messages),
-      runs: normalizeArray(parsed.runs),
-      tasks: normalizeArray(parsed.tasks),
-      artifacts: normalizeArray(parsed.artifacts),
-    };
+    return migrateWorkspaceState(parsed);
   } catch {
     return emptyWorkspaceState;
   }
@@ -67,4 +58,15 @@ export function saveWorkspaceState(state: WorkspaceState) {
 
 function normalizeArray<T>(value: T[] | unknown): T[] {
   return Array.isArray(value) ? value : [];
+}
+
+function migrateWorkspaceState(value: Partial<StoredWorkspaceState>): WorkspaceState {
+  return {
+    projects: normalizeArray(value.projects),
+    conversations: normalizeArray(value.conversations),
+    messages: normalizeArray(value.messages),
+    runs: normalizeArray(value.runs),
+    tasks: normalizeArray(value.tasks),
+    artifacts: normalizeArray(value.artifacts),
+  };
 }

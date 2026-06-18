@@ -20,7 +20,7 @@ export class HermesA2AAdapter {
     this.agent = options.agent;
     this.client = new A2AClient({
       endpoint: options.agent.a2aEndpoint,
-      apiKey: options.apiKey,
+      apiKey: options.apiKey ?? options.agent.apiKey,
     });
   }
 
