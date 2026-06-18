@@ -384,6 +384,7 @@ Completed:
 - In-flight request tracking is centralized in a request tracker service instead of a bare React `Set`, preparing the boundary for local trusted request orchestration.
 - Direct free-chat and project-chat provider turns are routed through a direct chat request service that owns history construction plus provider execution.
 - Task Room Chief planning, participant execution, and Chief aggregation provider turns are routed through a task-room request service.
+- Free Chat completion/failure and conversation timestamp updates use pure state reducers instead of ad hoc component-local state edits.
 
 Still open:
 

@@ -70,6 +70,7 @@ import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStor
 import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agentErrorText";
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
 import { executeFreeChatTurn, executeProjectDirectTurn } from "./services/directChatRequest";
+import { applyConversationMessageFailed, applyFreeChatTurnCompleted, touchConversationUpdatedAt } from "./services/directChatState";
 import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { getTextPartContent } from "./services/messageContent";
 import {
@@ -1101,31 +1102,20 @@ export function App() {
         userMessageId,
       });
 
-      setMessages((current) => markConversationMessageSent(current, userMessageId));
-
-      setMessages((current) => [
-        ...current,
-        createAgentMessageFromTask({
-          task: result.task,
+      setMessages((current) =>
+        applyFreeChatTurnCompleted({
+          messages: current,
+          result,
           conversationId: conversation.id,
           projectId: FREE_CHAT_PROJECT_ID,
           agentId: targetAgent.id,
-          fallbackText: result.summary,
-          createdAt: result.completedAt,
+          userMessageId,
         }),
-      ]);
-      setConversations((current) =>
-        current.map((item) =>
-          item.id === conversation.id
-            ? {
-                ...item,
-                updatedAt: result.completedAt,
-              }
-            : item,
-        ),
       );
+      setConversations((current) => touchConversationUpdatedAt(current, conversation.id, result.completedAt));
     } catch (error) {
-      setMessages((current) => markConversationMessageFailed(current, userMessageId, getUserFacingAgentError(error)));
+      const errorText = getUserFacingAgentError(error);
+      setMessages((current) => applyConversationMessageFailed({ messages: current, messageId: userMessageId, errorText }));
     }
   }
 
@@ -1443,16 +1433,7 @@ export function App() {
             : run,
         ),
       );
-      setConversations((current) =>
-        current.map((item) =>
-          item.id === conversation.id
-            ? {
-                ...item,
-                updatedAt: completedAt,
-              }
-            : item,
-        ),
-      );
+      setConversations((current) => touchConversationUpdatedAt(current, conversation.id, completedAt));
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorText = getUserFacingAgentError(error);
