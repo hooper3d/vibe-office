@@ -49,7 +49,7 @@ import {
 } from "./services/directRequestOrchestrator";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter, type A2ACompatibilityMetadata } from "./services/hermesA2AAdapter";
 import { deleteLocalTrustedAgent, stripAgentCredential, upsertLocalTrustedAgent } from "./services/localTrustedAgentRegistry";
-import { deriveProjectNameFromDirectory, slugifyProjectName } from "./services/projectNaming";
+import { applyProjectDelete, applyProjectSave, canDeleteProject } from "./services/projectSetupState";
 import {
   getPendingRequestMessages,
   getRespondingAgentIds,
@@ -839,80 +839,54 @@ export function App() {
   function saveProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const rawName = String(form.get("name") || "").trim();
-    const description = String(form.get("description") || "").trim();
-    const directory = String(form.get("directory") || "").trim();
-    const editingProject = editingProjectId ? projects.find((project) => project.id === editingProjectId) : undefined;
-    const name = rawName || deriveProjectNameFromDirectory(directory);
+    const result = applyProjectSave({
+      projects,
+      editingProjectId,
+      draft: {
+        name: String(form.get("name") || "").trim(),
+        description: String(form.get("description") || "").trim(),
+        directory: String(form.get("directory") || "").trim(),
+      },
+      createProjectId: () => crypto.randomUUID(),
+    });
 
-    if (!editingProject && !directory) {
-      setProjectFormError("Choose a project folder or paste a local path.");
+    if (result.kind === "error") {
+      setProjectFormError(result.error);
       return;
     }
 
-    if (!name) {
-      setProjectFormError("Project name is required.");
-      return;
+    setProjects(result.projects);
+    if (result.kind === "created") {
+      setSelectedProjectId(result.project.id);
+      setChatScope("project");
     }
-
-    const namespace = editingProject?.namespace ?? `project.${slugifyProjectName(name)}`;
-    if (
-      projects.some(
-        (project) =>
-          project.id !== editingProject?.id &&
-          (project.namespace === namespace || project.name.toLowerCase() === name.toLowerCase()),
-      )
-    ) {
-      setProjectFormError("A project with this name already exists.");
-      return;
-    }
-
-    if (editingProject) {
-      setProjects((current) =>
-        current.map((project) =>
-          project.id === editingProject.id
-            ? {
-                ...project,
-                name,
-                directory: directory || undefined,
-                description: description || "Project-scoped workspace.",
-              }
-            : project,
-        ),
-      );
-      closeProjectDialog();
-      return;
-    }
-
-    const project: Project = {
-      id: crypto.randomUUID(),
-      name,
-      namespace,
-      description: description || "Project-scoped workspace.",
-      directory: directory || undefined,
-    };
-
-    setProjects((current) => [...current, project]);
-    setSelectedProjectId(project.id);
-    setChatScope("project");
     closeProjectDialog();
   }
 
   function requestDeleteProject(projectId: string) {
-    if (projectId === FREE_CHAT_ENTRY_PROJECT_ID) return;
-    if (projects.length <= 1) return;
+    if (!canDeleteProject(projects, projectId, FREE_CHAT_ENTRY_PROJECT_ID)) return;
     setConfirmAction({ kind: "delete-project", projectId });
   }
 
   function deleteProject(projectId: string) {
-    if (projects.length <= 1) return;
-    const remainingProjects = projects.filter((project) => project.id !== projectId);
-    setProjects(remainingProjects);
-    setConversations((current) => current.filter((conversation) => conversation.projectId !== projectId));
-    setMessages((current) => current.filter((message) => message.projectId !== projectId));
-    setRuns((current) => current.filter((run) => run.projectId !== projectId));
-    setTasks((current) => current.filter((task) => task.projectId !== projectId));
-    setArtifacts((current) => current.filter((artifact) => artifact.projectId !== projectId));
+    if (!canDeleteProject(projects, projectId, FREE_CHAT_ENTRY_PROJECT_ID)) return;
+    const nextState = applyProjectDelete({
+      state: {
+        projects,
+        conversations,
+        messages,
+        runs,
+        tasks,
+        artifacts,
+      },
+      projectId,
+    });
+    setProjects(nextState.projects);
+    setConversations(nextState.conversations);
+    setMessages(nextState.messages);
+    setRuns(nextState.runs);
+    setTasks(nextState.tasks);
+    setArtifacts(nextState.artifacts);
     if (selectedProjectId === projectId) {
       setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
       setChatScope("free");

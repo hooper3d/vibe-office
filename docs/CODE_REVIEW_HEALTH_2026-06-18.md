@@ -72,10 +72,11 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 1868 lines after extracting the right Output Area shell and Agent setup save-state helpers.
+- `src/App.tsx` is still about 1842 lines after extracting the right Output Area shell, Agent setup save-state helpers, and Project setup/delete helpers.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
 - The new `src/components/OutputPanel.tsx` centralizes Free Chat history, project output tabs, Browser preview, grouped Outputs, and no-project right-panel state.
 - The new `src/services/agentSetupState.ts` centralizes add/edit/deduplicate/chief-normalization behavior and keeps credential-bearing payloads separate from UI agent state.
+- The new `src/services/projectSetupState.ts` centralizes Project validation, create/update state, delete eligibility, and project-scoped cleanup of conversations, messages, runs, tasks, and artifacts.
 
 Impact:
 
@@ -184,7 +185,7 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 26 tests pass. |
+| Service tests | Good | 28 tests pass. |
 | Browser smoke | Good | Smoke passes. |
 | Credential safety | Improved | P0 fixed and committed; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |

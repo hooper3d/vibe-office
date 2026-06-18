@@ -48,6 +48,7 @@ import { A2AClient } from "../services/a2aClient";
 import { applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
 import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentStorage";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
+import { applyProjectDelete, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
@@ -564,6 +565,104 @@ test("agent chief normalization preserves legacy chief fallback", () => {
 
   assert.equal(normalized[0].isChief, true);
   assert.equal(normalized[1].isChief, false);
+});
+
+test("project setup save creates, validates, and updates projects", () => {
+  const created = applyProjectSave({
+    projects: [project],
+    draft: {
+      name: "",
+      description: "",
+      directory: "C:\\Users\\hooper\\Documents\\New Office",
+    },
+    createProjectId: () => "project-new-office",
+  });
+
+  assert.equal(created.kind, "created");
+  if (created.kind !== "created") throw new Error("Expected created project");
+  assert.equal(created.project.name, "New Office");
+  assert.equal(created.project.namespace, "project.new-office");
+  assert.equal(created.project.description, "Project-scoped workspace.");
+  assert.equal(created.project.directory, "C:\\Users\\hooper\\Documents\\New Office");
+  assert.equal(created.projects.length, 2);
+
+  const duplicate = applyProjectSave({
+    projects: created.projects,
+    draft: {
+      name: "Vibe Office",
+      description: "",
+      directory: "C:\\Users\\hooper\\Documents\\Other",
+    },
+    createProjectId: () => "project-other",
+  });
+  assert.equal(duplicate.kind, "error");
+
+  const updated = applyProjectSave({
+    projects: created.projects,
+    editingProjectId: project.id,
+    draft: {
+      name: "Vibe Office Renamed",
+      description: "Updated workspace.",
+      directory: "",
+    },
+    createProjectId: () => "unused",
+  });
+
+  assert.equal(updated.kind, "updated");
+  if (updated.kind !== "updated") throw new Error("Expected updated project");
+  assert.equal(updated.project.id, project.id);
+  assert.equal(updated.project.namespace, project.namespace);
+  assert.equal(updated.project.directory, undefined);
+  assert.equal(updated.project.description, "Updated workspace.");
+});
+
+test("project delete clears scoped records and protects free chat entry", () => {
+  assert.equal(canDeleteProject([project], project.id, "default"), false);
+  assert.equal(canDeleteProject([project, { ...project, id: "project-two" }], "default", "default"), false);
+  assert.equal(canDeleteProject([project, { ...project, id: "project-two" }], project.id, "default"), true);
+
+  const otherProject = { ...project, id: "project-two", namespace: "project-two", name: "Two" };
+  const nextState = applyProjectDelete({
+    projectId: project.id,
+    state: {
+      projects: [project, otherProject],
+      conversations: [conversation(), conversation({ id: "conversation-two", projectId: otherProject.id })],
+      messages: [userMessage(), userMessage({ id: "message-two", projectId: otherProject.id })],
+      runs: [run(), run({ id: "run-two", projectId: otherProject.id })],
+      tasks: [task(), task({ id: "task-two", projectId: otherProject.id })],
+      artifacts: [
+        {
+          id: "artifact-1",
+          projectId: project.id,
+          taskId: "task-1",
+          agentId: agent.id,
+          name: "Result",
+          kind: "text",
+          summary: "Scoped artifact.",
+          contentParts: [],
+          createdAt: at,
+        },
+        {
+          id: "artifact-two",
+          projectId: otherProject.id,
+          taskId: "task-two",
+          agentId: agent.id,
+          name: "Other",
+          kind: "text",
+          summary: "Other artifact.",
+          contentParts: [],
+          createdAt: at,
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(nextState.projects.map((item) => item.id), [otherProject.id]);
+  assert.deepEqual(nextState.conversations.map((item) => item.projectId), [otherProject.id]);
+  assert.deepEqual(nextState.messages.map((item) => item.projectId), [otherProject.id]);
+  assert.deepEqual(nextState.runs.map((item) => item.projectId), [otherProject.id]);
+  assert.deepEqual(nextState.tasks.map((item) => item.projectId), [otherProject.id]);
+  assert.deepEqual(nextState.artifacts.map((item) => item.projectId), [otherProject.id]);
 });
 
 test("local trusted registry preserves credentials when metadata is rewritten without keys", async () => {
