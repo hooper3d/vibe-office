@@ -743,6 +743,9 @@ Implementation progress:
 - M9 provider listing derives readable display names from safe metadata for older local trusted records that predate registry display names.
 - The M9 matrix covers connection, free chat, project chat, forced timeout, retry after timeout, and Chinese context continuity.
 - M9 can reuse existing local trusted agent IDs, or create temporary `m9-*` agents from shell-provided endpoint/model/key variables; see `docs/M9_PROVIDER_REGRESSION.md`.
+- Local trusted registry writes now preserve existing credentials during metadata-only rewrites, while still removing credentials when an agent is deleted.
+- Add/Edit Agent now labels provider types as Hermes, OpenAI-compatible, and Anthropic-compatible, and blocks obvious endpoint/provider mismatches before connection tests or saves.
+- M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:
 

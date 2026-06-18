@@ -7,6 +7,7 @@ const m9Targets = [
     label: "Hermes",
     envName: "VIBE_M9_HERMES_AGENT_ID",
     runtimeProvider: "hermes",
+    allowedRuntimeProviders: ["hermes", "openai"],
     requiresKey: false,
     hints: ["hermes", "8642", "hooper.ink"],
   },
@@ -14,6 +15,7 @@ const m9Targets = [
     label: "DeepSeek OpenAI-compatible",
     envName: "VIBE_M9_DEEPSEEK_AGENT_ID",
     runtimeProvider: "openai",
+    allowedRuntimeProviders: ["openai"],
     requiresKey: true,
     hints: ["deepseek"],
   },
@@ -21,6 +23,7 @@ const m9Targets = [
     label: "MiniMax Anthropic-compatible",
     envName: "VIBE_M9_MINIMAX_AGENT_ID",
     runtimeProvider: "anthropic",
+    allowedRuntimeProviders: ["anthropic"],
     requiresKey: true,
     hints: ["minimax", "minimaxi"],
   },
@@ -31,47 +34,10 @@ if (cliArgs.has("--list")) {
   process.exit(0);
 }
 
-const providers = [
-  createExistingProviderConfig({
-    id: process.env.VIBE_M9_HERMES_AGENT_ID,
-    label: "Hermes",
-    runtimeProvider: "hermes",
-  }) ??
-    createProviderConfig({
-      id: "m9-hermes",
-      label: "Hermes",
-      runtimeProvider: "hermes",
-      endpoint: process.env.VIBE_M9_HERMES_BASE_URL,
-      model: process.env.VIBE_M9_HERMES_MODEL,
-      apiKey: process.env.VIBE_M9_HERMES_API_KEY,
-    }),
-  createExistingProviderConfig({
-    id: process.env.VIBE_M9_DEEPSEEK_AGENT_ID,
-    label: "DeepSeek OpenAI-compatible",
-    runtimeProvider: "openai",
-  }) ??
-    createProviderConfig({
-      id: "m9-deepseek",
-      label: "DeepSeek OpenAI-compatible",
-      runtimeProvider: "openai",
-      endpoint: process.env.VIBE_M9_DEEPSEEK_BASE_URL,
-      model: process.env.VIBE_M9_DEEPSEEK_MODEL,
-      apiKey: process.env.VIBE_M9_DEEPSEEK_API_KEY,
-    }),
-  createExistingProviderConfig({
-    id: process.env.VIBE_M9_MINIMAX_AGENT_ID,
-    label: "MiniMax Anthropic-compatible",
-    runtimeProvider: "anthropic",
-  }) ??
-    createProviderConfig({
-      id: "m9-minimax",
-      label: "MiniMax Anthropic-compatible",
-      runtimeProvider: "anthropic",
-      endpoint: process.env.VIBE_M9_MINIMAX_BASE_URL,
-      model: process.env.VIBE_M9_MINIMAX_MODEL,
-      apiKey: process.env.VIBE_M9_MINIMAX_API_KEY,
-    }),
-].filter(Boolean);
+const registeredAgents = await readLocalTrustedRegistry();
+const providers = m9Targets
+  .map((target) => createProviderConfigForTarget(target, registeredAgents))
+  .filter(Boolean);
 
 if (providers.length === 0) {
   console.log("No M9 provider configs found. Set existing VIBE_M9_*_AGENT_ID vars or endpoint/model VIBE_M9_* vars.");
@@ -249,13 +215,13 @@ async function upsertProvider(provider) {
 async function assertExistingProviderReady(provider) {
   if (!provider.usesExistingAgent) return;
 
-  const registry = await readLocalTrustedRegistry();
-  const agent = registry[provider.id];
+  const agent = registeredAgents[provider.id];
   if (!agent) {
     throw new Error(`registered agent not found: ${provider.id}`);
   }
-  if ((agent.runtimeProvider || "hermes") !== provider.runtimeProvider) {
-    throw new Error(`registered agent provider mismatch: expected ${provider.runtimeProvider}, got ${agent.runtimeProvider || "hermes"}`);
+  const runtimeProvider = getAgentRuntimeProvider(agent, "hermes");
+  if (runtimeProvider !== provider.runtimeProvider) {
+    throw new Error(`registered agent provider mismatch: expected ${provider.runtimeProvider}, got ${runtimeProvider}`);
   }
   if (provider.runtimeProvider !== "hermes" && !(typeof agent.apiKey === "string" && agent.apiKey.length > 0)) {
     throw new Error("registered provider is missing an API key in the local trusted registry");
@@ -278,12 +244,62 @@ async function postJson(url, body, timeoutMs = defaultTimeoutMs) {
     const text = await response.text();
     const payload = text ? JSON.parse(text) : {};
     if (!response.ok) {
-      throw new Error(payload.error || `HTTP ${response.status}`);
+      throw new Error(formatProviderErrorPayload(payload, `HTTP ${response.status}`));
     }
     return payload;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function createProviderConfigForTarget(target, registry) {
+  const existing = createExistingProviderConfigForTarget(target, registry);
+  if (existing) return existing;
+
+  const envPrefix = target.envName.replace(/^VIBE_M9_/, "").replace(/_AGENT_ID$/, "");
+  return createProviderConfig({
+    id: `m9-${envPrefix.toLowerCase()}`,
+    label: target.label,
+    runtimeProvider: target.runtimeProvider,
+    endpoint: process.env[`VIBE_M9_${envPrefix}_BASE_URL`],
+    model: process.env[`VIBE_M9_${envPrefix}_MODEL`],
+    apiKey: process.env[`VIBE_M9_${envPrefix}_API_KEY`],
+  });
+}
+
+function createExistingProviderConfigForTarget(target, registry) {
+  const configuredId = String(process.env[target.envName] || "").trim();
+  if (configuredId) {
+    const agent = registry[configuredId];
+    return createExistingProviderConfig({
+      id: configuredId,
+      label: target.label,
+      runtimeProvider: getAgentRuntimeProvider(agent, target.runtimeProvider),
+    });
+  }
+
+  const agents = Object.entries(registry)
+    .map(([id, agent]) => ({
+      id,
+      name: typeof agent.name === "string" ? agent.name : "",
+      runtimeProvider: getAgentRuntimeProvider(agent, target.runtimeProvider),
+      model: typeof agent.model === "string" ? agent.model : "",
+      endpoint: typeof agent.endpoint === "string" ? agent.endpoint : "",
+      hasKey: typeof agent.apiKey === "string" && agent.apiKey.length > 0,
+    }))
+    .filter((agent) => matchesTargetHints(agent, target))
+    .filter((agent) => isRuntimeProviderAllowed(target, agent.runtimeProvider))
+    .filter((agent) => hasRequiredCredentials(target, agent))
+    .sort((left, right) => Number(right.hasKey) - Number(left.hasKey) || left.id.localeCompare(right.id));
+
+  const agent = agents[0];
+  if (!agent) return null;
+
+  return createExistingProviderConfig({
+    id: agent.id,
+    label: target.label,
+    runtimeProvider: agent.runtimeProvider,
+  });
 }
 
 function createExistingProviderConfig({ id, label, runtimeProvider }) {
@@ -332,10 +348,35 @@ function readNumber(value, fallback) {
 }
 
 function sanitizeError(error) {
-  const text = error instanceof Error ? error.message : String(error);
+  const text = error instanceof Error ? error.message : formatProviderErrorPayload(error, String(error));
   return text
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]")
     .replace(/(api[_-]?key=)[^&\s]+/gi, "$1[redacted]");
+}
+
+function formatProviderErrorPayload(payload, fallback) {
+  if (typeof payload === "string") return payload || fallback;
+  if (!payload || typeof payload !== "object") return fallback;
+
+  const error = payload.error;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const message = typeof error.message === "string" ? error.message : "";
+    const type = typeof error.type === "string" ? error.type : "";
+    const code = typeof error.code === "string" || typeof error.code === "number" ? String(error.code) : "";
+    const status = typeof error.status === "string" || typeof error.status === "number" ? String(error.status) : "";
+    const parts = [status, code, type, message].filter(Boolean);
+    if (parts.length > 0) return parts.join(" ");
+  }
+
+  const message = typeof payload.message === "string" ? payload.message : "";
+  if (message) return message;
+
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return fallback;
+  }
 }
 
 function truncate(value) {
@@ -379,8 +420,9 @@ async function readLocalTrustedRegistry() {
   const fs = await import("node:fs/promises");
   const os = await import("node:os");
   const path = await import("node:path");
-  const registryPath = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
-  const credentialPath = path.join(os.homedir(), ".vibe-office", "agent-credentials.local.json");
+  const localTrustedHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME || path.join(os.homedir(), ".vibe-office");
+  const registryPath = path.join(localTrustedHome, "agent-registry.local.json");
+  const credentialPath = path.join(localTrustedHome, "agent-credentials.local.json");
 
   try {
     const [raw, credentials] = await Promise.all([
@@ -423,22 +465,40 @@ function getTargetReadiness(target, agents) {
     return `NOT_FOUND ${target.envName}=${configuredId}`;
   }
 
-  const ready = candidates.find(
-    (agent) =>
-      agent.runtimeProvider === target.runtimeProvider &&
-      (!target.requiresKey || agent.hasKey),
-  );
+  const ready = candidates
+    .filter((agent) => isRuntimeProviderAllowed(target, agent.runtimeProvider))
+    .filter((agent) => hasRequiredCredentials(target, agent))
+    .sort((left, right) => Number(right.hasKey) - Number(left.hasKey) || left.id.localeCompare(right.id))[0];
   if (ready) return `READY ${ready.id}`;
 
-  const providerMismatch = candidates.find((agent) => agent.runtimeProvider !== target.runtimeProvider);
+  const providerMismatch = candidates.find((agent) => !isRuntimeProviderAllowed(target, agent.runtimeProvider));
   if (providerMismatch) {
-    return `PROVIDER_MISMATCH ${providerMismatch.id} expected=${target.runtimeProvider} actual=${providerMismatch.runtimeProvider}`;
+    return `PROVIDER_MISMATCH ${providerMismatch.id} expected=${getRuntimeProviderLabel(target)} actual=${providerMismatch.runtimeProvider}`;
   }
 
-  const missingKey = candidates.find((agent) => target.requiresKey && !agent.hasKey);
+  const missingKey = candidates.find((agent) => !hasRequiredCredentials(target, agent));
   if (missingKey) return `MISSING_KEY ${missingKey.id}`;
 
   return "NOT_FOUND";
+}
+
+function isRuntimeProviderAllowed(target, runtimeProvider) {
+  return (target.allowedRuntimeProviders || [target.runtimeProvider]).includes(runtimeProvider);
+}
+
+function hasRequiredCredentials(target, agent) {
+  if (target.requiresKey) return agent.hasKey;
+  if (agent.runtimeProvider === "openai" || agent.runtimeProvider === "anthropic") return agent.hasKey;
+  return true;
+}
+
+function getRuntimeProviderLabel(target) {
+  return (target.allowedRuntimeProviders || [target.runtimeProvider]).join("|");
+}
+
+function getAgentRuntimeProvider(agent, fallback) {
+  const value = agent?.runtimeProvider;
+  return value === "openai" || value === "anthropic" || value === "hermes" ? value : fallback;
 }
 
 function matchesTargetHints(agent, target) {

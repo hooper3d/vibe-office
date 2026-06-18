@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { readLocalTrustedCredentials, writeLocalTrustedCredentials } from "./credentialStore";
+import { getLocalTrustedFilePath, readLocalTrustedCredentials, writeLocalTrustedCredentials } from "./credentialStore";
 
-const LOCAL_TRUSTED_AGENT_REGISTRY_PATH = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
+function getLocalTrustedAgentRegistryPath() {
+  return getLocalTrustedFilePath("agent-registry.local.json");
+}
+
 let registryUpdateQueue = Promise.resolve();
 
 export type LocalTrustedAgentRecord = {
@@ -65,7 +67,7 @@ export async function getLocalTrustedAgent(agentId: string) {
 export async function readLocalTrustedAgentRegistry(): Promise<Record<string, LocalTrustedAgentRecord>> {
   try {
     const [raw, credentials] = await Promise.all([
-      fs.readFile(LOCAL_TRUSTED_AGENT_REGISTRY_PATH, "utf8"),
+      fs.readFile(getLocalTrustedAgentRegistryPath(), "utf8"),
       readLocalTrustedCredentials(),
     ]);
     const parsed = JSON.parse(raw);
@@ -87,7 +89,8 @@ export async function readLocalTrustedAgentRegistry(): Promise<Record<string, Lo
 }
 
 export async function writeLocalTrustedAgentRegistry(registry: Record<string, LocalTrustedAgentRecord>) {
-  const registryDirectory = path.dirname(LOCAL_TRUSTED_AGENT_REGISTRY_PATH);
+  const registryPath = getLocalTrustedAgentRegistryPath();
+  const registryDirectory = path.dirname(registryPath);
   const temporaryPath = path.join(
     registryDirectory,
     `agent-registry.local.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
@@ -100,11 +103,18 @@ export async function writeLocalTrustedAgentRegistry(registry: Record<string, Lo
       .filter((entry): entry is [string, LocalTrustedAgentRecord & { apiKey: string }] => Boolean(entry[1].apiKey))
       .map(([id, agent]) => [id, { apiKey: agent.apiKey }]),
   );
+  const existingCredentials = await readLocalTrustedCredentials();
+  const nextCredentials = Object.fromEntries(
+    Object.entries(existingCredentials).filter(([id]) => Object.prototype.hasOwnProperty.call(metadataRegistry, id)),
+  );
 
   await fs.mkdir(registryDirectory, { recursive: true });
   await fs.writeFile(temporaryPath, JSON.stringify(metadataRegistry, null, 2), "utf8");
-  await fs.rename(temporaryPath, LOCAL_TRUSTED_AGENT_REGISTRY_PATH);
-  await writeLocalTrustedCredentials(credentials);
+  await fs.rename(temporaryPath, registryPath);
+  await writeLocalTrustedCredentials({
+    ...nextCredentials,
+    ...credentials,
+  });
 }
 
 export function updateLocalTrustedAgentRegistry(

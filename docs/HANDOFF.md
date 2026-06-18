@@ -66,7 +66,8 @@ hermes-agent
 Important:
 
 - Do not commit API keys into source files or docs.
-- The API key is entered in Office Setup and stored in browser localStorage for the prototype.
+- The API key is entered in Office Setup and stored by the local trusted layer prototype credential registry.
+- Browser localStorage must store agent metadata only, not provider secrets.
 - `/v1/models` returned unauthorized during testing, but `POST /v1/chat/completions` works with the correct key.
 
 Vite proxy:
@@ -195,4 +196,3 @@ Check in browser:
 - Sending a message to `Local Hermes` creates a Task in `Outputs`.
 - The returned response appears as an Artifact in `Artifacts`.
 - Switching Project does not show another Project's Task/Artifact.
-

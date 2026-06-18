@@ -33,7 +33,8 @@ The list also prints M9 readiness for Hermes, DeepSeek OpenAI-compatible, and Mi
 
 ## Providers
 
-The script runs any provider whose existing agent ID or endpoint/model variables are present.
+The script runs any provider whose existing agent ID, ready local trusted registry match, or endpoint/model variables are present.
+When no `VIBE_M9_*_AGENT_ID` is supplied, it can auto-select a ready local trusted agent by provider hints without printing keys.
 
 Existing registered agents:
 
@@ -44,6 +45,12 @@ VIBE_M9_MINIMAX_AGENT_ID=agent-minimax
 ```
 
 With existing agent IDs, credentials stay in the local trusted credential store and are not copied into the shell.
+
+Auto-selection:
+
+- Hermes can use either a native Hermes record or a Hermes-compatible OpenAI-style record when the endpoint/model matches Hermes hints.
+- DeepSeek requires an OpenAI-compatible record with a key in the local trusted credential store.
+- MiniMax requires an Anthropic-compatible record with a key in the local trusted credential store.
 
 Hermes-compatible:
 
@@ -95,3 +102,5 @@ Each configured provider must pass:
 - The script calls `/agent-local/command`, not remote providers directly.
 - Do not commit shell scripts, screenshots, logs, or docs containing real keys.
 - A skipped provider means neither an existing agent ID nor required endpoint/model variables were set.
+- On 2026-06-19, Hermes auto-selection passed the full matrix against local trusted agent `agent-1781701191359`.
+- DeepSeek and MiniMax are not considered complete until their local trusted records report `READY` in `npm run regression:providers:list`.

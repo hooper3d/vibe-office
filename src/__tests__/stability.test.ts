@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { A2ATask } from "../domain/a2a";
 import type { Conversation, ConversationMessage, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
+import { getProviderSetupIssue } from "../domain/hermesSetup";
 import {
   getPendingRequestMessages,
   resolveDirectMessageRetry,
@@ -478,6 +482,94 @@ test("configured agent storage does not restore legacy browser credentials", () 
 
     assert.equal(loadedAgent.apiKey, undefined);
   });
+});
+
+test("local trusted registry preserves credentials when metadata is rewritten without keys", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
+  const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+  process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = localTrustedHome;
+
+  try {
+    const { readLocalTrustedAgentRegistry, writeLocalTrustedAgentRegistry } = await import("../../localTrusted/agentRegistry");
+
+    await writeLocalTrustedAgentRegistry({
+      "agent-secret": {
+        ...agent,
+        id: "agent-secret",
+        name: "Secret Agent",
+        a2aEndpoint: "http://127.0.0.1:8642/a2a",
+        agentCardUrl: "http://127.0.0.1:8642/.well-known/agent-card.json",
+        runtimeProvider: "hermes",
+        apiKey: "local-trusted-secret",
+      },
+      "agent-delete": {
+        ...participant,
+        id: "agent-delete",
+        name: "Delete Agent",
+        a2aEndpoint: "http://127.0.0.1:8643/a2a",
+        agentCardUrl: "http://127.0.0.1:8643/.well-known/agent-card.json",
+        runtimeProvider: "hermes",
+        apiKey: "delete-secret",
+      },
+    });
+
+    await writeLocalTrustedAgentRegistry({
+      "agent-secret": {
+        ...agent,
+        id: "agent-secret",
+        name: "Secret Agent",
+        a2aEndpoint: "http://127.0.0.1:8642/a2a",
+        agentCardUrl: "http://127.0.0.1:8642/.well-known/agent-card.json",
+        runtimeProvider: "hermes",
+      },
+    });
+
+    const registryRaw = await readFile(path.join(localTrustedHome, "agent-registry.local.json"), "utf8");
+    const credentialRaw = await readFile(path.join(localTrustedHome, "agent-credentials.local.json"), "utf8");
+    const credentials = JSON.parse(credentialRaw);
+    const hydrated = await readLocalTrustedAgentRegistry();
+    const hydratedAgent = hydrated["agent-secret"];
+
+    assert.equal(registryRaw.includes("local-trusted-secret"), false);
+    assert.equal(JSON.parse(registryRaw)["agent-secret"].apiKey, undefined);
+    assert.equal(credentials["agent-secret"].apiKey, "local-trusted-secret");
+    assert.equal(credentials["agent-delete"], undefined);
+    assert.ok(hydratedAgent);
+    assert.equal(hydratedAgent.apiKey, "local-trusted-secret");
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+    } else {
+      process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = previousHome;
+    }
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
+test("provider setup detects obvious runtime endpoint mismatches", () => {
+  assert.match(
+    getProviderSetupIssue({
+      endpoint: "https://api.minimaxi.com/anthropic",
+      runtimeProvider: "openai",
+    }) ?? "",
+    /Anthropic-compatible/,
+  );
+
+  assert.match(
+    getProviderSetupIssue({
+      endpoint: "https://api.example.com/v1/chat/completions",
+      runtimeProvider: "anthropic",
+    }) ?? "",
+    /OpenAI-compatible/,
+  );
+
+  assert.equal(
+    getProviderSetupIssue({
+      endpoint: "https://api.deepseek.com/v1",
+      runtimeProvider: "openai",
+    }),
+    null,
+  );
 });
 
 test("provider adapter routes OpenAI-compatible free chat through local provider commands", async () => {

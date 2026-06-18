@@ -49,12 +49,15 @@ export function SetupWizard({
   const capabilityOptions = Array.from(new Set([...CAPABILITY_TAG_OPTIONS, ...profileTags]));
   const defaultRuntimeBaseUrl = profileAgent?.endpoint ?? "";
   const [runtimeBaseUrl, setRuntimeBaseUrl] = useState(defaultRuntimeBaseUrl);
+  const [runtimeProvider, setRuntimeProvider] = useState<AgentRuntimeProvider>(profileRuntimeProvider);
   const generatedA2AEndpoint = getGeneratedA2AEndpoint(runtimeBaseUrl);
   const generatedAgentCardUrl = getGeneratedAgentCardUrl(runtimeBaseUrl);
+  const providerHint = getProviderHint(runtimeProvider);
 
   useEffect(() => {
     setRuntimeBaseUrl(defaultRuntimeBaseUrl);
-  }, [defaultRuntimeBaseUrl, profileAgent?.id]);
+    setRuntimeProvider(profileRuntimeProvider);
+  }, [defaultRuntimeBaseUrl, profileAgent?.id, profileRuntimeProvider]);
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -175,10 +178,15 @@ export function SetupWizard({
                     <div className="form-grid runtime-user-fields">
                       <label>
                         Provider type
-                        <select name="runtimeProvider" defaultValue={profileRuntimeProvider} aria-label="Runtime type">
+                        <select
+                          name="runtimeProvider"
+                          value={runtimeProvider}
+                          aria-label="Runtime type"
+                          onChange={(event) => setRuntimeProvider(event.currentTarget.value as AgentRuntimeProvider)}
+                        >
                           <option value="hermes">Hermes</option>
-                          <option value="openai">OpenAI</option>
-                          <option value="anthropic">Anthropic</option>
+                          <option value="openai">OpenAI-compatible</option>
+                          <option value="anthropic">Anthropic-compatible</option>
                         </select>
                       </label>
                       <label>
@@ -200,6 +208,7 @@ export function SetupWizard({
                         <input name="apiKey" type="password" defaultValue={profileAgent?.apiKey ?? ""} placeholder="Optional API key" />
                       </label>
                     </div>
+                    <p className="runtime-provider-hint">{providerHint}</p>
                   </div>
 
                   <details className="advanced-runtime-settings">
@@ -385,6 +394,16 @@ function getGeneratedA2AEndpoint(endpoint: string) {
 function getGeneratedAgentCardUrl(endpoint: string) {
   const root = getRuntimeRoot(endpoint);
   return root ? `${root}/.well-known/agent-card.json` : "";
+}
+
+function getProviderHint(provider: AgentRuntimeProvider) {
+  if (provider === "openai") {
+    return "Use an OpenAI-compatible chat/completions endpoint, usually ending at /v1.";
+  }
+  if (provider === "anthropic") {
+    return "Use an Anthropic-compatible messages endpoint. /v1/messages is generated when the base ends at /v1.";
+  }
+  return "Use a Hermes or native A2A-capable runtime. Chat compatibility is used when native A2A is unavailable.";
 }
 
 function DiagnosticRow({ label, state }: { label: string; state: ConnectionTestState }) {

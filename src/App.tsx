@@ -33,7 +33,7 @@ import { WorkspaceFiles } from "./components/WorkspaceFiles";
 import { SetupWizard, type ConnectionTestState } from "./components/SetupWizard";
 import type { A2APart, A2ATask } from "./domain/a2a";
 import { getOfficeRoleLabel } from "./domain/agentProfile";
-import { createAgentFromHermesSetup } from "./domain/hermesSetup";
+import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
 import {
   conversationMessages,
   conversations as seedConversations,
@@ -732,6 +732,13 @@ export function App() {
 
     try {
       const agent = createAgentFromHermesSetup(form);
+      const setupIssue = getProviderSetupIssue(agent);
+      if (setupIssue) {
+        setTestState("failed");
+        setLastConnectionMetadata(null);
+        setTestMessage(setupIssue);
+        return;
+      }
       if (!(await persistLocalTrustedAgent(agent))) return;
       const result = await new HermesA2AAdapter({ agent: stripAgentCredential(agent) }).testConnection();
 
@@ -792,6 +799,13 @@ export function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const newAgent = createAgentFromHermesSetup(form);
+    const setupIssue = getProviderSetupIssue(newAgent);
+    if (setupIssue) {
+      setTestState("failed");
+      setLastConnectionMetadata(null);
+      setTestMessage(setupIssue);
+      return;
+    }
     const safeNewAgent = stripAgentCredential(newAgent);
 
     if (setupAgentId) {
