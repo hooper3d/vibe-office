@@ -118,6 +118,7 @@ import {
   recordCancelUnsupportedState,
   recordLifecycleUnsupportedState,
 } from "../services/taskLifecycleState";
+import { deriveWorkspaceSelection } from "../services/workspaceSelectionState";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 import { createLocalTrustedWorkspaceCommandRequest } from "../services/workspaceFileClient";
 
@@ -216,6 +217,21 @@ function run(overrides: Partial<ProjectRun> = {}): ProjectRun {
     artifactIds: [],
     createdAt: at,
     updatedAt: at,
+    ...overrides,
+  };
+}
+
+function artifact(overrides: Partial<ProjectArtifact> = {}): ProjectArtifact {
+  return {
+    id: "artifact-1",
+    projectId: project.id,
+    taskId: "task-1",
+    agentId: participant.id,
+    name: "Artifact",
+    kind: "text",
+    summary: "Artifact body.",
+    contentParts: [{ kind: "text", text: "Artifact body." }],
+    createdAt: at,
     ...overrides,
   };
 }
@@ -1030,6 +1046,41 @@ test("project delete selection returns to free chat only when the selected proje
     }),
     currentSelection,
   );
+});
+
+test("workspace selection scopes project work and keeps free chat empty", () => {
+  const otherProject = { ...project, id: "project-two", namespace: "project-two", name: "Two" };
+  const selectedTask = task();
+  const selectedRun = run();
+  const selectedArtifact = artifact();
+  const freeSelection = deriveWorkspaceSelection({
+    projects: [project, otherProject],
+    selectedProjectId: freeChatProjectId,
+    freeChatEntryProjectId: freeChatProjectId,
+    tasks: [selectedTask],
+    runs: [selectedRun],
+    artifacts: [selectedArtifact],
+  });
+
+  assert.equal(freeSelection.selectedWorkspaceProject, undefined);
+  assert.deepEqual(freeSelection.scopedTasks, []);
+  assert.deepEqual(freeSelection.scopedRuns, []);
+  assert.deepEqual(freeSelection.scopedArtifacts, []);
+
+  const workspaceSelection = deriveWorkspaceSelection({
+    projects: [project, otherProject],
+    selectedProjectId: project.id,
+    freeChatEntryProjectId: freeChatProjectId,
+    tasks: [selectedTask, task({ id: "task-two", projectId: otherProject.id })],
+    runs: [selectedRun, run({ id: "run-two", projectId: otherProject.id, taskId: "task-two" })],
+    artifacts: [selectedArtifact, artifact({ id: "artifact-two", projectId: otherProject.id })],
+  });
+
+  assert.equal(workspaceSelection.selectedWorkspaceProject?.id, project.id);
+  assert.deepEqual(workspaceSelection.scopedTasks.map((item) => item.id), ["task-1"]);
+  assert.deepEqual(workspaceSelection.scopedRuns.map((item) => item.id), ["run-1"]);
+  assert.equal(workspaceSelection.latestChiefTask?.id, "task-1");
+  assert.deepEqual(workspaceSelection.scopedArtifacts.map((item) => item.id), ["artifact-1"]);
 });
 
 test("project dialog state opens, resets errors, and protects free chat entry", () => {

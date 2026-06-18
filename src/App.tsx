@@ -99,6 +99,7 @@ import {
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { getSplitPercentFromClientX, nudgeSplitPercent } from "./services/splitPaneState";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
+import { deriveWorkspaceSelection } from "./services/workspaceSelectionState";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   type WorkspaceFileAttachment,
@@ -189,27 +190,28 @@ export function App() {
     [availableTaskParticipants, taskParticipantIds],
   );
   const activeSetupAgentId = agentSetup.setupAgentId ?? agentSetup.setupDraftAgentId ?? "";
-  const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  const {
+    selectedProject,
+    selectedWorkspaceProject,
+    scopedTasks,
+    scopedRuns,
+    latestChiefTask,
+    scopedArtifacts,
+  } = useMemo(
+    () =>
+      deriveWorkspaceSelection({
+        projects,
+        selectedProjectId,
+        freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+        tasks,
+        runs,
+        artifacts,
+      }),
+    [artifacts, projects, runs, selectedProjectId, tasks],
+  );
   const agentSetupIssues = useMemo(
     () => deriveAgentReadinessIssues({ agents, localTrustedIssues: localTrustedAgentIssues }),
     [agents, localTrustedAgentIssues],
-  );
-  const selectedWorkspaceProject = selectedProject?.id === FREE_CHAT_ENTRY_PROJECT_ID ? undefined : selectedProject;
-  const scopedTasks = useMemo(
-    () => (selectedWorkspaceProject ? tasks.filter((task) => task.projectId === selectedWorkspaceProject.id) : []),
-    [selectedWorkspaceProject, tasks],
-  );
-  const scopedRuns = useMemo(
-    () => (selectedWorkspaceProject ? runs.filter((run) => run.projectId === selectedWorkspaceProject.id) : []),
-    [selectedWorkspaceProject, runs],
-  );
-  const latestChiefTask = useMemo(() => {
-    const latestChiefRun = scopedRuns.find((run) => run.type === "chief_delegation" && run.taskId);
-    return scopedTasks.find((task) => task.id === latestChiefRun?.taskId);
-  }, [scopedRuns, scopedTasks]);
-  const scopedArtifacts = useMemo(
-    () => (selectedWorkspaceProject ? artifacts.filter((artifact) => artifact.projectId === selectedWorkspaceProject.id) : []),
-    [selectedWorkspaceProject, artifacts],
   );
   const directConversationProjectId = chatScope === "free" ? FREE_CHAT_PROJECT_ID : selectedWorkspaceProject?.id ?? "";
   const activeFreeChatConversationId = selectedAgent ? activeFreeChatConversationIds[selectedAgent.id] : undefined;
