@@ -97,18 +97,10 @@ import {
 } from "./services/requestRetryState";
 import { createRequestTracker } from "./services/requestTracker";
 import {
-  executeChiefAggregationTurn,
-  executeChiefPlanTurn,
-  executeParticipantTaskTurn,
-  type ParticipantTaskResult,
-} from "./services/taskRoomRequest";
-import {
-  applyTaskRoomAggregationCompleted,
-  applyTaskRoomChiefPlanCompleted,
-  applyTaskRoomParticipantCompleted,
-  applyTaskRoomParticipantDelegated,
-  applyTaskRoomRequestFailed,
-} from "./services/taskRoomState";
+  executeTaskRoomRequestState,
+  type TaskRoomRequestState,
+  type TaskRoomRequestStep,
+} from "./services/taskRoomOrchestrator";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
@@ -1155,6 +1147,31 @@ export function App() {
     if (result.outputMode) setOutputMode(result.outputMode);
   }
 
+  function getTaskRoomRequestState(): TaskRoomRequestState {
+    return {
+      conversations: conversationsRef.current,
+      messages: messagesRef.current,
+      runs: runsRef.current,
+      tasks: tasksRef.current,
+      artifacts: artifactsRef.current,
+    };
+  }
+
+  function applyTaskRoomRequestStep(step: TaskRoomRequestStep) {
+    conversationsRef.current = step.state.conversations;
+    messagesRef.current = step.state.messages;
+    runsRef.current = step.state.runs;
+    tasksRef.current = step.state.tasks;
+    artifactsRef.current = step.state.artifacts;
+
+    setConversations(step.state.conversations);
+    setMessages(step.state.messages);
+    setRuns(step.state.runs);
+    setTasks(step.state.tasks);
+    setArtifacts(step.state.artifacts);
+    if (step.outputMode) setOutputMode(step.outputMode);
+  }
+
   async function completeFreeChatRequest({
     conversation,
     targetAgent,
@@ -1609,181 +1626,20 @@ export function App() {
     setAttachedWorkspaceFiles([]);
     setOutputMode("runs");
 
-    const taskArtifactIds: string[] = [];
-
     try {
-      const chiefPlanResult = await executeChiefPlanTurn({
-        chief: targetAgent,
+      await executeTaskRoomRequestState({
+        state: getTaskRoomRequestState(),
+        conversation,
         project: selectedWorkspaceProject,
-        text,
+        chief: targetAgent,
         participants,
+        text,
         files: taskFiles,
-      });
-      const chiefPlanState = applyTaskRoomChiefPlanCompleted({
-        state: {
-          messages: messagesRef.current,
-          tasks: tasksRef.current,
-          runs: runsRef.current,
-          artifacts: artifactsRef.current,
-        },
-        result: chiefPlanResult,
-        conversationId: conversation.id,
-        projectId: selectedWorkspaceProject.id,
-        chiefAgentId: targetAgent.id,
         taskId,
         runId,
         userMessageId,
-        artifactIds: taskArtifactIds,
+        onStep: applyTaskRoomRequestStep,
       });
-      taskArtifactIds.splice(0, taskArtifactIds.length, ...chiefPlanState.artifactIds);
-      const chiefPlan = chiefPlanState.chiefPlan;
-      messagesRef.current = chiefPlanState.state.messages;
-      tasksRef.current = chiefPlanState.state.tasks;
-      runsRef.current = chiefPlanState.state.runs;
-      artifactsRef.current = chiefPlanState.state.artifacts;
-      setMessages(chiefPlanState.state.messages);
-      setTasks(chiefPlanState.state.tasks);
-      setRuns(chiefPlanState.state.runs);
-      setArtifacts(chiefPlanState.state.artifacts);
-      if (chiefPlanState.addedArtifactCount > 0) {
-        setOutputMode("artifacts");
-      }
-
-      const participantResults: ParticipantTaskResult[] = [];
-
-      for (const participant of participants) {
-        const delegatedAt = new Date().toISOString();
-        const delegatedTasks = applyTaskRoomParticipantDelegated({
-          tasks: tasksRef.current,
-          taskId,
-          participant,
-          delegatedAt,
-        });
-        tasksRef.current = delegatedTasks;
-        setTasks(delegatedTasks);
-
-        let participantSummary = "";
-        let participantState: WorkState = "completed";
-        let participantAt = new Date().toISOString();
-
-        try {
-          const participantResult = await executeParticipantTaskTurn({
-            participant,
-            project: selectedWorkspaceProject,
-            text,
-            chief: targetAgent,
-            chiefPlan,
-            files: taskFiles,
-          });
-          participantSummary = participantResult.summary;
-          participantState = mapA2AState(participantResult.task.status.state);
-          participantAt = participantResult.completedAt;
-        } catch (error) {
-          participantState = "failed";
-          participantSummary = getUserFacingAgentError(error);
-          participantAt = new Date().toISOString();
-        }
-
-        const participantStateUpdate = applyTaskRoomParticipantCompleted({
-          state: {
-            tasks: tasksRef.current,
-            artifacts: artifactsRef.current,
-          },
-          projectId: selectedWorkspaceProject.id,
-          taskId,
-          participant,
-          participantState,
-          participantSummary,
-          participantAt,
-          artifactIds: taskArtifactIds,
-        });
-        taskArtifactIds.splice(0, taskArtifactIds.length, ...participantStateUpdate.artifactIds);
-        participantResults.push(participantStateUpdate.participantResult);
-        artifactsRef.current = participantStateUpdate.state.artifacts;
-        tasksRef.current = participantStateUpdate.state.tasks;
-        setArtifacts(participantStateUpdate.state.artifacts);
-        setTasks(participantStateUpdate.state.tasks);
-      }
-
-      let finalSummary = "";
-      let finalState: WorkState = "completed";
-      let finalAt = new Date().toISOString();
-      let aggregateResult: Awaited<ReturnType<typeof executeChiefAggregationTurn>> | undefined;
-      let markUserMessageFailed = false;
-
-      try {
-        aggregateResult = await executeChiefAggregationTurn({
-          chief: targetAgent,
-          project: selectedWorkspaceProject,
-          text,
-          chiefPlan,
-          participantResults,
-          files: taskFiles,
-        });
-        finalSummary = aggregateResult.summary;
-        finalState = mapA2AState(aggregateResult.task.status.state);
-        finalAt = aggregateResult.completedAt;
-      } catch (error) {
-        finalState = "failed";
-        finalSummary = getUserFacingAgentError(error);
-        finalAt = new Date().toISOString();
-        markUserMessageFailed = true;
-      }
-
-      const finalStateUpdate = applyTaskRoomAggregationCompleted({
-        state: {
-          messages: messagesRef.current,
-          tasks: tasksRef.current,
-          runs: runsRef.current,
-          artifacts: artifactsRef.current,
-        },
-        conversations: conversationsRef.current,
-        result: aggregateResult,
-        conversationId: conversation.id,
-        projectId: selectedWorkspaceProject.id,
-        chiefAgentId: targetAgent.id,
-        taskId,
-        runId,
-        finalState,
-        finalSummary,
-        finalAt,
-        participantAgentIds,
-        artifactIds: taskArtifactIds,
-        userMessageId,
-        markUserMessageFailed,
-      });
-      messagesRef.current = finalStateUpdate.state.messages;
-      artifactsRef.current = finalStateUpdate.state.artifacts;
-      tasksRef.current = finalStateUpdate.state.tasks;
-      runsRef.current = finalStateUpdate.state.runs;
-      conversationsRef.current = finalStateUpdate.conversations;
-      setMessages(finalStateUpdate.state.messages);
-      setArtifacts(finalStateUpdate.state.artifacts);
-      setTasks(finalStateUpdate.state.tasks);
-      setRuns(finalStateUpdate.state.runs);
-      setConversations(finalStateUpdate.conversations);
-      setOutputMode(finalStateUpdate.finalArtifactIds.length > 0 ? "artifacts" : "runs");
-    } catch (error) {
-      const failedAt = new Date().toISOString();
-      const errorMessage = getUserFacingAgentError(error);
-      const failedState = applyTaskRoomRequestFailed({
-        messages: messagesRef.current,
-        tasks: tasksRef.current,
-        runs: runsRef.current,
-        userMessageId,
-        taskId,
-        runId,
-        chiefAgentId: targetAgent.id,
-        errorMessage,
-        failedAt,
-      });
-      messagesRef.current = failedState.messages;
-      tasksRef.current = failedState.tasks;
-      runsRef.current = failedState.runs;
-      setMessages(failedState.messages);
-      setTasks(failedState.tasks);
-      setRuns(failedState.runs);
-      setOutputMode("runs");
     } finally {
       requestTrackerRef.current.end(requestId);
     }

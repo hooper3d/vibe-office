@@ -27,6 +27,10 @@ import {
   resumeProjectDirectRequestState,
   type DirectRequestState,
 } from "../services/directRequestOrchestrator";
+import {
+  executeTaskRoomRequestState,
+  type TaskRoomRequestState,
+} from "../services/taskRoomOrchestrator";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 
@@ -160,6 +164,17 @@ function directRequestState(overrides: Partial<DirectRequestState> = {}): Direct
     messages: [userMessage()],
     runs: [],
     tasks: [],
+    artifacts: [],
+    ...overrides,
+  };
+}
+
+function taskRoomRequestState(overrides: Partial<TaskRoomRequestState> = {}): TaskRoomRequestState {
+  return {
+    conversations: [conversation({ mode: "task_room", chiefAgentId: agent.id })],
+    messages: [userMessage({ taskId: "task-1", runId: "run-1" })],
+    runs: [run()],
+    tasks: [task()],
     artifacts: [],
     ...overrides,
   };
@@ -556,6 +571,80 @@ test("direct request orchestrator converts workspace recovery failure into conte
   assert.equal(result.state.messages[0].status, "failed");
   assert.equal(result.state.messages[0].errorKind, "context");
   assert.match(result.state.messages[0].errorText ?? "", /workspace files/i);
+  assert.equal(result.state.runs[0].state, "failed");
+  assert.equal(result.outputMode, "runs");
+});
+
+test("task room orchestrator emits progressive state steps for chief, participant, and aggregation", async () => {
+  const steps: TaskRoomRequestState[] = [];
+  const taskRoomConversation = conversation({ mode: "task_room", chiefAgentId: agent.id });
+  const result = await executeTaskRoomRequestState({
+    state: taskRoomRequestState({ conversations: [taskRoomConversation] }),
+    conversation: taskRoomConversation,
+    project,
+    chief: agent,
+    participants: [participant],
+    text: "Coordinate release notes.",
+    files: [],
+    taskId: "task-1",
+    runId: "run-1",
+    userMessageId: "message-1",
+    deps: {
+      executeChiefPlanTurn: async () => ({
+        task: a2aTask("Chief plan ready."),
+        summary: "Chief plan ready.",
+        completedAt: "2026-06-18T10:05:00.000Z",
+      }),
+      executeParticipantTaskTurn: async () => ({
+        task: a2aTask("Tiger result."),
+        summary: "Tiger result.",
+        completedAt: "2026-06-18T10:06:00.000Z",
+      }),
+      executeChiefAggregationTurn: async () => ({
+        task: a2aTask("Final summary."),
+        summary: "Final summary.",
+        completedAt: "2026-06-18T10:07:00.000Z",
+      }),
+      now: () => "2026-06-18T10:05:30.000Z",
+    },
+    onStep: (step) => steps.push(step.state),
+  });
+
+  assert.equal(steps.length, 4);
+  assert.equal(steps[0].tasks[0].state, "working");
+  assert.equal(steps[1].tasks[0].summary, "Delegated to Tiger.");
+  assert.equal(steps[2].artifacts[0].name, "Tiger result");
+  assert.equal(result.state.tasks[0].state, "completed");
+  assert.equal(result.state.runs[0].state, "completed");
+  assert.equal(result.state.messages[0].status, "sent");
+  assert.equal(result.state.messages[result.state.messages.length - 1]?.role, "agent");
+  assert.equal(result.outputMode, "artifacts");
+});
+
+test("task room orchestrator converts chief planning failure into retryable failed request state", async () => {
+  const taskRoomConversation = conversation({ mode: "task_room", chiefAgentId: agent.id });
+  const result = await executeTaskRoomRequestState({
+    state: taskRoomRequestState({ conversations: [taskRoomConversation] }),
+    conversation: taskRoomConversation,
+    project,
+    chief: agent,
+    participants: [participant],
+    text: "Coordinate release notes.",
+    files: [],
+    taskId: "task-1",
+    runId: "run-1",
+    userMessageId: "message-1",
+    deps: {
+      executeChiefPlanTurn: async () => {
+        throw new Error("Agent did not respond before the timeout.");
+      },
+      now: () => "2026-06-18T10:08:00.000Z",
+    },
+  });
+
+  assert.equal(result.state.messages[0].status, "failed");
+  assert.equal(result.state.messages[0].errorKind, "timeout");
+  assert.equal(result.state.tasks[0].state, "failed");
   assert.equal(result.state.runs[0].state, "failed");
   assert.equal(result.outputMode, "runs");
 });
