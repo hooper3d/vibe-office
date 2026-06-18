@@ -394,9 +394,11 @@ Completed:
 - Workspace context prompt construction is centralized so Free/Project/Task Room requests use one explicit local-file boundary text.
 - Task Room request orchestration now runs through a dedicated task-room orchestrator service that owns Chief planning, participant execution, Chief aggregation, failure conversion, progressive state steps, and suggested Output Area updates.
 - Active request tracking and the latest conversation/run/task/artifact snapshot now live in a dedicated request runtime store instead of separate component refs.
+- Provider HTTP execution now goes through a replaceable agent HTTP transport boundary shared by Native A2A, Hermes-compatible, OpenAI-compatible, and Anthropic-compatible requests.
 - A service-level stability regression harness now covers pending request recovery, direct/task-room retry routing, retry state reducers, request attempt lifecycle fields, Task Room state reducers, UI state restoration, and workspace localStorage migration/fallback behavior.
 - Service-level stability tests now cover Direct request orchestration, Task Room orchestration, workspace-context recovery, and Task Room chief-planning failure conversion.
 - Service-level stability tests now cover the request runtime store that coordinates active request ids with the latest workspace snapshot.
+- Service-level stability tests now cover provider transport proxy mapping and provider error normalization.
 - Browser-visible refresh restore and timeout failure smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Direct Chat and Task Room retry click-flow smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Direct Chat and Task Room pending-reload recovery smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
@@ -404,7 +406,7 @@ Completed:
 
 Still open:
 
-- Move provider request execution from browser-owned adapters toward the local trusted layer when native packaging/storage is introduced.
+- Replace the browser transport implementation with a native/local trusted implementation when packaging and secure credential storage are introduced.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 
 ### Milestone 0: Real Agent Onboarding

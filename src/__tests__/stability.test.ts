@@ -31,6 +31,10 @@ import {
   executeTaskRoomRequestState,
   type TaskRoomRequestState,
 } from "../services/taskRoomOrchestrator";
+import {
+  createBrowserAgentHttpTransport,
+  toLocalTrustedProxyUrl,
+} from "../services/agentHttpTransport";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
@@ -330,6 +334,53 @@ test("request runtime store keeps active request ids with the latest workspace s
 
   store.end(requestId);
   assert.equal(store.activeRequestIds().has("request-1"), false);
+});
+
+test("agent http transport maps local trusted proxy URLs and normalizes provider errors", async () => {
+  assert.equal(toLocalTrustedProxyUrl("http://127.0.0.1:8642/v1/chat/completions"), "/hermes-local/v1/chat/completions");
+  assert.equal(toLocalTrustedProxyUrl("https://hooper.ink/a2a?x=1"), "/hermes-hooper/a2a?x=1");
+  assert.equal(toLocalTrustedProxyUrl("https://api.example.com/v1"), "https://api.example.com/v1");
+
+  const previousFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    requestedUrls.push(String(url));
+    if (String(url).includes("fail")) {
+      return new Response(JSON.stringify({ error: { message: "bad key" } }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const transport = createBrowserAgentHttpTransport();
+    assert.deepEqual(
+      await transport.requestJson<{ ok: boolean }>("http://127.0.0.1:8642/ok", {}, {
+        timeoutMs: 1000,
+        timeoutMessage: "timed out",
+        failurePrefix: "Provider failed",
+      }),
+      { ok: true },
+    );
+    assert.equal(requestedUrls[0], "/hermes-local/ok");
+    await assert.rejects(
+      () =>
+        transport.requestJson("https://api.example.com/fail", {}, {
+          timeoutMs: 1000,
+          timeoutMessage: "timed out",
+          failurePrefix: "Provider failed",
+        }),
+      /Provider failed: 401: bad key/,
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test("retry state helpers prepare direct and task-room messages without stale retry artifacts", () => {

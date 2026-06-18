@@ -6,6 +6,7 @@ import type {
   A2ASendMessageParams,
   A2ATask,
 } from "../domain/a2a";
+import { createBrowserAgentHttpTransport, type AgentHttpTransport } from "./agentHttpTransport";
 
 export type A2AClientOptions = {
   endpoint: string;
@@ -13,6 +14,7 @@ export type A2AClientOptions = {
   protocolVersion?: string;
   timeoutMs?: number;
   useA2AVersionHeader?: boolean;
+  transport?: AgentHttpTransport;
 };
 
 export class A2AClient {
@@ -21,6 +23,7 @@ export class A2AClient {
   private protocolVersion?: string;
   private timeoutMs: number;
   private useA2AVersionHeader: boolean;
+  private transport: AgentHttpTransport;
 
   constructor(options: A2AClientOptions) {
     this.endpoint = options.endpoint.replace(/\/$/, "");
@@ -28,12 +31,16 @@ export class A2AClient {
     this.protocolVersion = options.protocolVersion;
     this.timeoutMs = options.timeoutMs ?? 60_000;
     this.useA2AVersionHeader = Boolean(options.useA2AVersionHeader && options.protocolVersion);
+    this.transport = options.transport ?? createBrowserAgentHttpTransport();
   }
 
   async getAgentCard(agentCardUrl = `${this.endpoint}/.well-known/agent-card.json`) {
-    const response = await fetchWithTimeout(toHermesProxyUrl(agentCardUrl), {
+    const response = await this.transport.request(agentCardUrl, {
       headers: this.buildHeaders(false),
-    }, this.timeoutMs, "Provider capability request timed out.");
+    }, {
+      timeoutMs: this.timeoutMs,
+      timeoutMessage: "Provider capability request timed out.",
+    });
 
     if (!response.ok) {
       throw new Error(`Unable to load provider capabilities: ${response.status}`);
@@ -76,11 +83,14 @@ export class A2AClient {
       params,
     };
 
-    const response = await fetchWithTimeout(toHermesProxyUrl(this.endpoint), {
+    const response = await this.transport.request(this.endpoint, {
       method: "POST",
       headers: this.buildHeaders(true),
       body: JSON.stringify(request),
-    }, this.timeoutMs, `Agent task request timed out.`);
+    }, {
+      timeoutMs: this.timeoutMs,
+      timeoutMessage: "Agent task request timed out.",
+    });
 
     if (!response.ok) {
       throw new Error(`Agent task request failed: ${response.status}`);
@@ -116,40 +126,5 @@ export class A2AClient {
     }
 
     return headers;
-  }
-}
-
-function toHermesProxyUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === "127.0.0.1" && parsed.port === "8642") {
-      return `/hermes-local${parsed.pathname}${parsed.search}`;
-    }
-    if (parsed.hostname === "hooper.ink") {
-      return `/hermes-hooper${parsed.pathname}${parsed.search}`;
-    }
-  } catch {
-    return url;
-  }
-
-  return url;
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, timeoutMessage: string) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(timeoutMessage);
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timeout);
   }
 }

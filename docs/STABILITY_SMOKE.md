@@ -181,5 +181,5 @@ Notes:
 
 ## Still Needed
 
-- Move request execution orchestration from React component state into a local trusted layer or dedicated request store.
-- Move in-flight request tracking and attempt reconciliation out of the React component once the local trusted layer owns provider calls.
+- Replace the browser transport implementation with a native/local trusted implementation when packaging and secure credential storage are introduced.
+- Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially Output Area organization by agent and output type.

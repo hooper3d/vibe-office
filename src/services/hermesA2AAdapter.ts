@@ -1,6 +1,7 @@
 import type { A2AAgentCard, A2AMessage, A2ATask } from "../domain/a2a";
 import type { AgentInstance, AgentRuntimeProvider, Project } from "../domain/types";
 import { A2AClient } from "./a2aClient";
+import { createBrowserAgentHttpTransport, type AgentHttpTransport } from "./agentHttpTransport";
 
 export type ChatHistoryMessage = {
   role: "user" | "assistant";
@@ -10,6 +11,7 @@ export type ChatHistoryMessage = {
 export type HermesA2AAdapterOptions = {
   agent: AgentInstance;
   apiKey?: string;
+  transport?: AgentHttpTransport;
 };
 
 export type HermesConnectionTestResult = {
@@ -21,10 +23,12 @@ export class HermesA2AAdapter {
   private agent: AgentInstance;
   private client: A2AClient;
   private timeoutMs: number;
+  private transport: AgentHttpTransport;
 
   constructor(options: HermesA2AAdapterOptions) {
     this.agent = options.agent;
     this.timeoutMs = (options.agent.timeoutSeconds ?? 60) * 1000;
+    this.transport = options.transport ?? createBrowserAgentHttpTransport();
     const nativeA2A =
       this.runtimeProvider() === "hermes" &&
       options.agent.a2aTransportBinding === "json-rpc/http" &&
@@ -35,6 +39,7 @@ export class HermesA2AAdapter {
       protocolVersion: nativeA2A ? options.agent.a2aProtocolVersion : undefined,
       timeoutMs: this.timeoutMs,
       useA2AVersionHeader: nativeA2A,
+      transport: this.transport,
     });
   }
 
@@ -270,26 +275,24 @@ export class HermesA2AAdapter {
         content: text,
       },
     ];
-    const response = await fetchWithTimeout(toHermesProxyUrl(toOpenAIChatCompletionsUrl(this.agent.endpoint)), {
+    const payload = await this.transport.requestJson<{
+      choices?: Array<{
+        message?: {
+          content?: string;
+        };
+      }>;
+    }>(toOpenAIChatCompletionsUrl(this.agent.endpoint), {
       method: "POST",
       headers: this.buildOpenAIHeaders(true),
       body: JSON.stringify({
         model: this.agent.model,
         messages,
       }),
-    }, this.timeoutMs, "Agent did not respond before the timeout.");
-
-    if (!response.ok) {
-      throw new Error(`OpenAI chat failed: ${response.status}${await readErrorSuffix(response)}`);
-    }
-
-    const payload = (await response.json()) as {
-      choices?: Array<{
-        message?: {
-          content?: string;
-        };
-      }>;
-    };
+    }, {
+      timeoutMs: this.timeoutMs,
+      timeoutMessage: "Agent did not respond before the timeout.",
+      failurePrefix: "OpenAI chat failed",
+    });
     const content = payload.choices?.[0]?.message?.content ?? "OpenAI provider returned an empty response.";
     const now = new Date().toISOString();
 
@@ -355,7 +358,13 @@ export class HermesA2AAdapter {
     systemContent?: string;
     metadata: Record<string, unknown>;
   }): Promise<A2ATask> {
-    const response = await fetchWithTimeout(toHermesProxyUrl(toAnthropicMessagesUrl(this.agent.endpoint)), {
+    const payload = await this.transport.requestJson<{
+      content?: Array<{
+        type?: string;
+        text?: string;
+        thinking?: string;
+      }>;
+    }>(toAnthropicMessagesUrl(this.agent.endpoint), {
       method: "POST",
       headers: this.buildAnthropicHeaders(true),
       body: JSON.stringify({
@@ -373,19 +382,11 @@ export class HermesA2AAdapter {
           },
         ],
       }),
-    }, this.timeoutMs, "Agent did not respond before the timeout.");
-
-    if (!response.ok) {
-      throw new Error(`Anthropic message failed: ${response.status}${await readErrorSuffix(response)}`);
-    }
-
-    const payload = (await response.json()) as {
-      content?: Array<{
-        type?: string;
-        text?: string;
-        thinking?: string;
-      }>;
-    };
+    }, {
+      timeoutMs: this.timeoutMs,
+      timeoutMessage: "Agent did not respond before the timeout.",
+      failurePrefix: "Anthropic message failed",
+    });
     const content =
       payload.content
         ?.filter((part) => part.type === "text" && typeof part.text === "string")
@@ -417,7 +418,7 @@ export class HermesA2AAdapter {
   }
 
   private async validateOpenAIChat() {
-    const response = await fetchWithTimeout(toHermesProxyUrl(toOpenAIChatCompletionsUrl(this.agent.endpoint)), {
+    await this.transport.requestJson<unknown>(toOpenAIChatCompletionsUrl(this.agent.endpoint), {
       method: "POST",
       headers: this.buildOpenAIHeaders(true),
       body: JSON.stringify({
@@ -430,15 +431,15 @@ export class HermesA2AAdapter {
         ],
         max_tokens: 8,
       }),
-    }, this.timeoutMs, "Agent connection test timed out.");
-
-    if (!response.ok) {
-      throw new Error(`OpenAI chat auth failed: ${response.status}${await readErrorSuffix(response)}`);
-    }
+    }, {
+      timeoutMs: this.timeoutMs,
+      timeoutMessage: "Agent connection test timed out.",
+      failurePrefix: "OpenAI chat auth failed",
+    });
   }
 
   private async validateAnthropicMessages() {
-    const response = await fetchWithTimeout(toHermesProxyUrl(toAnthropicMessagesUrl(this.agent.endpoint)), {
+    await this.transport.requestJson<unknown>(toAnthropicMessagesUrl(this.agent.endpoint), {
       method: "POST",
       headers: this.buildAnthropicHeaders(true),
       body: JSON.stringify({
@@ -451,16 +452,11 @@ export class HermesA2AAdapter {
           },
         ],
       }),
-    }, this.timeoutMs, "Agent connection test timed out.");
-
-    if (!response.ok) {
-      throw new Error(`Anthropic message auth failed: ${response.status}${await readErrorSuffix(response)}`);
-    }
-  }
-
-  private hermesOrigin() {
-    const endpoint = new URL(this.agent.endpoint);
-    return `${endpoint.protocol}//${endpoint.host}`;
+    }, {
+      timeoutMs: this.timeoutMs,
+      timeoutMessage: "Agent connection test timed out.",
+      failurePrefix: "Anthropic message auth failed",
+    });
   }
 
   private buildOpenAIHeaders(isJson: boolean) {
@@ -509,48 +505,4 @@ function toAnthropicMessagesUrl(endpoint: string) {
   if (/\/messages$/i.test(trimmed)) return trimmed;
   if (/\/v1$/i.test(trimmed)) return `${trimmed}/messages`;
   return `${trimmed}/v1/messages`;
-}
-
-function toHermesProxyUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === "127.0.0.1" && parsed.port === "8642") {
-      return `/hermes-local${parsed.pathname}${parsed.search}`;
-    }
-    if (parsed.hostname === "hooper.ink") {
-      return `/hermes-hooper${parsed.pathname}${parsed.search}`;
-    }
-  } catch {
-    return url;
-  }
-
-  return url;
-}
-
-async function readErrorSuffix(response: Response) {
-  try {
-    const payload = (await response.json()) as { error?: { message?: string } };
-    return payload.error?.message ? `: ${payload.error.message}` : "";
-  } catch {
-    return "";
-  }
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, timeoutMessage: string) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(timeoutMessage);
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timeout);
-  }
 }
