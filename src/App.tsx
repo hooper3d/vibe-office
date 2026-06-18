@@ -70,7 +70,8 @@ import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStor
 import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agentErrorText";
 import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
-import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
+import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
+import { buildChatCompletionHistory, getTextPartContent } from "./services/messageContent";
 import {
   getPendingRequestMessages,
   getRespondingAgentIds,
@@ -1082,7 +1083,11 @@ export function App() {
     text: string;
   }) {
     try {
-      const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
+      const chatHistory = buildChatCompletionHistory({
+        messages,
+        conversationId: conversation.id,
+        pendingMessageId: userMessageId,
+      });
       const result = await executeFreeChatRequest({
         agent: targetAgent,
         text,
@@ -1334,7 +1339,11 @@ export function App() {
     agentRequestText: string;
   }) {
     try {
-      const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
+      const chatHistory = buildChatCompletionHistory({
+        messages,
+        conversationId: conversation.id,
+        pendingMessageId: userMessageId,
+      });
       const result = await executeProjectAgentRequest({
         agent: targetAgent,
         project,
@@ -2686,36 +2695,6 @@ function getPartText(parts: A2APart[]) {
       return part.file.name ?? part.file.uri ?? "File";
     })
     .join("\n");
-}
-
-function getTextPartContent(parts: A2APart[]) {
-  return parts
-    .filter((part) => part.kind === "text")
-    .map((part) => part.text)
-    .join("\n");
-}
-
-function buildChatCompletionHistory(
-  allMessages: ConversationMessage[],
-  conversationId: string,
-  pendingMessageId: string,
-  maxMessages = 20,
-): ChatHistoryMessage[] {
-  return allMessages
-    .filter(
-      (message) =>
-        message.conversationId === conversationId &&
-        message.id !== pendingMessageId &&
-        message.status === "sent" &&
-        (message.role === "user" || message.role === "agent"),
-    )
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    .slice(-maxMessages)
-    .map((message): ChatHistoryMessage => ({
-      role: message.role === "agent" ? "assistant" : "user",
-      content: getTextPartContent(message.contentParts),
-    }))
-    .filter((message) => message.content.trim().length > 0);
 }
 
 function getDataPartContent(parts: A2APart[]) {

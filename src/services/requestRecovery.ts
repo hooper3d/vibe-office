@@ -1,5 +1,6 @@
 import type { Conversation, ConversationMessage } from "../domain/projectScope";
 import type { AgentInstance, Project } from "../domain/types";
+import { getMessageTextContent } from "./messageContent";
 
 export type PendingRequestRecovery =
   | {
@@ -128,7 +129,7 @@ export function resolvePendingRequestRecovery({
     };
   }
 
-  const text = getTextPartContent(message).trim();
+  const text = getMessageTextContent(message).trim();
   if (!text) {
     return {
       kind: "fail",
@@ -198,7 +199,7 @@ export function resolveDirectMessageRetry({
     };
   }
 
-  const text = getTextPartContent(message).trim();
+  const text = getMessageTextContent(message).trim();
   if (!text) {
     return {
       kind: "fail",
@@ -260,11 +261,4 @@ export function resolveTaskRoomMessageRetry({
     message,
     taskId: message.taskId,
   };
-}
-
-function getTextPartContent(message: ConversationMessage) {
-  return message.contentParts
-    .filter((part) => part.kind === "text")
-    .map((part) => part.text)
-    .join("\n");
 }
