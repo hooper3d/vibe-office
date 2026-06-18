@@ -72,12 +72,13 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 1841 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, and Free Chat selection helpers.
+- `src/App.tsx` is still about 1662 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, Free Chat selection helpers, and Task lifecycle state reducers.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
 - The new `src/components/OutputPanel.tsx` centralizes Free Chat history, project output tabs, Browser preview, grouped Outputs, and no-project right-panel state.
 - The new `src/services/agentSetupState.ts` centralizes add/edit/deduplicate/chief-normalization behavior and keeps credential-bearing payloads separate from UI agent state.
 - The new `src/services/projectSetupState.ts` centralizes Project validation, create/update state, delete eligibility, and project-scoped cleanup of conversations, messages, runs, tasks, and artifacts.
 - The new `src/services/conversationSelectionState.ts` centralizes Free Chat history sorting, title derivation, active conversation mapping, current direct-conversation resolution, and empty-chat reuse checks.
+- The new `src/services/taskLifecycleState.ts` centralizes remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
 
 Impact:
 
@@ -186,7 +187,7 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 30 tests pass. |
+| Service tests | Good | 32 tests pass. |
 | Browser smoke | Good | Smoke passes. |
 | Credential safety | Improved | P0 fixed and committed; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |

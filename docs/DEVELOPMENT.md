@@ -773,6 +773,7 @@ Acceptance:
 - Agent setup save state now lives in `src/services/agentSetupState.ts`, covering add/edit/deduplicate/chief-normalization behavior while keeping provider credentials in the local trusted payload and out of UI state.
 - Project setup save/delete state now lives in `src/services/projectSetupState.ts`, covering project validation, create/update state, delete eligibility, and project-scoped cleanup of conversations, messages, runs, tasks, and artifacts.
 - Free Chat history and current direct-conversation selection now live in `src/services/conversationSelectionState.ts`, keeping per-agent history sorting, title derivation, active conversation maps, and empty-chat reuse out of `App.tsx`.
+- Task lifecycle state now lives in `src/services/taskLifecycleState.ts`, covering remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
 
 ## A2A Version / State Mapping

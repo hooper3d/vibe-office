@@ -21,7 +21,6 @@ import type {
   ProjectArtifact,
   ProjectRun,
   ProjectTask,
-  WorkState,
 } from "./domain/projectScope";
 import {
   failRunForMessage,
@@ -32,11 +31,9 @@ import {
 import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError } from "./services/agentErrorText";
-import { extractA2ATaskText, mapA2AState } from "./services/agentTaskResult";
 import {
   createBackfilledMediaArtifacts,
   createTextParts,
-  mapA2AArtifacts,
 } from "./services/artifactState";
 import { buildAgentRequestText } from "./services/agentRequestText";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
@@ -75,6 +72,19 @@ import {
   type TaskRoomRequestStep,
 } from "./services/taskRoomOrchestrator";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
+import {
+  applyTaskLifecycleRemoteUpdate,
+  failTaskRetry,
+  getRemoteTaskWorkState,
+  getTaskEventDisplayLabel,
+  getTaskLifecycleAddress,
+  hasLifecycleUnsupportedEvent,
+  isTaskActive,
+  isTaskTerminal,
+  prepareTaskRetrySubmitting,
+  recordCancelUnsupportedState,
+  recordLifecycleUnsupportedState,
+} from "./services/taskLifecycleState";
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -531,29 +541,7 @@ export function App() {
 
     const retryAt = new Date().toISOString();
     setTaskLifecycleBusyId(`retry:${taskId}`);
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === task.id
-          ? {
-              ...item,
-              state: "submitting",
-              summary: "Retry submitted.",
-              events: [
-                ...item.events,
-                {
-                  id: `${task.id}-retry-${retryAt}`,
-                  taskId: task.id,
-                  agentId: owner.id,
-                  label: "Retry submitted.",
-                  state: "submitting",
-                  timestamp: retryAt,
-                },
-              ],
-              updatedAt: retryAt,
-            }
-          : item,
-      ),
-    );
+    setTasks((current) => prepareTaskRetrySubmitting({ tasks: current, task, ownerAgentId: owner.id, retryAt }));
 
     try {
       const remoteTask = await retryRemoteProjectTask({
@@ -563,33 +551,11 @@ export function App() {
         previousFailure: task.summary,
       });
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Retry returned a task update.");
-      return mapA2AState(remoteTask.status.state) !== "failed";
+      return getRemoteTaskWorkState(remoteTask) !== "failed";
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorText = getUserFacingAgentError(error);
-      setTasks((current) =>
-        current.map((item) =>
-          item.id === task.id
-            ? {
-                ...item,
-                state: "failed",
-                summary: errorText,
-                events: [
-                  ...item.events,
-                  {
-                    id: `${task.id}-retry-failed-${failedAt}`,
-                    taskId: task.id,
-                    agentId: owner.id,
-                    label: "Retry failed.",
-                    state: "failed",
-                    timestamp: failedAt,
-                  },
-                ],
-                updatedAt: failedAt,
-              }
-            : item,
-        ),
-      );
+      setTasks((current) => failTaskRetry({ tasks: current, task, ownerAgentId: owner.id, errorText, failedAt }));
       return false;
     } finally {
       setTaskLifecycleBusyId("");
@@ -597,93 +563,37 @@ export function App() {
   }
 
   function applyLifecycleTaskUpdate(task: ProjectTask, remoteTask: A2ATask, agentId: string, label: string) {
-    const updatedAt = remoteTask.status.timestamp ?? new Date().toISOString();
-    const eventId = `${task.id}-lifecycle-${updatedAt}`;
-    const mappedState = mapA2AState(remoteTask.status.state);
-    const summary = extractA2ATaskText(remoteTask) ?? task.summary;
-    const returnedArtifacts = mapA2AArtifacts(remoteTask, task.projectId, agentId);
-    const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
-
-    if (returnedArtifacts.length > 0) {
-      setArtifacts((current) => [
-        ...returnedArtifacts.filter((artifact) => !current.some((item) => item.id === artifact.id)),
-        ...current,
-      ]);
-    }
-
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === task.id ? mergeLifecycleTaskUpdate(item, remoteTask, agentId, label, mappedState, summary, eventId, updatedAt, returnedArtifactIds) : item,
-      ),
-    );
-
-    setRuns((current) =>
-      current.map((run) =>
-        run.taskId === task.id
-          ? {
-              ...run,
-              state: mappedState,
-              eventIds: mergeIds(run.eventIds, [eventId]),
-              artifactIds: mergeIds(run.artifactIds, returnedArtifactIds),
-              updatedAt,
-            }
-          : run,
-      ),
-    );
+    const snapshot = requestStoreRef.current.snapshot();
+    const nextState = applyTaskLifecycleRemoteUpdate({
+      state: {
+        artifacts: snapshot.artifacts,
+        runs: snapshot.runs,
+        tasks: snapshot.tasks,
+      },
+      task,
+      remoteTask,
+      agentId,
+      label,
+      now: () => new Date().toISOString(),
+    });
+    requestStoreRef.current.sync({
+      artifacts: nextState.artifacts,
+      runs: nextState.runs,
+      tasks: nextState.tasks,
+    });
+    setArtifacts(nextState.artifacts);
+    setTasks(nextState.tasks);
+    setRuns(nextState.runs);
   }
 
   function recordLifecycleUnsupported(task: ProjectTask, reason: string) {
     const at = new Date().toISOString();
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === task.id
-          ? {
-              ...item,
-              events: hasLifecycleUnsupportedEvent(item)
-                ? item.events
-                : [
-                    ...item.events,
-                    {
-                      id: `${task.id}-lifecycle-unsupported`,
-                      taskId: task.id,
-                      agentId: task.ownerAgentId,
-                      label: `Lifecycle unsupported: ${reason}`,
-                      state: "unsupported",
-                      timestamp: at,
-                    },
-                  ],
-              updatedAt: at,
-            }
-          : item,
-      ),
-    );
+    setTasks((current) => recordLifecycleUnsupportedState({ tasks: current, task, reason, at }));
   }
 
   function recordCancelUnsupported(task: ProjectTask, reason: string) {
     const at = new Date().toISOString();
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === task.id
-          ? {
-              ...item,
-              events: hasCancelUnsupportedEvent(item)
-                ? item.events
-                : [
-                    ...item.events,
-                    {
-                      id: `${task.id}-cancel-unsupported`,
-                      taskId: task.id,
-                      agentId: task.ownerAgentId,
-                      label: `Cancel unsupported: ${reason}`,
-                      state: "unsupported",
-                      timestamp: at,
-                    },
-                  ],
-              updatedAt: at,
-            }
-          : item,
-      ),
-    );
+    setTasks((current) => recordCancelUnsupportedState({ tasks: current, task, reason, at }));
   }
 
   async function runConnectionTest(form: FormData) {
@@ -1715,95 +1625,6 @@ function createConversation({
     createdAt,
     updatedAt: createdAt,
   };
-}
-
-function mergeLifecycleTaskUpdate(
-  task: ProjectTask,
-  remoteTask: A2ATask,
-  agentId: string,
-  label: string,
-  mappedState: WorkState,
-  summary: string,
-  eventId: string,
-  updatedAt: string,
-  returnedArtifactIds: string[],
-) {
-  const mergedArtifactIds = mergeIds(task.artifactIds, returnedArtifactIds);
-  const remoteTaskId = remoteTask.id || task.remoteTaskId;
-  const remoteContextId = remoteTask.contextId || task.remoteContextId;
-  const shouldRecordEvent =
-    !task.events.some((event) => event.id === eventId) &&
-    (task.state !== mappedState ||
-      task.summary !== summary ||
-      task.remoteTaskId !== remoteTaskId ||
-      task.remoteContextId !== remoteContextId ||
-      mergedArtifactIds.length !== task.artifactIds.length);
-
-  return {
-    ...task,
-    state: mappedState,
-    remoteTaskId,
-    remoteContextId,
-    summary,
-    events: shouldRecordEvent
-      ? [
-          ...task.events,
-          {
-            id: eventId,
-            taskId: task.id,
-            agentId,
-            label,
-            state: mappedState,
-            timestamp: updatedAt,
-          },
-        ]
-      : task.events,
-    artifactIds: mergedArtifactIds,
-    updatedAt,
-  };
-}
-
-function getTaskLifecycleAddress(task: ProjectTask, runs: ProjectRun[]) {
-  if (task.remoteTaskId) {
-    return {
-      taskId: task.remoteTaskId,
-      contextId: task.remoteContextId ?? task.contextId,
-    };
-  }
-
-  const linkedRun = runs.find((run) => run.taskId === task.id);
-  if (linkedRun?.type === "direct_message") {
-    return {
-      taskId: task.id,
-      contextId: task.contextId,
-    };
-  }
-
-  return null;
-}
-
-function isTaskActive(state: WorkState) {
-  return state === "submitting" || state === "submitted" || state === "working" || state === "input_required";
-}
-
-function isTaskTerminal(state: WorkState) {
-  return state === "completed" || state === "failed" || state === "canceled" || state === "unsupported";
-}
-
-function hasLifecycleUnsupportedEvent(task: ProjectTask) {
-  return task.events.some((event) => event.state === "unsupported" || event.label.startsWith("Lifecycle unsupported:"));
-}
-
-function hasCancelUnsupportedEvent(task: ProjectTask) {
-  return task.events.some((event) => event.state === "unsupported" && event.label.startsWith("Cancel unsupported:"));
-}
-
-function getTaskEventDisplayLabel(label: string) {
-  return label.replace("Agent returned an A2A task.", "Agent returned a task.").replace("A2A request failed", "Agent task request failed");
-}
-
-function mergeIds(first: string[], second: string[]) {
-  return Array.from(new Set([...first, ...second]));
 }
 
 async function readAvatarFile(file?: File): Promise<{ dataUrl?: string; error?: string }> {

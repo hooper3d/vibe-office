@@ -57,6 +57,14 @@ import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { applyProjectDelete, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
+import {
+  applyTaskLifecycleRemoteUpdate,
+  failTaskRetry,
+  getTaskLifecycleAddress,
+  prepareTaskRetrySubmitting,
+  recordCancelUnsupportedState,
+  recordLifecycleUnsupportedState,
+} from "../services/taskLifecycleState";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 
 const at = "2026-06-18T10:00:00.000Z";
@@ -773,6 +781,97 @@ test("free chat active map and empty-chat reuse are stable", () => {
     }),
     false,
   );
+});
+
+test("task lifecycle reducer syncs remote task updates into tasks, runs, and artifacts", () => {
+  const remoteTask: A2ATask = {
+    ...a2aTask("Remote completed.", "remote-task-2"),
+    artifacts: [
+      {
+        artifactId: "artifact-remote",
+        name: "Remote artifact",
+        description: "Returned artifact.",
+        parts: [{ kind: "text", text: "artifact body" }],
+      },
+    ],
+  };
+  const localTask = task({ remoteTaskId: "remote-task-2", remoteContextId: "remote-context", summary: "Old summary." });
+  const localRun = run({ state: "working", artifactIds: ["existing-artifact"] });
+
+  const next = applyTaskLifecycleRemoteUpdate({
+    state: {
+      artifacts: [],
+      runs: [localRun],
+      tasks: [localTask],
+    },
+    task: localTask,
+    remoteTask,
+    agentId: agent.id,
+    label: "Task status refreshed.",
+    now: () => "2026-06-18T10:09:00.000Z",
+  });
+
+  assert.equal(next.tasks[0].state, "completed");
+  assert.equal(next.tasks[0].summary, "Remote completed.");
+  assert.equal(next.tasks[0].remoteTaskId, "remote-task-2");
+  assert.deepEqual(next.tasks[0].artifactIds, ["artifact-remote"]);
+  assert.equal(next.tasks[0].events[0].label, "Task status refreshed.");
+  assert.equal(next.runs[0].state, "completed");
+  assert.deepEqual(next.runs[0].artifactIds, ["existing-artifact", "artifact-remote"]);
+  assert.equal(next.artifacts[0].id, "artifact-remote");
+  assert.equal(next.artifacts[0].summary, "Returned artifact.");
+});
+
+test("task lifecycle helpers preserve unsupported and retry states", () => {
+  const directRun = run({ type: "direct_message" });
+  const localTask = task();
+  assert.deepEqual(getTaskLifecycleAddress(localTask, [directRun]), {
+    taskId: localTask.id,
+    contextId: localTask.contextId,
+  });
+
+  const unsupported = recordLifecycleUnsupportedState({
+    tasks: [localTask],
+    task: localTask,
+    reason: "No remote task.",
+    at: "2026-06-18T10:10:00.000Z",
+  });
+  const unsupportedAgain = recordLifecycleUnsupportedState({
+    tasks: unsupported,
+    task: unsupported[0],
+    reason: "Still unsupported.",
+    at: "2026-06-18T10:11:00.000Z",
+  });
+  assert.equal(unsupportedAgain[0].events.length, 1);
+  assert.match(unsupportedAgain[0].events[0].label, /Lifecycle unsupported/);
+
+  const cancelUnsupported = recordCancelUnsupportedState({
+    tasks: [localTask],
+    task: localTask,
+    reason: "Cancel unavailable.",
+    at: "2026-06-18T10:12:00.000Z",
+  });
+  assert.match(cancelUnsupported[0].events[0].label, /Cancel unsupported/);
+
+  const retrying = prepareTaskRetrySubmitting({
+    tasks: [localTask],
+    task: localTask,
+    ownerAgentId: agent.id,
+    retryAt: "2026-06-18T10:13:00.000Z",
+  });
+  assert.equal(retrying[0].state, "submitting");
+  assert.equal(retrying[0].summary, "Retry submitted.");
+
+  const failed = failTaskRetry({
+    tasks: retrying,
+    task: retrying[0],
+    ownerAgentId: agent.id,
+    errorText: "Retry failed.",
+    failedAt: "2026-06-18T10:14:00.000Z",
+  });
+  assert.equal(failed[0].state, "failed");
+  assert.equal(failed[0].summary, "Retry failed.");
+  assert.equal(failed[0].events[failed[0].events.length - 1]?.label, "Retry failed.");
 });
 
 test("local trusted registry preserves credentials when metadata is rewritten without keys", async () => {
