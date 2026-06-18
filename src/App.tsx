@@ -304,6 +304,8 @@ export function App() {
     () => taskRoomMessages.some((message) => message.role === "user" && message.status === "sending"),
     [taskRoomMessages],
   );
+  const activeComposerHasPendingRequest =
+    conversationMode === "single" ? currentConversationHasPendingRequest : taskRoomHasPendingRequest;
   const respondingAgentIds = useMemo(() => getRespondingAgentIds(conversations, messages), [conversations, messages]);
 
   useEffect(() => {
@@ -2242,7 +2244,7 @@ export function App() {
                           ? "Select at least one participant first"
                           : `Start a Chief-led task in ${selectedWorkspaceProject.name}`
                   }
-                  disabled={isComposerSubmitting}
+                  disabled={isComposerSubmitting || activeComposerHasPendingRequest}
                 />
                 <button
                   className="primary-icon-button composer-send-button"
@@ -2250,6 +2252,7 @@ export function App() {
                   aria-label="Send message"
                   disabled={
                     isComposerSubmitting ||
+                    activeComposerHasPendingRequest ||
                     (conversationMode === "single"
                       ? !selectedAgent || (chatScope === "project" && !selectedWorkspaceProject)
                       : !selectedWorkspaceProject || !chiefAgent || selectedTaskParticipants.length === 0) ||
