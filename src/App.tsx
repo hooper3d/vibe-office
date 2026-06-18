@@ -1070,7 +1070,7 @@ export function App() {
     markInterruptedMessageFailed(message, reason);
 
     setTasks((current) => failTaskRoomTaskForMessage(current, message, reason, failedAt));
-    setRuns((current) => failRunForMessage(current, message, failedAt));
+    setRuns((current) => failRunForMessage(current, message, failedAt, reason));
   }
 
   async function completeFreeChatRequest({
@@ -1267,14 +1267,17 @@ export function App() {
     try {
       restoredFiles = await restoreWorkspaceAttachments(project, message);
     } catch {
+      const failedAt = new Date().toISOString();
+      const errorText = "Workspace files from the interrupted request could not be restored. Please resend it.";
       setMessages((current) =>
         markConversationMessageFailed(
           current,
           message.id,
-          "Workspace files from the interrupted request could not be restored. Please resend it.",
+          errorText,
           { errorKind: "context" },
         ),
       );
+      setRuns((current) => failRunForMessage(current, message, failedAt, errorText));
       return;
     }
 
@@ -1292,6 +1295,7 @@ export function App() {
           ownerAgentId: targetAgent.id,
           participantAgentIds,
           state: "submitting",
+          summary: "Restoring interrupted project chat.",
           eventIds: [`${runId}-restored`],
           artifactIds: [],
           createdAt: message.createdAt,
@@ -1418,6 +1422,7 @@ export function App() {
                 ...run,
                 taskId,
                 state: mappedState,
+                summary: responseSummary || run.summary,
                 eventIds: mergeIds(run.eventIds, [`${runId}-completed`]),
                 artifactIds: returnedArtifactIds,
                 updatedAt: completedAt,
@@ -1439,7 +1444,7 @@ export function App() {
       const failedAt = new Date().toISOString();
       const errorText = getUserFacingAgentError(error);
       setMessages((current) => markConversationMessageFailed(current, userMessageId, errorText, { runId }));
-      setRuns((current) => failRunById(current, runId, failedAt));
+      setRuns((current) => failRunById(current, runId, failedAt, errorText));
       setOutputMode("runs");
     }
   }
@@ -1528,6 +1533,7 @@ export function App() {
         ownerAgentId: targetAgent.id,
         participantAgentIds,
         state: "submitting",
+        summary: "Project chat request submitted.",
         eventIds: [`${runId}-submitted`],
         artifactIds: [],
         createdAt: now,
@@ -1642,6 +1648,7 @@ export function App() {
       ownerAgentId: targetAgent.id,
       participantAgentIds: [targetAgent.id, ...participantAgentIds],
       state: "submitting",
+      summary: "Chief-led task submitted.",
       eventIds: [`${runId}-submitted`],
       artifactIds: [],
       createdAt: now,
@@ -1730,6 +1737,7 @@ export function App() {
             ? {
                 ...run,
                 state: "working",
+                summary: chiefPlan,
                 eventIds: [...run.eventIds, `${runId}-chief-response`],
                 artifactIds: [...taskArtifactIds],
                 updatedAt: chiefPlanAt,
@@ -1902,6 +1910,7 @@ export function App() {
             ? {
                 ...run,
                 state: finalState,
+                summary: finalSummary,
                 eventIds: [...run.eventIds, `${runId}-completed`],
                 artifactIds: finalArtifactIds,
                 updatedAt: finalAt,
@@ -1948,7 +1957,7 @@ export function App() {
             : task,
         ),
       );
-      setRuns((current) => failRunById(current, runId, failedAt));
+      setRuns((current) => failRunById(current, runId, failedAt, errorMessage));
       setOutputMode("runs");
     } finally {
       activeRequestMessageIdsRef.current.delete(userMessageId);
@@ -3639,7 +3648,7 @@ function ProjectTasks({
                 task={lifecycleTask}
               />
             ) : null}
-            <p>{linkedTask?.summary ?? "Project-scoped run record."}</p>
+            <p>{linkedTask?.summary ?? run.summary ?? "Project-scoped run record."}</p>
             {linkedTask ? <TaskEventList agents={agents} events={linkedTask.events} /> : null}
             <div className="artifact-strip">
               {runArtifacts.length > 0 ? (

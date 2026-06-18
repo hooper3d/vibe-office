@@ -68,6 +68,7 @@ export type ProjectRun = {
   ownerAgentId: string;
   participantAgentIds: string[];
   state: WorkState;
+  summary?: string;
   eventIds: string[];
   artifactIds: string[];
   createdAt: string;

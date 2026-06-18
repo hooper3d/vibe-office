@@ -81,17 +81,18 @@ export function failTaskRoomTaskForMessage(
   );
 }
 
-export function failRunForMessage(runs: ProjectRun[], message: ConversationMessage, failedAt: string) {
+export function failRunForMessage(runs: ProjectRun[], message: ConversationMessage, failedAt: string, summary?: string) {
   if (!message.runId) return runs;
-  return failRunById(runs, message.runId, failedAt);
+  return failRunById(runs, message.runId, failedAt, summary ?? message.errorText);
 }
 
-export function failRunById(runs: ProjectRun[], runId: string, failedAt: string) {
+export function failRunById(runs: ProjectRun[], runId: string, failedAt: string, summary?: string) {
   return runs.map((run) =>
     run.id === runId
       ? {
           ...run,
           state: "failed" as const,
+          summary: summary ?? run.summary,
           eventIds: mergeIds(run.eventIds, [`${runId}-failed`]),
           updatedAt: failedAt,
         }
