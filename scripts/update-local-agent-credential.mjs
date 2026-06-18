@@ -11,16 +11,16 @@ const localTrustedPrivateFileMode = 0o600;
 const agentId = readRequiredEnv("VIBE_AGENT_ID");
 const apiKey = readOptionalEnv("VIBE_AGENT_API_KEY");
 const m9Target = readOptionalM9Target(process.env.VIBE_AGENT_M9_TARGET);
-const targetPreset = m9Target ? getM9TargetPreset(m9Target) : undefined;
-const runtimeProvider = readOptionalRuntimeProvider(process.env.VIBE_AGENT_RUNTIME_PROVIDER || targetPreset?.runtimeProvider);
-const endpoint = readOptionalHttpUrl(process.env.VIBE_AGENT_BASE_URL || targetPreset?.baseUrl, "VIBE_AGENT_BASE_URL");
-const model = readOptionalEnv("VIBE_AGENT_MODEL") || targetPreset?.model || "";
 
 const registry = await readJsonObject(registryPath);
 const existingAgent = registry[agentId];
 if (!existingAgent || typeof existingAgent !== "object" || Array.isArray(existingAgent)) {
   throw new Error(`Local trusted agent not found: ${agentId}`);
 }
+const targetPreset = m9Target ? getM9TargetPreset(m9Target, existingAgent) : undefined;
+const runtimeProvider = readOptionalRuntimeProvider(process.env.VIBE_AGENT_RUNTIME_PROVIDER || targetPreset?.runtimeProvider);
+const endpoint = readOptionalHttpUrl(process.env.VIBE_AGENT_BASE_URL || targetPreset?.baseUrl, "VIBE_AGENT_BASE_URL");
+const model = readOptionalEnv("VIBE_AGENT_MODEL") || targetPreset?.model || "";
 
 const nextAgent = {
   ...existingAgent,
@@ -82,7 +82,7 @@ function readOptionalM9Target(value) {
   throw new Error("VIBE_AGENT_M9_TARGET must be hermes, deepseek, or minimax.");
 }
 
-function getM9TargetPreset(target) {
+function getM9TargetPreset(target, existingAgent) {
   if (target === "deepseek") {
     return {
       runtimeProvider: "openai",
@@ -93,7 +93,7 @@ function getM9TargetPreset(target) {
   if (target === "minimax") {
     return {
       runtimeProvider: "anthropic",
-      baseUrl: "https://api.minimax.io/anthropic",
+      baseUrl: getMiniMaxAnthropicBaseUrl(existingAgent),
       model: "MiniMax-M3",
     };
   }
@@ -102,6 +102,12 @@ function getM9TargetPreset(target) {
     baseUrl: "http://127.0.0.1:8642/v1",
     model: "hermes-agent",
   };
+}
+
+function getMiniMaxAnthropicBaseUrl(existingAgent) {
+  const endpoint = typeof existingAgent.endpoint === "string" ? existingAgent.endpoint : "";
+  if (/api\.minimaxi\.com/i.test(endpoint)) return "https://api.minimaxi.com/anthropic";
+  return "https://api.minimax.io/anthropic";
 }
 
 function getM9Readiness(target, id, agent, hasKey) {

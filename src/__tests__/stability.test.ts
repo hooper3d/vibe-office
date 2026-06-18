@@ -3173,7 +3173,7 @@ test("local agent credential updater applies M9 target presets without leaking k
     assert.equal(output.includes(secret), false);
     assert.equal(registryRaw.includes(secret), false);
     assert.equal(registry["agent-minimax"].runtimeProvider, "anthropic");
-    assert.equal(registry["agent-minimax"].endpoint, "https://api.minimax.io/anthropic");
+    assert.equal(registry["agent-minimax"].endpoint, "https://api.minimaxi.com/anthropic");
     assert.equal(registry["agent-minimax"].model, "MiniMax-M3");
     assert.equal(credentials["agent-minimax"].apiKey, secret);
   } finally {
@@ -3233,7 +3233,7 @@ test("local agent credential updater can repair M9 metadata while preserving sav
     assert.equal(output.includes(secret), false);
     assert.equal(registryRaw.includes(secret), false);
     assert.equal(registry["agent-minimax"].runtimeProvider, "anthropic");
-    assert.equal(registry["agent-minimax"].endpoint, "https://api.minimax.io/anthropic");
+    assert.equal(registry["agent-minimax"].endpoint, "https://api.minimaxi.com/anthropic");
     assert.equal(credentials["agent-minimax"].apiKey, secret);
   } finally {
     await rm(localTrustedHome, { recursive: true, force: true });
