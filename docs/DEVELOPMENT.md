@@ -345,7 +345,8 @@ Important boundary:
 
 Next phase:
 
-- v0.1 stabilization and release review: run full end-to-end acceptance, tighten copy, and prepare the next v0.2 plan.
+- M7 IA Reset: split Agent Free Chat from Project Workspace and return the product to the core `List Area + Conversation Area + Output Area` skeleton.
+- Source design note: `docs/V0_2_IA_RESET.md`.
 
 ### Milestone 0: Real Agent Onboarding
 
@@ -583,6 +584,37 @@ Acceptance:
 - Failed tasks show clear reason and retry action.
 - A2A task state maps cleanly into internal task state.
 - Unsupported provider lifecycle capabilities are disabled or clearly marked.
+
+### Milestone 7: IA Reset - Agent Free Chat + Project Workspace
+
+Status: proposed.
+
+Goal:
+
+Return the product to the core three-area skeleton:
+
+```txt
+List Area + Conversation Area + Output Area
+```
+
+Scope:
+
+- Add per-agent free chat history.
+- Add New Chat for each agent.
+- Keep free chat outside Project Scope.
+- Remove or downgrade `Direct chat / Task room` as primary header choices.
+- Keep Project Workspace as the context for files, outputs, previews, and multi-agent coordination.
+- Start reorganizing Output Area around agent/type grouping.
+- Treat A2A as an integration layer, not a user-facing product concept.
+
+Acceptance:
+
+- User can select Lucy and see Lucy's free chat history.
+- User can create a new Lucy free chat.
+- Free chat does not show project folder, project badge, or project outputs as primary chrome.
+- User can select a Project and enter project workspace.
+- Project workspace still has conversation, files, browser preview, and outputs.
+- Outputs are easier to find by agent and type.
 
 ## A2A Version / State Mapping
 
