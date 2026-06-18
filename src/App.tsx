@@ -73,14 +73,14 @@ import {
   getImageFileParts,
   mapA2AArtifacts,
 } from "./services/artifactState";
-import { executeFreeChatTurn, executeProjectDirectTurn } from "./services/directChatRequest";
+import { buildAgentRequestText } from "./services/agentRequestText";
 import {
-  applyConversationMessageFailed,
-  applyFreeChatTurnCompleted,
-  applyProjectDirectTurnCompleted,
-  applyProjectDirectTurnFailed,
-  touchConversationUpdatedAt,
-} from "./services/directChatState";
+  completeFreeChatRequestState,
+  completeProjectDirectRequestState,
+  resumeProjectDirectRequestState,
+  type DirectRequestResult,
+  type DirectRequestState,
+} from "./services/directRequestOrchestrator";
 import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { getTextPartContent } from "./services/messageContent";
 import {
@@ -112,7 +112,6 @@ import {
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
-import { restoreWorkspaceAttachments } from "./services/workspaceContextRecovery";
 import { getUserFacingWorkspaceError } from "./services/workspaceErrorText";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
@@ -445,7 +444,9 @@ export function App() {
       }
 
       const trackedRequestId = requestTrackerRef.current.begin(message);
-      setMessages((current) => markConversationMessageSending(current, message.id));
+      const preparedMessages = markConversationMessageSending(messagesRef.current, message.id);
+      messagesRef.current = preparedMessages;
+      setMessages(preparedMessages);
 
       if (recovery.kind === "free-chat") {
         void completeFreeChatRequest({
@@ -1112,15 +1113,46 @@ export function App() {
   }
 
   function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
-    setMessages((current) => markConversationMessageFailed(current, message.id, reason));
+    const failedMessages = markConversationMessageFailed(messagesRef.current, message.id, reason);
+    messagesRef.current = failedMessages;
+    setMessages(failedMessages);
   }
 
   function markTaskRoomMessageFailed(message: ConversationMessage, reason: string) {
     const failedAt = new Date().toISOString();
     markInterruptedMessageFailed(message, reason);
 
-    setTasks((current) => failTaskRoomTaskForMessage(current, message, reason, failedAt));
-    setRuns((current) => failRunForMessage(current, message, failedAt, reason));
+    const failedTasks = failTaskRoomTaskForMessage(tasksRef.current, message, reason, failedAt);
+    const failedRuns = failRunForMessage(runsRef.current, message, failedAt, reason);
+    tasksRef.current = failedTasks;
+    runsRef.current = failedRuns;
+    setTasks(failedTasks);
+    setRuns(failedRuns);
+  }
+
+  function getDirectRequestState(): DirectRequestState {
+    return {
+      conversations: conversationsRef.current,
+      messages: messagesRef.current,
+      runs: runsRef.current,
+      tasks: tasksRef.current,
+      artifacts: artifactsRef.current,
+    };
+  }
+
+  function applyDirectRequestResult(result: DirectRequestResult) {
+    conversationsRef.current = result.state.conversations;
+    messagesRef.current = result.state.messages;
+    runsRef.current = result.state.runs;
+    tasksRef.current = result.state.tasks;
+    artifactsRef.current = result.state.artifacts;
+
+    setConversations(result.state.conversations);
+    setMessages(result.state.messages);
+    setRuns(result.state.runs);
+    setTasks(result.state.tasks);
+    setArtifacts(result.state.artifacts);
+    if (result.outputMode) setOutputMode(result.outputMode);
   }
 
   async function completeFreeChatRequest({
@@ -1134,30 +1166,16 @@ export function App() {
     userMessageId: string;
     text: string;
   }) {
-    try {
-      const result = await executeFreeChatTurn({
-        agent: targetAgent,
-        text,
-        messages: messagesRef.current,
-        conversationId: conversation.id,
+    applyDirectRequestResult(
+      await completeFreeChatRequestState({
+        state: getDirectRequestState(),
+        conversation,
+        targetAgent,
         userMessageId,
-      });
-
-      setMessages((current) =>
-        applyFreeChatTurnCompleted({
-          messages: current,
-          result,
-          conversationId: conversation.id,
-          projectId: FREE_CHAT_PROJECT_ID,
-          agentId: targetAgent.id,
-          userMessageId,
-        }),
-      );
-      setConversations((current) => touchConversationUpdatedAt(current, conversation.id, result.completedAt));
-    } catch (error) {
-      const errorText = getUserFacingAgentError(error);
-      setMessages((current) => applyConversationMessageFailed({ messages: current, messageId: userMessageId, errorText }));
-    }
+        text,
+        freeChatProjectId: FREE_CHAT_PROJECT_ID,
+      }),
+    );
   }
 
   async function submitFreeChatMessage(text: string) {
@@ -1198,14 +1216,18 @@ export function App() {
     };
 
     if (!existingConversation) {
-      setConversations((current) => [conversation, ...current]);
+      const nextConversations = [conversation, ...conversationsRef.current];
+      conversationsRef.current = nextConversations;
+      setConversations(nextConversations);
     }
     setActiveFreeChatConversationIds((current) => ({
       ...current,
       [targetAgent.id]: conversation.id,
     }));
     requestTrackerRef.current.begin(requestId);
-    setMessages((current) => [...current, userMessage]);
+    const nextMessages = [...messagesRef.current, userMessage];
+    messagesRef.current = nextMessages;
+    setMessages(nextMessages);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
 
@@ -1232,13 +1254,13 @@ export function App() {
     }
 
     const trackedRequestId = requestTrackerRef.current.begin(retry.message);
-    setMessages((current) =>
-      prepareDirectMessageRetry({
-        messages: current,
-        message: retry.message,
-        targetAgentId: retry.targetAgent.id,
-      }),
-    );
+    const preparedMessages = prepareDirectMessageRetry({
+      messages: messagesRef.current,
+      message: retry.message,
+      targetAgentId: retry.targetAgent.id,
+    });
+    messagesRef.current = preparedMessages;
+    setMessages(preparedMessages);
 
     try {
       if (retry.kind === "free-chat") {
@@ -1272,17 +1294,19 @@ export function App() {
     if (retry.kind === "ignore") return;
 
     const trackedRequestId = requestTrackerRef.current.begin(retry.message);
-    setMessages((current) => prepareTaskRoomMessageRetry({ messages: current, messageId: retry.message.id }));
+    const preparedMessages = prepareTaskRoomMessageRetry({ messages: messagesRef.current, messageId: retry.message.id });
+    messagesRef.current = preparedMessages;
+    setMessages(preparedMessages);
 
     try {
       const succeeded = await retryTaskLifecycle(retry.taskId);
-      setMessages((current) =>
-        completeTaskRoomMessageRetry({
-          messages: current,
-          messageId: retry.message.id,
-          succeeded,
-        }),
-      );
+      const completedMessages = completeTaskRoomMessageRetry({
+        messages: messagesRef.current,
+        messageId: retry.message.id,
+        succeeded,
+      });
+      messagesRef.current = completedMessages;
+      setMessages(completedMessages);
     } finally {
       requestTrackerRef.current.end(trackedRequestId);
     }
@@ -1301,59 +1325,16 @@ export function App() {
     targetAgent: AgentInstance;
     text: string;
   }) {
-    let restoredFiles: WorkspaceFileAttachment[] = [];
-
-    try {
-      restoredFiles = await restoreWorkspaceAttachments(project, message);
-    } catch {
-      const failedAt = new Date().toISOString();
-      const errorText = "Workspace files from the interrupted request could not be restored. Please resend it.";
-      setMessages((current) =>
-        markConversationMessageFailed(
-          current,
-          message.id,
-          errorText,
-          { errorKind: "context" },
-        ),
-      );
-      setRuns((current) => failRunForMessage(current, message, failedAt, errorText));
-      return;
-    }
-
-    const runId = message.runId ?? crypto.randomUUID();
-    const participantAgentIds = [targetAgent.id];
-    const existingRun = runs.find((run) => run.id === runId);
-    if (!existingRun) {
-      const now = new Date().toISOString();
-      setRuns((current) => [
-        {
-          id: runId,
-          projectId: project.id,
-          conversationId: conversation.id,
-          type: "direct_message",
-          ownerAgentId: targetAgent.id,
-          participantAgentIds,
-          state: "submitting",
-          summary: "Restoring interrupted project chat.",
-          eventIds: [`${runId}-restored`],
-          artifactIds: [],
-          createdAt: message.createdAt,
-          updatedAt: now,
-        },
-        ...current,
-      ]);
-    }
-
-    await completeProjectDirectRequest({
-      project,
-      conversation,
-      targetAgent,
-      userMessageId: message.id,
-      runId,
-      participantAgentIds,
-      text,
-      agentRequestText: buildAgentRequestText(text, project, restoredFiles),
-    });
+    applyDirectRequestResult(
+      await resumeProjectDirectRequestState({
+        state: getDirectRequestState(),
+        message,
+        conversation,
+        project,
+        targetAgent,
+        text,
+      }),
+    );
   }
 
   async function completeProjectDirectRequest({
@@ -1375,51 +1356,19 @@ export function App() {
     text: string;
     agentRequestText: string;
   }) {
-    try {
-      const result = await executeProjectDirectTurn({
-        agent: targetAgent,
+    applyDirectRequestResult(
+      await completeProjectDirectRequestState({
+        state: getDirectRequestState(),
         project,
-        agentRequestText,
-        messages: messagesRef.current,
-        conversationId: conversation.id,
-        userMessageId,
-      });
-      const nextState = applyProjectDirectTurnCompleted({
-        messages: messagesRef.current,
-        runs: runsRef.current,
-        tasks: tasksRef.current,
-        artifacts: artifactsRef.current,
-        result,
-        project,
-        conversationId: conversation.id,
+        conversation,
         targetAgent,
         userMessageId,
         runId,
         participantAgentIds,
         text,
-      });
-      setMessages(nextState.messages);
-      setRuns(nextState.runs);
-      setTasks(nextState.tasks);
-      setArtifacts(nextState.artifacts);
-      if (nextState.returnedArtifactCount > 0) setOutputMode("artifacts");
-      if (nextState.createdTask) setOutputMode("runs");
-      setConversations((current) => touchConversationUpdatedAt(current, conversation.id, nextState.completedAt));
-    } catch (error) {
-      const failedAt = new Date().toISOString();
-      const errorText = getUserFacingAgentError(error);
-      const nextState = applyProjectDirectTurnFailed({
-        messages: messagesRef.current,
-        runs: runsRef.current,
-        userMessageId,
-        runId,
-        errorText,
-        failedAt,
-      });
-      setMessages(nextState.messages);
-      setRuns(nextState.runs);
-      setOutputMode("runs");
-    }
+        agentRequestText,
+      }),
+    );
   }
 
   async function submitMessage(event: FormEvent<HTMLFormElement>) {
@@ -1518,11 +1467,17 @@ export function App() {
       };
 
       if (!existingConversation) {
-        setConversations((current) => [conversation, ...current]);
+        const nextConversations = [conversation, ...conversationsRef.current];
+        conversationsRef.current = nextConversations;
+        setConversations(nextConversations);
       }
       requestTrackerRef.current.begin(requestId);
-      setMessages((current) => [...current, userMessage]);
-      setRuns((current) => [optimisticRun, ...current]);
+      const nextMessages = [...messagesRef.current, userMessage];
+      const nextRuns = [optimisticRun, ...runsRef.current];
+      messagesRef.current = nextMessages;
+      runsRef.current = nextRuns;
+      setMessages(nextMessages);
+      setRuns(nextRuns);
       setMessageText("");
       setAttachedWorkspaceFiles([]);
 
@@ -2284,19 +2239,6 @@ function createConversation({
     createdAt,
     updatedAt: createdAt,
   };
-}
-
-function buildAgentRequestText(text: string, project: Project, files: WorkspaceFileAttachment[]) {
-  if (files.length === 0) return text;
-
-  const fileContext = files
-    .map(
-      (file) =>
-        `--- file: ${file.path} (${formatBytes(file.size)}) ---\n${file.content}`,
-    )
-    .join("\n\n");
-
-  return `${text}\n\nWorkspace context explicitly attached by the user for ${project.name} (${project.namespace}). The remote agent cannot access the local filesystem. Use only the file excerpts below when they are relevant.\n\n${fileContext}`;
 }
 
 function getPartText(parts: A2APart[]) {

@@ -389,6 +389,9 @@ Completed:
 - Project Direct Chat completion/failure now uses state reducers for messages, runs, tasks, and artifacts.
 - Task Room Chief plan, participant result, Chief aggregation, and request-failure state writes now use state reducers for messages, tasks, runs, artifacts, and conversation timestamps.
 - Artifact/media mapping helpers are centralized outside the React component.
+- Direct Free Chat and Project Direct Chat request orchestration now runs through a dedicated direct request orchestrator service that owns provider execution, workspace-context recovery, success/failure state reduction, and suggested Output Area updates.
+- Direct Chat retry and pending-recovery preparation now synchronizes the active request snapshot before async completion, avoiding stale ref/state divergence after retry, reload, or fast provider responses.
+- Workspace context prompt construction is centralized so Free/Project/Task Room requests use one explicit local-file boundary text.
 - A service-level stability regression harness now covers pending request recovery, direct/task-room retry routing, retry state reducers, request attempt lifecycle fields, Task Room state reducers, UI state restoration, and workspace localStorage migration/fallback behavior.
 - Browser-visible refresh restore and timeout failure smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Direct Chat and Task Room retry click-flow smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
@@ -397,7 +400,7 @@ Completed:
 
 Still open:
 
-- Move key request execution orchestration from React component state into a local trusted layer or dedicated request store.
+- Move Task Room request execution orchestration from React component state into a dedicated request orchestrator service.
 - Move in-flight request tracking and attempt reconciliation out of the React component once the local trusted layer owns provider calls.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 

@@ -22,6 +22,11 @@ import {
   applyTaskRoomParticipantDelegated,
   applyTaskRoomRequestFailed,
 } from "../services/taskRoomState";
+import {
+  completeFreeChatRequestState,
+  resumeProjectDirectRequestState,
+  type DirectRequestState,
+} from "../services/directRequestOrchestrator";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 
@@ -137,6 +142,26 @@ function a2aTask(summary: string, id = "remote-task-1"): A2ATask {
         parts: [{ kind: "text", text: summary }],
       },
     },
+  };
+}
+
+function directA2ATask(summary: string, id = "remote-message-1"): A2ATask {
+  return {
+    ...a2aTask(summary, id),
+    metadata: {
+      responseKind: "direct-message",
+    },
+  };
+}
+
+function directRequestState(overrides: Partial<DirectRequestState> = {}): DirectRequestState {
+  return {
+    conversations: [conversation()],
+    messages: [userMessage()],
+    runs: [],
+    tasks: [],
+    artifacts: [],
+    ...overrides,
   };
 }
 
@@ -424,6 +449,115 @@ test("task room reducers persist chief plan, participant result, aggregation, an
   assert.equal(failed.messages[0].errorKind, "timeout");
   assert.equal(failed.tasks[0].state, "failed");
   assert.equal(failed.runs[0].state, "failed");
+});
+
+test("direct request orchestrator completes free chat without component-local state edits", async () => {
+  const freeConversation = conversation({
+    id: "free-conversation",
+    projectId: freeChatProjectId,
+    a2aContextId: "free-chat:agent-lucy",
+  });
+  const pending = userMessage({
+    conversationId: freeConversation.id,
+    projectId: freeChatProjectId,
+  });
+  const result = await completeFreeChatRequestState({
+    state: directRequestState({
+      conversations: [freeConversation],
+      messages: [pending],
+    }),
+    conversation: freeConversation,
+    targetAgent: agent,
+    userMessageId: pending.id,
+    text: "hello",
+    freeChatProjectId,
+    deps: {
+      executeFreeChatTurn: async () => ({
+        task: directA2ATask("Free chat recovered."),
+        summary: "Free chat recovered.",
+        completedAt: "2026-06-18T10:02:00.000Z",
+      }),
+    },
+  });
+
+  assert.equal(result.state.messages[0].status, "sent");
+  assert.equal(result.state.messages[1].role, "agent");
+  assert.equal(result.state.messages[1].contentParts[0].kind, "text");
+  assert.equal(result.state.conversations[0].updatedAt, "2026-06-18T10:02:00.000Z");
+});
+
+test("direct request orchestrator restores workspace context before project retry", async () => {
+  let sentRequestText = "";
+  const pending = userMessage({
+    runId: "run-1",
+    workspaceContext: [{ path: "package.json", size: 0, attachedAt: at }],
+  });
+  const result = await resumeProjectDirectRequestState({
+    state: directRequestState({
+      messages: [pending],
+      runs: [run({ type: "direct_message", taskId: undefined, ownerAgentId: agent.id, participantAgentIds: [agent.id] })],
+    }),
+    message: pending,
+    conversation: conversation(),
+    project,
+    targetAgent: agent,
+    text: "Use attached file.",
+    deps: {
+      restoreWorkspaceAttachments: async () => [
+        {
+          path: "package.json",
+          content: "{\"name\":\"vibe-office\"}",
+          size: 27,
+          updatedAt: at,
+          attachedAt: at,
+        },
+      ],
+      executeProjectDirectTurn: async ({ agentRequestText }) => {
+        sentRequestText = agentRequestText;
+        return {
+          task: directA2ATask("Project context recovered."),
+          summary: "Project context recovered.",
+          completedAt: "2026-06-18T10:03:00.000Z",
+        };
+      },
+    },
+  });
+
+  assert.match(sentRequestText, /package\.json/);
+  assert.match(sentRequestText, /remote agent cannot access the local filesystem/i);
+  assert.equal(result.state.messages[0].status, "sent");
+  assert.equal(result.state.messages[1].contentParts[0].kind, "text");
+  assert.equal(result.state.runs[0].state, "completed");
+});
+
+test("direct request orchestrator converts workspace recovery failure into context retry state", async () => {
+  const pending = userMessage({
+    runId: "run-1",
+    workspaceContext: [{ path: "missing.md", size: 0, attachedAt: at }],
+  });
+  const result = await resumeProjectDirectRequestState({
+    state: directRequestState({
+      messages: [pending],
+      runs: [run({ type: "direct_message", taskId: undefined, ownerAgentId: agent.id, participantAgentIds: [agent.id] })],
+    }),
+    message: pending,
+    conversation: conversation(),
+    project,
+    targetAgent: agent,
+    text: "Use missing file.",
+    deps: {
+      restoreWorkspaceAttachments: async () => {
+        throw new Error("Project directory is not available.");
+      },
+      now: () => "2026-06-18T10:04:00.000Z",
+    },
+  });
+
+  assert.equal(result.state.messages[0].status, "failed");
+  assert.equal(result.state.messages[0].errorKind, "context");
+  assert.match(result.state.messages[0].errorText ?? "", /workspace files/i);
+  assert.equal(result.state.runs[0].state, "failed");
+  assert.equal(result.outputMode, "runs");
 });
 
 test("ui state storage restores selected chrome and tolerates corrupt or unavailable storage", () => {
