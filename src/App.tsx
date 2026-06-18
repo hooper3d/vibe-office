@@ -63,6 +63,7 @@ import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/a
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
+import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
@@ -111,7 +112,6 @@ type ConfirmAction =
     };
 
 const THEME_STORAGE_KEY = "vibe-office.theme";
-const UI_STATE_STORAGE_KEY = "vibe-office.ui.v1";
 const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
@@ -133,44 +133,6 @@ const OFFICE_ROLE_OPTIONS: Array<{ label: string; value: AgentOfficeRole }> = [
   { label: "Writer", value: "writer" },
   { label: "Operator", value: "operator" },
 ];
-
-type StoredUiState = {
-  selectedAgentId?: string;
-  selectedProjectId?: string;
-  chatScope?: ChatScope;
-  conversationMode?: ConversationMode;
-  outputMode?: OutputMode;
-  activeFreeChatConversationIds?: Record<string, string>;
-};
-
-function loadUiState(): StoredUiState {
-  if (typeof window === "undefined") return {};
-
-  try {
-    const raw = window.localStorage.getItem(UI_STATE_STORAGE_KEY);
-    if (!raw) return {};
-
-    const parsed = JSON.parse(raw) as StoredUiState;
-    return {
-      selectedAgentId: typeof parsed.selectedAgentId === "string" ? parsed.selectedAgentId : undefined,
-      selectedProjectId: typeof parsed.selectedProjectId === "string" ? parsed.selectedProjectId : undefined,
-      chatScope: parsed.chatScope === "project" ? "project" : parsed.chatScope === "free" ? "free" : undefined,
-      conversationMode: parsed.conversationMode === "task-room" ? "task-room" : parsed.conversationMode === "single" ? "single" : undefined,
-      outputMode: ["workspace", "browser", "runs", "artifacts"].includes(parsed.outputMode ?? "") ? parsed.outputMode : undefined,
-      activeFreeChatConversationIds: normalizeStringRecord(parsed.activeFreeChatConversationIds),
-    };
-  } catch {
-    return {};
-  }
-}
-
-function normalizeStringRecord(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-
-  return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
-}
 
 declare global {
   interface Window {
@@ -373,17 +335,14 @@ export function App() {
   }, [agents]);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      UI_STATE_STORAGE_KEY,
-      JSON.stringify({
-        selectedAgentId,
-        selectedProjectId,
-        chatScope,
-        conversationMode,
-        outputMode,
-        activeFreeChatConversationIds,
-      }),
-    );
+    saveUiState({
+      selectedAgentId,
+      selectedProjectId,
+      chatScope,
+      conversationMode,
+      outputMode,
+      activeFreeChatConversationIds,
+    });
   }, [activeFreeChatConversationIds, chatScope, conversationMode, outputMode, selectedAgentId, selectedProjectId]);
 
   useEffect(() => {
