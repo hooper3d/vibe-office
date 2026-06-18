@@ -362,7 +362,11 @@ Next phase:
 
 ### Stability Pass: Request Lifecycle and Recovery
 
-Status: in progress on 2026-06-18.
+Status: completed on 2026-06-18.
+
+Completion audit:
+
+- `docs/STABILITY_PASS_COMPLETION_AUDIT.md`
 
 Goal:
 
@@ -406,9 +410,10 @@ Completed:
 - Browser-visible Direct Chat and Task Room pending-reload recovery smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Project Direct Chat workspace-context recovery and local-folder outage smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 
-Still open:
+Follow-up scope:
 
 - Replace the browser transport implementation with a native/local trusted implementation when packaging and secure credential storage are introduced.
+- Move API keys out of browser localStorage into secure local storage before public or packaged release.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 
 ### Milestone 0: Real Agent Onboarding
