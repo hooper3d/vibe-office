@@ -1011,31 +1011,17 @@ export function App() {
   }
 
   function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
-    const failedAt = new Date().toISOString();
     setMessages((current) =>
       current.map((item) =>
         item.id === message.id
           ? {
               ...item,
               status: "failed",
+              errorText: reason,
             }
           : item,
       ),
     );
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        conversationId: message.conversationId,
-        projectId: message.projectId,
-        role: "system",
-        agentId: message.agentId,
-        contentParts: createTextParts(reason),
-        runId: message.runId,
-        status: "sent",
-        createdAt: failedAt,
-      },
-    ]);
   }
 
   async function completeFreeChatRequest({
@@ -1061,6 +1047,7 @@ export function App() {
             ? {
                 ...message,
                 status: "sent",
+                errorText: undefined,
               }
             : message,
         ),
@@ -1091,30 +1078,17 @@ export function App() {
         ),
       );
     } catch (error) {
-      const failedAt = new Date().toISOString();
       setMessages((current) =>
         current.map((message) =>
           message.id === userMessageId
             ? {
                 ...message,
                 status: "failed",
+                errorText: getUserFacingAgentError(error),
               }
             : message,
         ),
       );
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          conversationId: conversation.id,
-          projectId: FREE_CHAT_PROJECT_ID,
-          role: "system",
-          agentId: targetAgent.id,
-          contentParts: createTextParts(getUserFacingAgentError(error)),
-          status: "sent",
-          createdAt: failedAt,
-        },
-      ]);
     }
   }
 
@@ -1163,6 +1137,77 @@ export function App() {
       await completeFreeChatRequest({ conversation, targetAgent, userMessageId, text });
     } finally {
       activeRequestMessageIdsRef.current.delete(userMessageId);
+    }
+  }
+
+  async function retryDirectMessage(messageId: string) {
+    const message = messages.find((item) => item.id === messageId);
+    if (!message || message.role !== "user" || message.status !== "failed") return;
+
+    const conversation = conversations.find((item) => item.id === message.conversationId);
+    if (!conversation || conversation.mode !== "direct") return;
+
+    const targetAgent = agents.find((item) => item.id === conversation.primaryAgentId);
+    if (!targetAgent) {
+      markInterruptedMessageFailed(message, "Agent no longer exists. Please reconnect the agent before retrying.");
+      return;
+    }
+
+    const text = getTextPartContent(message.contentParts).trim();
+    if (!text) {
+      markInterruptedMessageFailed(message, "Message content could not be restored. Please send a new message.");
+      return;
+    }
+
+    activeRequestMessageIdsRef.current.add(message.id);
+    setMessages((current) =>
+      current
+        .filter(
+          (item) =>
+            !(
+              item.role === "system" &&
+              item.conversationId === message.conversationId &&
+              item.createdAt >= message.createdAt &&
+              (message.runId ? item.runId === message.runId : item.agentId === targetAgent.id)
+            ),
+        )
+        .map((item) =>
+          item.id === message.id
+            ? {
+                ...item,
+                status: "sending",
+                errorText: undefined,
+              }
+            : item,
+        ),
+    );
+
+    try {
+      if (conversation.projectId === FREE_CHAT_PROJECT_ID) {
+        await completeFreeChatRequest({
+          conversation,
+          targetAgent,
+          userMessageId: message.id,
+          text,
+        });
+        return;
+      }
+
+      const project = projects.find((item) => item.id === conversation.projectId);
+      if (!project) {
+        markInterruptedMessageFailed(message, "Project no longer exists. Please send a new message.");
+        return;
+      }
+
+      await resumeProjectDirectRequest({
+        message,
+        conversation,
+        project,
+        targetAgent,
+        text,
+      });
+    } finally {
+      activeRequestMessageIdsRef.current.delete(message.id);
     }
   }
 
@@ -1294,6 +1339,7 @@ export function App() {
                 ...message,
                 status: "sent",
                 runId,
+                errorText: undefined,
               }
             : message,
         ),
@@ -1376,6 +1422,7 @@ export function App() {
       );
     } catch (error) {
       const failedAt = new Date().toISOString();
+      const errorText = getUserFacingAgentError(error);
       setMessages((current) =>
         current.map((message) =>
           message.id === userMessageId
@@ -1383,6 +1430,7 @@ export function App() {
                 ...message,
                 status: "failed",
                 runId,
+                errorText,
               }
             : message,
         ),
@@ -1399,20 +1447,6 @@ export function App() {
             : run,
         ),
       );
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          conversationId: conversation.id,
-          projectId: project.id,
-          role: "system",
-          agentId: targetAgent.id,
-          contentParts: createTextParts(getUserFacingAgentError(error)),
-          runId,
-          status: "sent",
-          createdAt: failedAt,
-        },
-      ]);
       setOutputMode("runs");
     }
   }
@@ -2182,6 +2216,7 @@ export function App() {
                 messages={currentMessages}
                 scope={chatScope}
                 isResponding={isComposerSubmitting || currentConversationHasPendingRequest}
+                onRetryMessage={retryDirectMessage}
               />
             ) : conversationMode === "single" ? (
               <NoAgentState onAddAgent={() => setShowSetup(true)} />
@@ -2983,10 +3018,12 @@ function DirectChat({
   messages,
   scope,
   isResponding,
+  onRetryMessage,
 }: {
   messages: ConversationMessage[];
   scope: ChatScope;
   isResponding: boolean;
+  onRetryMessage: (messageId: string) => void;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const latestMessageId = messages[messages.length - 1]?.id;
@@ -3005,7 +3042,7 @@ function DirectChat({
         </div>
       ) : (
         <>
-          <MessageRows messages={messages} />
+          <MessageRows messages={messages} onRetryMessage={onRetryMessage} />
           {isResponding ? <TypingIndicator /> : null}
         </>
       )}
@@ -3113,15 +3150,23 @@ function sanitizeAgentErrorText(text: string) {
   return text;
 }
 
-function MessageRows({ messages }: { messages: ConversationMessage[] }) {
+function MessageRows({
+  messages,
+  onRetryMessage,
+}: {
+  messages: ConversationMessage[];
+  onRetryMessage?: (messageId: string) => void;
+}) {
   return messages.map((message) => {
     const isUser = message.role === "user";
     const isSystem = message.role === "system";
     const content = getDisplayMessageText(message);
+    const canRetry = isUser && message.status === "failed" && Boolean(onRetryMessage);
     return (
       <div className={`message-row ${isUser ? "user-message" : "agent-message"}`} key={message.id}>
         <div className={`${isUser ? "message-bubble" : "agent-output"} ${message.status} ${isSystem ? "system" : ""}`}>
           {isUser ? <p>{content}</p> : <MarkdownContent content={content} />}
+          {message.errorText ? <p className="message-error-text">{sanitizeAgentErrorText(message.errorText)}</p> : null}
           {message.workspaceContext && message.workspaceContext.length > 0 ? (
             <div className="message-context-strip" aria-label="Workspace files sent with this message">
               {message.workspaceContext.map((file) => (
@@ -3131,6 +3176,16 @@ function MessageRows({ messages }: { messages: ConversationMessage[] }) {
                 </span>
               ))}
             </div>
+          ) : null}
+          {canRetry ? (
+            <button
+              className="message-retry-button"
+              type="button"
+              onClick={() => onRetryMessage?.(message.id)}
+            >
+              <RefreshCw size={13} />
+              Retry
+            </button>
           ) : null}
         </div>
       </div>

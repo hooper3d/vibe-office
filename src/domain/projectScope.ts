@@ -37,6 +37,7 @@ export type ConversationMessage = {
   a2aMessageId?: string;
   taskId?: string;
   runId?: string;
+  errorText?: string;
   status: "sending" | "sent" | "failed";
   createdAt: string;
 };
