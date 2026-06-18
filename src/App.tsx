@@ -140,6 +140,7 @@ type StoredUiState = {
   chatScope?: ChatScope;
   conversationMode?: ConversationMode;
   outputMode?: OutputMode;
+  activeFreeChatConversationIds?: Record<string, string>;
 };
 
 function loadUiState(): StoredUiState {
@@ -156,10 +157,19 @@ function loadUiState(): StoredUiState {
       chatScope: parsed.chatScope === "project" ? "project" : parsed.chatScope === "free" ? "free" : undefined,
       conversationMode: parsed.conversationMode === "task-room" ? "task-room" : parsed.conversationMode === "single" ? "single" : undefined,
       outputMode: ["workspace", "browser", "runs", "artifacts"].includes(parsed.outputMode ?? "") ? parsed.outputMode : undefined,
+      activeFreeChatConversationIds: normalizeStringRecord(parsed.activeFreeChatConversationIds),
     };
   } catch {
     return {};
   }
+}
+
+function normalizeStringRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
 }
 
 declare global {
@@ -197,6 +207,9 @@ export function App() {
   );
   const [conversationMode, setConversationMode] = useState<ConversationMode>(initialUiState.conversationMode ?? "single");
   const [outputMode, setOutputMode] = useState<OutputMode>(initialUiState.outputMode ?? "workspace");
+  const [activeFreeChatConversationIds, setActiveFreeChatConversationIds] = useState<Record<string, string>>(
+    initialUiState.activeFreeChatConversationIds ?? {},
+  );
   const [messageText, setMessageText] = useState("");
   const [browserUrl, setBrowserUrl] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
@@ -253,23 +266,7 @@ export function App() {
     [selectedWorkspaceProject, artifacts],
   );
   const directConversationProjectId = chatScope === "free" ? FREE_CHAT_PROJECT_ID : selectedWorkspaceProject?.id ?? "";
-  const currentConversation = useMemo(() => {
-    if (!selectedAgent) return undefined;
-    return conversations.find(
-      (conversation) =>
-        conversation.projectId === directConversationProjectId &&
-        conversation.mode === "direct" &&
-        conversation.primaryAgentId === selectedAgent.id,
-    );
-  }, [conversations, directConversationProjectId, selectedAgent]);
-  const currentMessages = useMemo(() => {
-    if (!currentConversation) return [];
-    return messages.filter((message) => message.conversationId === currentConversation.id);
-  }, [currentConversation, messages]);
-  const currentConversationHasPendingRequest = useMemo(
-    () => currentMessages.some((message) => message.role === "user" && message.status === "sending"),
-    [currentMessages],
-  );
+  const activeFreeChatConversationId = selectedAgent ? activeFreeChatConversationIds[selectedAgent.id] : undefined;
   const freeChatHistory = useMemo(() => {
     if (!selectedAgent) return [];
     return conversations
@@ -290,6 +287,30 @@ export function App() {
       })
       .sort((left, right) => right.conversation.updatedAt.localeCompare(left.conversation.updatedAt));
   }, [conversations, messages, selectedAgent]);
+  const currentConversation = useMemo(() => {
+    if (!selectedAgent) return undefined;
+    if (chatScope === "free") {
+      return (
+        freeChatHistory.find((item) => item.conversation.id === activeFreeChatConversationId)?.conversation ??
+        freeChatHistory[0]?.conversation
+      );
+    }
+
+    return conversations.find(
+      (conversation) =>
+        conversation.projectId === directConversationProjectId &&
+        conversation.mode === "direct" &&
+        conversation.primaryAgentId === selectedAgent.id,
+    );
+  }, [activeFreeChatConversationId, chatScope, conversations, directConversationProjectId, freeChatHistory, selectedAgent]);
+  const currentMessages = useMemo(() => {
+    if (!currentConversation) return [];
+    return messages.filter((message) => message.conversationId === currentConversation.id);
+  }, [currentConversation, messages]);
+  const currentConversationHasPendingRequest = useMemo(
+    () => currentMessages.some((message) => message.role === "user" && message.status === "sending"),
+    [currentMessages],
+  );
   const taskRoomConversation = useMemo(() => {
     if (!chiefAgent || !selectedWorkspaceProject) return undefined;
     return conversations.find(
@@ -338,6 +359,16 @@ export function App() {
   }, [projects, selectedProjectId]);
 
   useEffect(() => {
+    if (chatScope !== "free" || !selectedAgent || !currentConversation) return;
+    if (activeFreeChatConversationIds[selectedAgent.id] === currentConversation.id) return;
+
+    setActiveFreeChatConversationIds((current) => ({
+      ...current,
+      [selectedAgent.id]: currentConversation.id,
+    }));
+  }, [activeFreeChatConversationIds, chatScope, currentConversation, selectedAgent]);
+
+  useEffect(() => {
     saveConfiguredAgents(agents);
   }, [agents]);
 
@@ -350,9 +381,10 @@ export function App() {
         chatScope,
         conversationMode,
         outputMode,
+        activeFreeChatConversationIds,
       }),
     );
-  }, [chatScope, conversationMode, outputMode, selectedAgentId, selectedProjectId]);
+  }, [activeFreeChatConversationIds, chatScope, conversationMode, outputMode, selectedAgentId, selectedProjectId]);
 
   useEffect(() => {
     saveWorkspaceState({
@@ -1028,6 +1060,48 @@ export function App() {
     );
   }
 
+  function selectFreeChatConversation(conversationId: string) {
+    if (!selectedAgent) return;
+
+    setActiveFreeChatConversationIds((current) => ({
+      ...current,
+      [selectedAgent.id]: conversationId,
+    }));
+    setChatScope("free");
+    setConversationMode("single");
+    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
+  }
+
+  function startNewFreeChat() {
+    if (!selectedAgent) return;
+    if (currentConversation && currentConversation.projectId === FREE_CHAT_PROJECT_ID && currentMessages.length === 0) {
+      selectFreeChatConversation(currentConversation.id);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const conversation = createConversation({
+      projectId: FREE_CHAT_PROJECT_ID,
+      namespace: FREE_CHAT_NAMESPACE,
+      mode: "direct",
+      title: "New chat",
+      primaryAgentId: selectedAgent.id,
+      participantAgentIds: [selectedAgent.id],
+      createdAt: now,
+    });
+
+    setConversations((current) => [conversation, ...current]);
+    setActiveFreeChatConversationIds((current) => ({
+      ...current,
+      [selectedAgent.id]: conversation.id,
+    }));
+    setChatScope("free");
+    setConversationMode("single");
+    setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
+    setMessageText("");
+    setAttachedWorkspaceFiles([]);
+  }
+
   function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
     setMessages((current) => markConversationMessageFailed(current, message.id, reason));
   }
@@ -1092,12 +1166,12 @@ export function App() {
 
     const targetAgent = selectedAgent;
     const now = new Date().toISOString();
-    const existingConversation = conversations.find(
-      (item) =>
-        item.projectId === FREE_CHAT_PROJECT_ID &&
-        item.mode === "direct" &&
-        item.primaryAgentId === targetAgent.id,
-    );
+    const existingConversation =
+      currentConversation?.projectId === FREE_CHAT_PROJECT_ID &&
+      currentConversation.mode === "direct" &&
+      currentConversation.primaryAgentId === targetAgent.id
+        ? currentConversation
+        : undefined;
     const conversation =
       existingConversation ??
       createConversation({
@@ -1123,6 +1197,10 @@ export function App() {
     if (!existingConversation) {
       setConversations((current) => [conversation, ...current]);
     }
+    setActiveFreeChatConversationIds((current) => ({
+      ...current,
+      [targetAgent.id]: conversation.id,
+    }));
     activeRequestMessageIdsRef.current.add(userMessageId);
     setMessages((current) => [...current, userMessage]);
     setMessageText("");
@@ -2255,6 +2333,8 @@ export function App() {
                 agent={selectedAgent}
                 activeConversationId={currentConversation?.id}
                 histories={freeChatHistory}
+                onNewChat={startNewFreeChat}
+                onSelectConversation={selectFreeChatConversation}
               />
             ) : selectedWorkspaceProject ? (
               <>
@@ -2988,6 +3068,8 @@ function FreeChatHistoryPanel({
   agent,
   activeConversationId,
   histories,
+  onNewChat,
+  onSelectConversation,
 }: {
   agent?: AgentInstance;
   activeConversationId?: string;
@@ -2996,28 +3078,38 @@ function FreeChatHistoryPanel({
     messageCount: number;
     title: string;
   }>;
+  onNewChat: () => void;
+  onSelectConversation: (conversationId: string) => void;
 }) {
   return (
     <section className="free-chat-panel" aria-label="Chat history">
       <div className="free-chat-header">
-        <span className="profile-block-icon">
-          <MessageSquare size={18} />
-        </span>
-        <div>
-          <h3>Chat history</h3>
-          <p>{agent ? `${agent.name} free chats` : "Select an agent"}</p>
+        <div className="free-chat-title">
+          <span className="profile-block-icon">
+            <MessageSquare size={18} />
+          </span>
+          <div>
+            <h3>Chat history</h3>
+            <p>{agent ? `${agent.name} free chats` : "Select an agent"}</p>
+          </div>
         </div>
+        <button type="button" className="icon-text-button" onClick={onNewChat} disabled={!agent}>
+          <Plus size={15} />
+          New chat
+        </button>
       </div>
       <div className="free-chat-history-list">
         {histories.length > 0 ? (
           histories.map((item) => (
-            <div
+            <button
+              type="button"
               className={`free-chat-history-item ${item.conversation.id === activeConversationId ? "active" : ""}`}
               key={item.conversation.id}
+              onClick={() => onSelectConversation(item.conversation.id)}
             >
               <strong>{item.title}</strong>
               <span>{item.messageCount} messages</span>
-            </div>
+            </button>
           ))
         ) : (
           <div className="inline-empty">No free chat history yet.</div>
