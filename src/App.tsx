@@ -48,7 +48,15 @@ import {
   projectTasks,
   projects as seedProjects,
 } from "./domain/seedData";
-import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "./domain/projectScope";
+import type {
+  Conversation,
+  ConversationFailureKind,
+  ConversationMessage,
+  ProjectArtifact,
+  ProjectRun,
+  ProjectTask,
+  WorkState,
+} from "./domain/projectScope";
 import {
   failRunById,
   failRunForMessage,
@@ -3104,6 +3112,16 @@ function getDisplayMessageText(message: ConversationMessage) {
   return message.role === "system" ? sanitizeAgentErrorText(text) : text;
 }
 
+function getFailureKindLabel(kind?: ConversationFailureKind) {
+  if (kind === "timeout") return "Timeout";
+  if (kind === "network") return "Network";
+  if (kind === "auth") return "Auth";
+  if (kind === "not_found") return "Endpoint";
+  if (kind === "context") return "Context";
+  if (kind === "interrupted") return "Interrupted";
+  return "Failed";
+}
+
 function MessageRows({
   messages,
   onRetryMessage,
@@ -3116,11 +3134,17 @@ function MessageRows({
     const isSystem = message.role === "system";
     const content = getDisplayMessageText(message);
     const canRetry = isUser && message.status === "failed" && Boolean(onRetryMessage);
+    const failureLabel = message.status === "failed" && message.errorText ? getFailureKindLabel(message.errorKind) : "";
     return (
       <div className={`message-row ${isUser ? "user-message" : "agent-message"}`} key={message.id}>
         <div className={`${isUser ? "message-bubble" : "agent-output"} ${message.status} ${isSystem ? "system" : ""}`}>
           {isUser ? <p>{content}</p> : <MarkdownContent content={content} />}
-          {message.errorText ? <p className="message-error-text">{sanitizeAgentErrorText(message.errorText)}</p> : null}
+          {message.errorText ? (
+            <div className="message-error-meta">
+              {failureLabel ? <span className="message-error-kind">{failureLabel}</span> : null}
+              <p className="message-error-text">{sanitizeAgentErrorText(message.errorText)}</p>
+            </div>
+          ) : null}
           {message.workspaceContext && message.workspaceContext.length > 0 ? (
             <div className="message-context-strip" aria-label="Workspace files sent with this message">
               {message.workspaceContext.map((file) => (

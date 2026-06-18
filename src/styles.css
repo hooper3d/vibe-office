@@ -804,8 +804,25 @@ label > span:not(.field-label):not(.field-help),
   border-color: rgba(251, 113, 133, 0.42);
 }
 
+.message-error-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.message-error-kind {
+  width: fit-content;
+  border: 1px solid rgba(251, 113, 133, 0.34);
+  border-radius: 999px;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  padding: 0 6px;
+}
+
 .message-error-text {
-  margin-top: 8px !important;
+  margin: 0 !important;
   color: var(--danger) !important;
   font-size: 12px !important;
   line-height: 18px !important;

@@ -12,6 +12,14 @@ export type WorkState =
   | "unsupported";
 
 export type ConversationMode = "direct" | "task_room";
+export type ConversationFailureKind =
+  | "timeout"
+  | "network"
+  | "auth"
+  | "not_found"
+  | "context"
+  | "interrupted"
+  | "unknown";
 
 export type Conversation = {
   id: string;
@@ -37,6 +45,7 @@ export type ConversationMessage = {
   a2aMessageId?: string;
   taskId?: string;
   runId?: string;
+  errorKind?: ConversationFailureKind;
   errorText?: string;
   status: "sending" | "sent" | "failed";
   createdAt: string;

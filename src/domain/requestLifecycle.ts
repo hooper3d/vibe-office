@@ -1,10 +1,10 @@
-import type { ConversationMessage, ProjectRun, ProjectTask } from "./projectScope";
+import type { ConversationFailureKind, ConversationMessage, ProjectRun, ProjectTask } from "./projectScope";
 
 export function markConversationMessageFailed(
   messages: ConversationMessage[],
   messageId: string,
   errorText: string,
-  updates: Partial<Pick<ConversationMessage, "runId" | "taskId">> = {},
+  updates: Partial<Pick<ConversationMessage, "runId" | "taskId" | "errorKind">> = {},
 ) {
   return messages.map((message) =>
     message.id === messageId
@@ -12,6 +12,7 @@ export function markConversationMessageFailed(
           ...message,
           ...updates,
           status: "failed" as const,
+          errorKind: updates.errorKind ?? inferConversationFailureKind(errorText),
           errorText,
         }
       : message,
@@ -24,6 +25,7 @@ export function markConversationMessageSending(messages: ConversationMessage[], 
       ? {
           ...message,
           status: "sending" as const,
+          errorKind: undefined,
           errorText: undefined,
         }
       : message,
@@ -41,6 +43,7 @@ export function markConversationMessageSent(
           ...message,
           ...updates,
           status: "sent" as const,
+          errorKind: undefined,
           errorText: undefined,
         }
       : message,
@@ -98,4 +101,14 @@ export function failRunById(runs: ProjectRun[], runId: string, failedAt: string)
 
 function mergeIds(first: string[], second: string[]) {
   return Array.from(new Set([...first, ...second]));
+}
+
+function inferConversationFailureKind(text: string): ConversationFailureKind {
+  if (/timeout|timed out|did not respond/i.test(text)) return "timeout";
+  if (/network|failed to fetch|connection/i.test(text)) return "network";
+  if (/auth|api key|permission|401|403/i.test(text)) return "auth";
+  if (/not found|endpoint|404/i.test(text)) return "not_found";
+  if (/workspace file|workspace files|context|directory/i.test(text)) return "context";
+  if (/interrupted|no longer exists|restored|resend/i.test(text)) return "interrupted";
+  return "unknown";
 }
