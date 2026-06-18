@@ -28,7 +28,7 @@ import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
-import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
+import { useComposerController } from "./services/composerController";
 import {
   buildFreeChatHistory,
   getConversationMessages,
@@ -131,8 +131,6 @@ export function App() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [attachedWorkspaceFiles, setAttachedWorkspaceFiles] = useState<WorkspaceFileAttachment[]>([]);
   const [taskParticipantIds, setTaskParticipantIds] = useState<string[]>([]);
-  const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
-  const composerSubmittingRef = useRef(false);
   const requestStoreRef = useRef(createRequestRuntimeStore({ conversations, messages, runs, tasks, artifacts }));
   const agentSetup = useAgentSetupDialogState();
   const projectDialog = useProjectDialogState({ freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID });
@@ -318,6 +316,18 @@ export function App() {
     setAttachedWorkspaceFiles,
     setMessageText,
     setOutputMode,
+  });
+  const composerController = useComposerController({
+    chatScope,
+    conversationMode,
+    hasChiefAgent: Boolean(chiefAgent),
+    hasSelectedAgent: Boolean(selectedAgent),
+    hasSelectedWorkspaceProject: Boolean(selectedWorkspaceProject),
+    messageText,
+    selectedTaskParticipantCount: selectedTaskParticipants.length,
+    submitFreeChatMessage: directChatController.submitFreeChatMessage,
+    submitProjectDirectMessage: directChatController.submitProjectDirectMessage,
+    submitTaskRoomMessage: taskRoomController.submitTaskRoomMessage,
   });
 
   useEffect(() => {
@@ -519,58 +529,6 @@ export function App() {
     if (outputMode) setOutputMode(normalizeOutputMode(outputMode));
   }
 
-  async function submitMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const intent = resolveComposerSubmissionIntent({
-      chatScope,
-      conversationMode,
-      hasChiefAgent: Boolean(chiefAgent),
-      hasSelectedAgent: Boolean(selectedAgent),
-      hasSelectedWorkspaceProject: Boolean(selectedWorkspaceProject),
-      isBusy: composerSubmittingRef.current,
-      selectedTaskParticipantCount: selectedTaskParticipants.length,
-      text: messageText,
-    });
-    if (intent.kind === "ignore") return;
-
-    if (intent.kind === "task-room") {
-      if (!selectedWorkspaceProject || !chiefAgent) return;
-      composerSubmittingRef.current = true;
-      setIsComposerSubmitting(true);
-      try {
-        await taskRoomController.submitTaskRoomMessage(intent.text);
-      } finally {
-        composerSubmittingRef.current = false;
-        setIsComposerSubmitting(false);
-      }
-      return;
-    }
-
-    if (!selectedAgent) return;
-    if (intent.kind === "free-chat") {
-      composerSubmittingRef.current = true;
-      setIsComposerSubmitting(true);
-      try {
-        await directChatController.submitFreeChatMessage(intent.text);
-      } finally {
-        composerSubmittingRef.current = false;
-        setIsComposerSubmitting(false);
-      }
-      return;
-    }
-
-    if (!selectedWorkspaceProject) return;
-
-    composerSubmittingRef.current = true;
-    setIsComposerSubmitting(true);
-    try {
-      await directChatController.submitProjectDirectMessage(intent.text);
-    } finally {
-      composerSubmittingRef.current = false;
-      setIsComposerSubmitting(false);
-    }
-  }
-
   function openPreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPreviewUrl(browserUrl.trim());
@@ -651,7 +609,7 @@ export function App() {
             conversationMode={conversationMode}
             currentConversationHasPendingRequest={currentConversationHasPendingRequest}
             currentMessages={currentMessages}
-            isComposerSubmitting={isComposerSubmitting}
+            isComposerSubmitting={composerController.isComposerSubmitting}
             latestChiefTask={latestChiefTask}
             messageText={messageText}
             selectedAgent={selectedAgent}
@@ -666,7 +624,7 @@ export function App() {
             onRetryDirectMessage={directChatController.retryDirectMessage}
             onRetryTaskRoomMessage={taskRoomController.retryTaskRoomMessage}
             onSelectFreeChat={() => setChatScope("free")}
-            onSubmitMessage={submitMessage}
+            onSubmitMessage={composerController.submitMessage}
             onToggleTaskParticipant={toggleTaskParticipant}
           />
 
