@@ -88,6 +88,7 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     avatarUrl: typeof safeAgent.avatarUrl === "string" ? safeAgent.avatarUrl : undefined,
     ipAddress: typeof safeAgent.ipAddress === "string" ? safeAgent.ipAddress : undefined,
     officeRole: normalizeOfficeRole(safeAgent.officeRole, safeAgent.isChief),
+    timeoutSeconds: typeof safeAgent.timeoutSeconds === "number" && safeAgent.timeoutSeconds > 0 ? safeAgent.timeoutSeconds : undefined,
     a2aProtocolVersion: typeof safeAgent.a2aProtocolVersion === "string" ? safeAgent.a2aProtocolVersion : undefined,
     a2aTransportBinding: typeof safeAgent.a2aTransportBinding === "string" ? safeAgent.a2aTransportBinding : undefined,
     a2aSupportedInterfaces: Array.isArray(safeAgent.a2aSupportedInterfaces)

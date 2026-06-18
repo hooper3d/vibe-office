@@ -15,14 +15,17 @@ export type HermesConnectionTestResult = {
 export class HermesA2AAdapter {
   private agent: AgentInstance;
   private client: A2AClient;
+  private timeoutMs: number;
 
   constructor(options: HermesA2AAdapterOptions) {
     this.agent = options.agent;
+    this.timeoutMs = (options.agent.timeoutSeconds ?? 60) * 1000;
     const nativeA2A = options.agent.a2aTransportBinding === "json-rpc/http" && options.agent.a2aProtocolVersion !== "compatibility";
     this.client = new A2AClient({
       endpoint: options.agent.a2aEndpoint,
       apiKey: options.apiKey ?? options.agent.apiKey,
       protocolVersion: nativeA2A ? options.agent.a2aProtocolVersion : undefined,
+      timeoutMs: this.timeoutMs,
       useA2AVersionHeader: nativeA2A,
     });
   }
@@ -108,7 +111,7 @@ export class HermesA2AAdapter {
   }
 
   private async sendHermesChatAsA2ATask(project: Project, text: string): Promise<A2ATask> {
-    const response = await fetch(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
+    const response = await fetchWithTimeout(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
       method: "POST",
       headers: this.buildHermesHeaders(true),
       body: JSON.stringify({
@@ -124,7 +127,7 @@ export class HermesA2AAdapter {
           },
         ],
       }),
-    });
+    }, this.timeoutMs, "Hermes chat completion timed out.");
 
     if (!response.ok) {
       throw new Error(`Hermes chat completion failed: ${response.status}${await readErrorSuffix(response)}`);
@@ -167,7 +170,7 @@ export class HermesA2AAdapter {
   }
 
   private async validateHermesChat() {
-    const response = await fetch(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
+    const response = await fetchWithTimeout(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
       method: "POST",
       headers: this.buildHermesHeaders(true),
       body: JSON.stringify({
@@ -180,7 +183,7 @@ export class HermesA2AAdapter {
         ],
         max_tokens: 8,
       }),
-    });
+    }, this.timeoutMs, "Hermes chat completion auth timed out.");
 
     if (!response.ok) {
       throw new Error(`Hermes chat completion auth failed: ${response.status}${await readErrorSuffix(response)}`);
@@ -231,5 +234,24 @@ async function readErrorSuffix(response: Response) {
     return payload.error?.message ? `: ${payload.error.message}` : "";
   } catch {
     return "";
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, timeoutMessage: string) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
 }

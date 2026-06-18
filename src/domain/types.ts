@@ -14,6 +14,7 @@ export type AgentInstance = {
   avatarUrl?: string;
   ipAddress?: string;
   model: string;
+  timeoutSeconds?: number;
   tags: string[];
   status: AgentStatus;
   isChief?: boolean;

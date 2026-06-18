@@ -11,6 +11,7 @@ export type A2AClientOptions = {
   endpoint: string;
   apiKey?: string;
   protocolVersion?: string;
+  timeoutMs?: number;
   useA2AVersionHeader?: boolean;
 };
 
@@ -18,19 +19,21 @@ export class A2AClient {
   private endpoint: string;
   private apiKey?: string;
   private protocolVersion?: string;
+  private timeoutMs: number;
   private useA2AVersionHeader: boolean;
 
   constructor(options: A2AClientOptions) {
     this.endpoint = options.endpoint.replace(/\/$/, "");
     this.apiKey = options.apiKey;
     this.protocolVersion = options.protocolVersion;
+    this.timeoutMs = options.timeoutMs ?? 60_000;
     this.useA2AVersionHeader = Boolean(options.useA2AVersionHeader && options.protocolVersion);
   }
 
   async getAgentCard(agentCardUrl = `${this.endpoint}/.well-known/agent-card.json`) {
-    const response = await fetch(toHermesProxyUrl(agentCardUrl), {
+    const response = await fetchWithTimeout(toHermesProxyUrl(agentCardUrl), {
       headers: this.buildHeaders(false),
-    });
+    }, this.timeoutMs, "A2A Agent Card request timed out.");
 
     if (!response.ok) {
       throw new Error(`Unable to load A2A Agent Card: ${response.status}`);
@@ -73,11 +76,11 @@ export class A2AClient {
       params,
     };
 
-    const response = await fetch(toHermesProxyUrl(this.endpoint), {
+    const response = await fetchWithTimeout(toHermesProxyUrl(this.endpoint), {
       method: "POST",
       headers: this.buildHeaders(true),
       body: JSON.stringify(request),
-    });
+    }, this.timeoutMs, `A2A ${method} request timed out.`);
 
     if (!response.ok) {
       throw new Error(`A2A request failed: ${response.status}`);
@@ -130,4 +133,23 @@ function toHermesProxyUrl(url: string) {
   }
 
   return url;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, timeoutMessage: string) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }

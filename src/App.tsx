@@ -3848,7 +3848,7 @@ function SetupWizard({
                       </label>
                       <label>
                         Timeout
-                        <input name="timeout" defaultValue={profileAgent ? "60s" : ""} placeholder="60s" />
+                        <input name="timeout" defaultValue={profileAgent?.timeoutSeconds ? `${profileAgent.timeoutSeconds}s` : "60s"} placeholder="60s" />
                       </label>
                     </div>
                   </div>

@@ -18,6 +18,7 @@ export function createAgentFromHermesSetup(form: FormData): AgentInstance {
     avatarUrl: readOptionalFormValue(form, "avatarUrl"),
     ipAddress: readOptionalFormValue(form, "ipAddress"),
     model,
+    timeoutSeconds: readTimeoutSeconds(form),
     tags: normalizeTags(readFormValues(form, "tags")),
     status: "online",
   };
@@ -39,6 +40,16 @@ function readOptionalFormValue(form: FormData, key: string) {
   const value = form.get(key);
   if (typeof value !== "string") return undefined;
   return value.trim() || undefined;
+}
+
+function readTimeoutSeconds(form: FormData) {
+  const raw = readOptionalFormValue(form, "timeout");
+  if (!raw) return undefined;
+
+  const normalized = raw.trim().toLowerCase();
+  const parsed = Number.parseInt(normalized.replace(/s$/, ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.min(parsed, 300);
 }
 
 function readFormValues(form: FormData, key: string) {

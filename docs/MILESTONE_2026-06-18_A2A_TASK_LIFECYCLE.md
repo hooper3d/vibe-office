@@ -42,6 +42,7 @@ The app can keep a local ProjectTask separate from a remote A2A task, poll activ
   - cancel support
 - Native A2A HTTP requests send `A2A-Version` when a real selected protocol version is known.
 - OpenAI-compatible adapter calls do not fake native A2A version support.
+- Agent HTTP requests use a timeout so a stalled provider cannot leave the UI submitting forever.
 - Tasks tab shows lifecycle metadata as compact chips.
 
 ## UI Behavior
@@ -79,6 +80,9 @@ Validated on 2026-06-18:
   - a second mock task returned `submitted`.
   - clicking Cancel called `tasks/cancel`.
   - the task updated to `canceled`.
+- Demo hardening:
+  - a real Chief-led test exposed that a stalled provider request could leave the task room stuck in `submitting`.
+  - Agent request timeouts were added after this test.
 
 ## Boundaries
 
