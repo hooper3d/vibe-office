@@ -55,7 +55,12 @@ function isDemoAgent(agent: AgentInstance) {
 
 export function saveConfiguredAgents(agents: AgentInstance[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(agents));
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(agents));
+  } catch {
+    // Agent settings are recoverable in prototype mode; storage failures should not interrupt the active workspace.
+  }
 }
 
 function normalizeAgentInstance(value: unknown): AgentInstance | null {

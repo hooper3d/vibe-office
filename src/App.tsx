@@ -79,6 +79,7 @@ import {
   resolveTaskRoomMessageRetry,
 } from "./services/requestRecovery";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
+import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { restoreWorkspaceAttachments } from "./services/workspaceContextRecovery";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -98,7 +99,6 @@ type OutputMode = "workspace" | "browser" | "runs" | "artifacts";
 type ConversationMode = "single" | "task-room";
 type ChatScope = "free" | "project";
 type ConnectionTestState = "idle" | "running" | "passed" | "failed";
-type ThemeMode = "dark" | "light";
 type ParticipantTaskResult = {
   agentId: string;
   agentName: string;
@@ -128,7 +128,6 @@ type ConfirmAction =
       agentId: string;
     };
 
-const THEME_STORAGE_KEY = "vibe-office.theme";
 const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
@@ -208,10 +207,7 @@ export function App() {
   const [testMessage, setTestMessage] = useState("");
   const [lastConnectionMetadata, setLastConnectionMetadata] = useState<A2ACompatibilityMetadata | null>(null);
   const [splitPercent, setSplitPercent] = useState(54);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return "dark";
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
-  });
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
 
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId) ?? agents.find((agent) => agent.isChief) ?? agents[0],
@@ -473,7 +469,7 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
-    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+    saveThemeMode(themeMode);
   }, [themeMode]);
 
   useEffect(() => {
