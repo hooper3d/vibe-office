@@ -49,7 +49,7 @@ import {
 } from "./services/taskLifecycleState";
 import { useTaskRoomController } from "./services/taskRoomController";
 import { loadThemeMode, type ThemeMode } from "./services/themeStorage";
-import { useWorkspaceChromeController } from "./services/workspaceChromeController";
+import { useWorkspaceChromeController, type BrowserPreviewOutput } from "./services/workspaceChromeController";
 import { loadUiState } from "./services/uiStateStorage";
 import { deriveWorkspaceSelection } from "./services/workspaceSelectionState";
 import { applyWorkspaceStateDefaults, loadWorkspaceState } from "./services/workspaceStorage";
@@ -92,8 +92,8 @@ export function App() {
     initialUiState.activeFreeChatConversationIds ?? {},
   );
   const [messageText, setMessageText] = useState("");
-  const [browserUrl, setBrowserUrl] = useState("");
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [browserUrl, setBrowserUrl] = useState(initialUiState.browserUrl ?? initialUiState.previewOutput?.url ?? "");
+  const [previewOutput, setPreviewOutput] = useState<BrowserPreviewOutput | undefined>(initialUiState.previewOutput);
   const [attachedWorkspaceFiles, setAttachedWorkspaceFiles] = useState<WorkspaceFileAttachment[]>([]);
   const [taskParticipantIds, setTaskParticipantIds] = useState<string[]>([]);
   const requestStoreRef = useRef(createRequestRuntimeStore({ conversations, messages, runs, tasks, artifacts }));
@@ -264,8 +264,9 @@ export function App() {
   });
   const workspaceChromeController = useWorkspaceChromeController({
     browserUrl,
+    selectedAgentId: agentView.selectedAgent?.id,
     setOutputMode,
-    setPreviewUrl,
+    setPreviewOutput,
     setSplitPercent,
   });
   const appSelectionController = useAppSelectionController({
@@ -300,11 +301,13 @@ export function App() {
     activeFreeChatConversationIds,
     agents,
     artifacts,
+    browserUrl,
     chatScope,
     conversationMode,
     conversations,
     messages,
     outputMode,
+    previewOutput,
     projects,
     refreshLocalTrustedAgentIssues,
     requestStore: requestStoreRef.current,
@@ -433,7 +436,8 @@ export function App() {
             freeChatAgent={agentView.selectedAgent}
             freeChatHistories={conversationView.freeChatHistory}
             outputMode={outputMode}
-            previewUrl={previewUrl}
+            previewOwnerAgentId={previewOutput?.ownerAgentId}
+            previewUrl={previewOutput?.url ?? ""}
             project={selectedWorkspaceProject}
             runs={scopedRuns}
             tasks={scopedTasks}

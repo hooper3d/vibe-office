@@ -22,6 +22,7 @@ export function OutputPanel({
   freeChatAgent,
   freeChatHistories,
   outputMode,
+  previewOwnerAgentId,
   previewUrl,
   project,
   runs,
@@ -53,6 +54,7 @@ export function OutputPanel({
     title: string;
   }>;
   outputMode: OutputMode;
+  previewOwnerAgentId?: string;
   previewUrl: string;
   project?: Project;
   runs: ProjectRun[];
@@ -120,6 +122,7 @@ export function OutputPanel({
               tasks={tasks}
               artifacts={artifacts}
               previewUrl={previewUrl}
+              previewOwnerAgentId={previewOwnerAgentId}
               busyActionId={busyActionId}
               onCancelTask={onCancelTask}
               onRefreshTask={onRefreshTask}

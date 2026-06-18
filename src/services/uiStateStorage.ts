@@ -4,6 +4,12 @@ export type StoredUiState = {
   chatScope?: "free" | "project";
   conversationMode?: "single" | "task-room";
   outputMode?: "workspace" | "browser" | "outputs";
+  browserUrl?: string;
+  previewOutput?: {
+    ownerAgentId?: string;
+    openedAt: number;
+    url: string;
+  };
   activeFreeChatConversationIds?: Record<string, string>;
 };
 
@@ -23,6 +29,8 @@ export function loadUiState(): StoredUiState {
       chatScope: parsed.chatScope === "project" ? "project" : parsed.chatScope === "free" ? "free" : undefined,
       conversationMode: parsed.conversationMode === "task-room" ? "task-room" : parsed.conversationMode === "single" ? "single" : undefined,
       outputMode: normalizeOutputMode(parsed.outputMode),
+      browserUrl: typeof parsed.browserUrl === "string" ? parsed.browserUrl : undefined,
+      previewOutput: normalizePreviewOutput(parsed.previewOutput),
       activeFreeChatConversationIds: normalizeStringRecord(parsed.activeFreeChatConversationIds),
     };
   } catch {
@@ -52,4 +60,17 @@ function normalizeStringRecord(value: unknown) {
   return Object.fromEntries(
     Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
+}
+
+function normalizePreviewOutput(value: unknown): StoredUiState["previewOutput"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const url = typeof record.url === "string" ? record.url.trim() : "";
+  if (!url) return undefined;
+  const openedAt = typeof record.openedAt === "number" && Number.isFinite(record.openedAt) ? record.openedAt : Date.now();
+  return {
+    url,
+    openedAt,
+    ownerAgentId: typeof record.ownerAgentId === "string" && record.ownerAgentId.trim() ? record.ownerAgentId.trim() : undefined,
+  };
 }

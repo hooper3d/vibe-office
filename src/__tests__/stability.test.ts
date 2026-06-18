@@ -2032,9 +2032,19 @@ test("output selectors keep chat records separate from trackable project outputs
     ],
   );
 
-  const groupsWithPreview = assignPreviewToOutputGroups(groups, true);
+  const groupsWithPreview = assignPreviewToOutputGroups({ groups, hasPreview: true, ownerAgentId: participant.id });
   assert.deepEqual(
     groupsWithPreview.map((group) => ({
+      agentId: group.agent.id,
+      previewCount: group.previewCount,
+    })),
+    [
+      { agentId: agent.id, previewCount: 0 },
+      { agentId: participant.id, previewCount: 1 },
+    ],
+  );
+  assert.deepEqual(
+    assignPreviewToOutputGroups({ groups, hasPreview: true, ownerAgentId: "missing-agent" }).map((group) => ({
       agentId: group.agent.id,
       previewCount: group.previewCount,
     })),
@@ -2102,7 +2112,7 @@ test("output selection state recovers when preview or agent outputs change", () 
   assert.deepEqual(initialSelection, { kind: "agent", agentId: agent.id });
   assert.equal(getSelectedOutputAgentGroup(groups, initialSelection)?.agent.id, agent.id);
   assert.equal(getOutputSelectionMeta({ group: groups[0], hasPreview: false, selection: initialSelection }), "1 task / 0 artifacts");
-  const groupsWithPreview = assignPreviewToOutputGroups(groups, true);
+  const groupsWithPreview = assignPreviewToOutputGroups({ groups, hasPreview: true, ownerAgentId: agent.id });
   assert.equal(
     getOutputSelectionMeta({ group: groupsWithPreview[0], hasPreview: true, selection: initialSelection }),
     "1 task / 0 artifacts / 1 preview",
@@ -3632,6 +3642,12 @@ test("ui state storage restores selected chrome and tolerates corrupt or unavail
       chatScope: "project",
       conversationMode: "task-room",
       outputMode: "outputs",
+      browserUrl: "http://127.0.0.1:5180/",
+      previewOutput: {
+        ownerAgentId: "agent-lucy",
+        openedAt: 1780000000000,
+        url: "http://127.0.0.1:5180/",
+      },
       activeFreeChatConversationIds: {
         "agent-lucy": "free-conversation-1",
       },
@@ -3643,6 +3659,12 @@ test("ui state storage restores selected chrome and tolerates corrupt or unavail
       chatScope: "project",
       conversationMode: "task-room",
       outputMode: "outputs",
+      browserUrl: "http://127.0.0.1:5180/",
+      previewOutput: {
+        ownerAgentId: "agent-lucy",
+        openedAt: 1780000000000,
+        url: "http://127.0.0.1:5180/",
+      },
       activeFreeChatConversationIds: {
         "agent-lucy": "free-conversation-1",
       },
@@ -3669,6 +3691,12 @@ test("ui state storage restores selected chrome and tolerates corrupt or unavail
         chatScope: "workspace",
         conversationMode: "task-room",
         outputMode: "floating",
+        browserUrl: 123,
+        previewOutput: {
+          ownerAgentId: 456,
+          openedAt: "yesterday",
+          url: "",
+        },
         activeFreeChatConversationIds: {
           valid: "conversation-id",
           invalid: 123,
@@ -3682,6 +3710,8 @@ test("ui state storage restores selected chrome and tolerates corrupt or unavail
       chatScope: undefined,
       conversationMode: "task-room",
       outputMode: undefined,
+      browserUrl: undefined,
+      previewOutput: undefined,
       activeFreeChatConversationIds: {
         valid: "conversation-id",
       },

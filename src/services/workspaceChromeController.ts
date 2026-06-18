@@ -3,22 +3,31 @@ import { getSplitPercentFromClientX, nudgeSplitPercent } from "./splitPaneState"
 
 type WorkspaceOutputMode = "workspace" | "browser" | "outputs";
 
+export type BrowserPreviewOutput = {
+  ownerAgentId?: string;
+  openedAt: number;
+  url: string;
+};
+
 export type WorkspaceChromeControllerOptions = {
   browserUrl: string;
+  selectedAgentId?: string;
   setOutputMode: Dispatch<SetStateAction<WorkspaceOutputMode>>;
-  setPreviewUrl: Dispatch<SetStateAction<string>>;
+  setPreviewOutput: Dispatch<SetStateAction<BrowserPreviewOutput | undefined>>;
   setSplitPercent: Dispatch<SetStateAction<number>>;
 };
 
 export function useWorkspaceChromeController({
   browserUrl,
+  selectedAgentId,
   setOutputMode,
-  setPreviewUrl,
+  setPreviewOutput,
   setSplitPercent,
 }: WorkspaceChromeControllerOptions) {
   function openPreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPreviewUrl(browserUrl.trim());
+    const url = browserUrl.trim();
+    setPreviewOutput(url ? { ownerAgentId: selectedAgentId, openedAt: Date.now(), url } : undefined);
     setOutputMode("browser");
   }
 

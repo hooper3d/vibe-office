@@ -23,6 +23,7 @@ export function ProjectOutputs({
   tasks,
   artifacts,
   previewUrl,
+  previewOwnerAgentId,
   busyActionId,
   onCancelTask,
   onRefreshTask,
@@ -34,6 +35,7 @@ export function ProjectOutputs({
   tasks: ProjectTask[];
   artifacts: ProjectArtifact[];
   previewUrl: string;
+  previewOwnerAgentId?: string;
   busyActionId: string;
   onCancelTask: (taskId: string) => void;
   onRefreshTask: (taskId: string) => void;
@@ -47,8 +49,8 @@ export function ProjectOutputs({
   );
   const hasPreview = previewUrl.trim().length > 0;
   const outputGroups = useMemo(
-    () => assignPreviewToOutputGroups(rawOutputGroups, hasPreview),
-    [rawOutputGroups, hasPreview],
+    () => assignPreviewToOutputGroups({ groups: rawOutputGroups, hasPreview, ownerAgentId: previewOwnerAgentId }),
+    [rawOutputGroups, hasPreview, previewOwnerAgentId],
   );
   const [selection, setSelection] = useState<OutputSelection>(() => getInitialOutputSelection(outputGroups));
   const selectedGroup = getSelectedOutputAgentGroup(outputGroups, selection);

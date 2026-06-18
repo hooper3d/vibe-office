@@ -7,17 +7,20 @@ import { syncRequestRuntimeWorkspaceState, type RequestRuntimeStore } from "./re
 import { saveThemeMode, type ThemeMode } from "./themeStorage";
 import { saveUiState, type StoredUiState } from "./uiStateStorage";
 import type { WorkspaceFileAttachment } from "./workspaceFileClient";
+import type { BrowserPreviewOutput } from "./workspaceChromeController";
 import { saveWorkspaceState } from "./workspaceStorage";
 
 export type AppSyncControllerOptions = {
   activeFreeChatConversationIds: Record<string, string>;
   agents: AgentInstance[];
   artifacts: ProjectArtifact[];
+  browserUrl: string;
   chatScope: ProjectChatScope;
   conversationMode: ProjectConversationMode;
   conversations: Conversation[];
   messages: ConversationMessage[];
   outputMode: StoredUiState["outputMode"];
+  previewOutput?: BrowserPreviewOutput;
   projects: Project[];
   refreshLocalTrustedAgentIssues: (
     agentIds: string[],
@@ -37,11 +40,13 @@ export function useAppSyncController({
   activeFreeChatConversationIds,
   agents,
   artifacts,
+  browserUrl,
   chatScope,
   conversationMode,
   conversations,
   messages,
   outputMode,
+  previewOutput,
   projects,
   refreshLocalTrustedAgentIssues,
   requestStore,
@@ -98,9 +103,11 @@ export function useAppSyncController({
       chatScope,
       conversationMode,
       outputMode,
+      browserUrl,
+      previewOutput,
       activeFreeChatConversationIds,
     });
-  }, [activeFreeChatConversationIds, chatScope, conversationMode, outputMode, selectedAgentId, selectedProjectId]);
+  }, [activeFreeChatConversationIds, browserUrl, chatScope, conversationMode, outputMode, previewOutput, selectedAgentId, selectedProjectId]);
 
   useEffect(() => {
     saveWorkspaceState({

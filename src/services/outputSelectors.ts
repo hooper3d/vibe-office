@@ -94,9 +94,19 @@ export function getOutputAgentGroups({
     .filter((group): group is OutputAgentGroup => Boolean(group));
 }
 
-export function assignPreviewToOutputGroups(groups: OutputAgentGroup[], hasPreview: boolean): OutputAgentGroup[] {
+export function assignPreviewToOutputGroups({
+  groups,
+  hasPreview,
+  ownerAgentId,
+}: {
+  groups: OutputAgentGroup[];
+  hasPreview: boolean;
+  ownerAgentId?: string;
+}): OutputAgentGroup[] {
   if (!hasPreview || groups.length === 0) return groups;
-  return groups.map((group, index) => (index === 0 ? { ...group, previewCount: 1 } : group));
+  const ownerIndex = ownerAgentId ? groups.findIndex((group) => group.agent.id === ownerAgentId) : -1;
+  const previewIndex = ownerIndex >= 0 ? ownerIndex : 0;
+  return groups.map((group, index) => (index === previewIndex ? { ...group, previewCount: 1 } : group));
 }
 
 export function filterRunsByAgent(runs: ProjectRun[], agentId: string) {
