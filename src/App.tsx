@@ -516,7 +516,7 @@ export function App() {
       const remoteTask = await refreshRemoteTaskLifecycle({ agent: owner, address });
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task status refreshed.");
     } catch (error) {
-      recordLifecycleUnsupported(task, error instanceof Error ? error.message : "Task lifecycle refresh is unsupported.");
+      recordLifecycleUnsupported(task, getUserFacingAgentError(error));
     } finally {
       if (!options.silent) setTaskLifecycleBusyId("");
     }
@@ -542,7 +542,7 @@ export function App() {
       const remoteTask = await cancelRemoteTaskLifecycle({ agent: owner, address });
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task cancel requested.");
     } catch (error) {
-      recordCancelUnsupported(task, error instanceof Error ? error.message : "Task cancel is unsupported by this provider.");
+      recordCancelUnsupported(task, getUserFacingAgentError(error));
     } finally {
       setTaskLifecycleBusyId("");
     }
@@ -597,13 +597,14 @@ export function App() {
       return mapA2AState(remoteTask.status.state) !== "failed";
     } catch (error) {
       const failedAt = new Date().toISOString();
+      const errorText = getUserFacingAgentError(error);
       setTasks((current) =>
         current.map((item) =>
           item.id === task.id
             ? {
                 ...item,
                 state: "failed",
-                summary: error instanceof Error ? error.message : "Retry failed.",
+                summary: errorText,
                 events: [
                   ...item.events,
                   {
@@ -1786,7 +1787,7 @@ export function App() {
           participantAt = participantResult.completedAt;
         } catch (error) {
           participantState = "failed";
-          participantSummary = error instanceof Error ? error.message : `${participant.name} task failed.`;
+          participantSummary = getUserFacingAgentError(error);
           participantAt = new Date().toISOString();
         }
 
