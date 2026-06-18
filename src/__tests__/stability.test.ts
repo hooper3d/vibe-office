@@ -10,6 +10,7 @@ import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "../domain/hermesSetup";
 import { runAgentConnectionTest } from "../services/agentConnectionTestState";
+import { getUserFacingAgentError } from "../services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "../services/artifactBackfillState";
 import { readAvatarFile } from "../services/avatarFile";
 import { resolveComposerSubmissionIntent } from "../services/composerSubmissionState";
@@ -2415,6 +2416,73 @@ test("local trusted registry exposes safe agent status without credentials", asy
     assert.equal(missingStatus.registered, false);
     assert.equal(missingStatus.hasCredential, false);
     assert.match(missingStatus.issues.join("\n"), /not registered/);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+    } else {
+      process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = previousHome;
+    }
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
+test("local trusted provider commands stop missing provider keys before forwarding", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
+  const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+  process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = localTrustedHome;
+
+  try {
+    const { writeLocalTrustedAgentRegistry } = await import("../../localTrusted/agentRegistry");
+    const { getVerifiedProviderCommandRequest } = await import("../../localTrusted/providerRequests");
+
+    await writeLocalTrustedAgentRegistry({
+      "agent-openai-missing-key": {
+        ...agent,
+        id: "agent-openai-missing-key",
+        endpoint: "https://api.deepseek.com/v1",
+        a2aEndpoint: "https://api.deepseek.com/a2a",
+        agentCardUrl: "https://api.deepseek.com/.well-known/agent-card.json",
+        model: "deepseek-chat",
+        runtimeProvider: "openai",
+      },
+      "agent-anthropic-missing-key": {
+        ...participant,
+        id: "agent-anthropic-missing-key",
+        endpoint: "https://api.minimaxi.com/anthropic",
+        a2aEndpoint: "https://api.minimaxi.com/a2a",
+        agentCardUrl: "https://api.minimaxi.com/.well-known/agent-card.json",
+        model: "MiniMax-M3",
+        runtimeProvider: "anthropic",
+      },
+    });
+
+    await assert.rejects(
+      getVerifiedProviderCommandRequest({
+        agentId: "agent-openai-missing-key",
+        command: "openai.chatCompletions",
+        payload: {
+          messages: [{ role: "user", content: "hi" }],
+        },
+      }),
+      /OpenAI-compatible API key is missing in the local trusted layer/,
+    );
+    await assert.rejects(
+      getVerifiedProviderCommandRequest({
+        agentId: "agent-anthropic-missing-key",
+        command: "anthropic.messages",
+        payload: {
+          messages: [{ role: "user", content: "hi" }],
+        },
+      }),
+      /Anthropic-compatible API key is missing in the local trusted layer/,
+    );
+
+    assert.equal(
+      getUserFacingAgentError(
+        new Error("OpenAI-compatible chat failed: 400: OpenAI-compatible API key is missing in the local trusted layer."),
+      ),
+      "Agent API key is missing. Open this agent's settings, save the API key again, then retry.",
+    );
   } finally {
     if (previousHome === undefined) {
       delete process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;

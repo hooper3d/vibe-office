@@ -3,6 +3,9 @@ export function getUserFacingAgentError(error: unknown) {
 }
 
 export function sanitizeAgentErrorText(text: string) {
+  if (text.includes("API key is missing in the local trusted layer")) {
+    return "Agent API key is missing. Open this agent's settings, save the API key again, then retry.";
+  }
   if (text.includes("Agent did not respond before the timeout") || text.includes("Hermes chat completion timed out")) {
     return "Agent did not respond before the timeout. You can retry, or increase this agent's timeout in Advanced settings.";
   }

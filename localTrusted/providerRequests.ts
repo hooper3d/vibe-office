@@ -16,10 +16,12 @@ export async function getVerifiedProviderCommandRequest(body: Record<string, unk
   const agent = await getLocalTrustedAgent(agentId);
   if (command === "openai.chatCompletions") {
     if (agent.runtimeProvider === "anthropic") throw new Error("OpenAI-compatible command does not match this agent provider.");
+    assertProviderCredentialReady(agent, "OpenAI-compatible");
     return createOpenAIChatCompletionsRequest(agent, body.payload);
   }
   if (command === "anthropic.messages") {
     if (agent.runtimeProvider !== "anthropic") throw new Error("Anthropic command does not match this agent provider.");
+    assertProviderCredentialReady(agent, "Anthropic-compatible");
     return createAnthropicMessagesRequest(agent, body.payload);
   }
   if (command === "a2a.getAgentCard") {
@@ -48,6 +50,12 @@ export function injectLocalTrustedCredential(headers: Record<string, string>, ag
     headers["x-api-key"] = agent.apiKey;
   }
   headers.Authorization = `Bearer ${agent.apiKey}`;
+}
+
+function assertProviderCredentialReady(agent: LocalTrustedAgentRecord, label: string) {
+  if (agent.runtimeProvider === "hermes") return;
+  if (agent.apiKey) return;
+  throw new Error(`${label} API key is missing in the local trusted layer.`);
 }
 
 function createOpenAIChatCompletionsRequest(agent: LocalTrustedAgentRecord, payload: unknown) {
