@@ -391,12 +391,13 @@ Completed:
 - Artifact/media mapping helpers are centralized outside the React component.
 - A service-level stability regression harness now covers pending request recovery, direct/task-room retry routing, retry state reducers, request attempt lifecycle fields, Task Room state reducers, UI state restoration, and workspace localStorage migration/fallback behavior.
 - Browser-visible refresh restore and timeout failure smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
+- Browser-visible Direct Chat and Task Room retry click-flow smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 
 Still open:
 
 - Move key request execution orchestration from React component state into a local trusted layer or dedicated request store.
 - Move in-flight request tracking and attempt reconciliation out of the React component once the local trusted layer owns provider calls.
-- Add browser-visible retry-flow checks.
+- Add browser-visible interrupted pending request recovery checks.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 
 ### Milestone 0: Real Agent Onboarding

@@ -18,6 +18,8 @@ const browser = await chromium.launch({
 try {
   await runRefreshRestoreSmoke();
   await runTimeoutFailureSmoke();
+  await runDirectRetrySmoke();
+  await runTaskRoomRetrySmoke();
   console.log("Browser smoke checks passed.");
 } finally {
   await browser.close();
@@ -68,6 +70,83 @@ async function runTimeoutFailureSmoke() {
   }
 }
 
+async function runDirectRetrySmoke() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await installSmokeProviderRoute(page, "Recovered direct retry reply.");
+    await page.goto(appUrl);
+    await seedStorage(page, createTimeoutSeed("direct-retry"));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".app-shell");
+
+    await page.locator(".message-retry-button").click();
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+      const message = state.messages.find((item) => item.id === "smoke-direct-retry-message");
+      return message?.status === "sent" && message.requestAttempt === 2;
+    });
+
+    const state = await collectDirectRetryState(page);
+    assertEqual(state.userMessageStatus, "sent", "direct retry should mark the failed user message sent");
+    assertEqual(state.userMessageAttempt, 2, "direct retry should increment the original request attempt");
+    assertIncludes(state.conversationText, "Recovered direct retry reply.", "direct retry should render the recovered agent reply");
+    assertEqual(state.retryText, "", "direct retry should remove the Retry action after success");
+  } finally {
+    await context.close();
+  }
+}
+
+async function runTaskRoomRetrySmoke() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await installSmokeProviderRoute(page, "Recovered task room retry result.");
+    await page.goto(appUrl);
+    await seedStorage(page, createTaskRoomRetrySeed());
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".app-shell");
+
+    await page.locator(".message-retry-button").click();
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+      const message = state.messages.find((item) => item.id === "smoke-task-room-retry-message");
+      const task = state.tasks.find((item) => item.id === "smoke-task-room-retry-task");
+      return message?.status === "sent" && message.requestAttempt === 2 && task?.state === "completed";
+    });
+
+    const state = await collectTaskRoomRetryState(page);
+    assertEqual(state.userMessageStatus, "sent", "task room retry should mark the failed user message sent");
+    assertEqual(state.userMessageAttempt, 2, "task room retry should increment the original request attempt");
+    assertEqual(state.taskState, "completed", "task room retry should update the project task state");
+    assertIncludes(state.conversationText, "Recovered task room retry result.", "task room retry should render the recovered task summary");
+    assertEqual(state.retryText, "", "task room retry should remove the Retry action after success");
+  } finally {
+    await context.close();
+  }
+}
+
+async function installSmokeProviderRoute(page, content) {
+  await page.route("**/smoke-openai/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "access-control-allow-origin": "*",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        choices: [
+          {
+            message: {
+              content,
+            },
+          },
+        ],
+      }),
+    });
+  });
+}
+
 async function seedStorage(page, seed) {
   await page.evaluate((state) => {
     localStorage.clear();
@@ -105,6 +184,36 @@ async function collectTimeoutState(page) {
   });
 }
 
+async function collectDirectRetryState(page) {
+  return page.evaluate(() => {
+    const clean = (value) => value?.trim().replace(/\s+/g, " ") ?? "";
+    const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+    const message = state.messages.find((item) => item.id === "smoke-direct-retry-message");
+    return {
+      conversationText: clean(document.querySelector(".conversation-body")?.textContent),
+      retryText: clean(document.querySelector(".message-retry-button")?.textContent),
+      userMessageStatus: message?.status ?? "",
+      userMessageAttempt: message?.requestAttempt ?? 0,
+    };
+  });
+}
+
+async function collectTaskRoomRetryState(page) {
+  return page.evaluate(() => {
+    const clean = (value) => value?.trim().replace(/\s+/g, " ") ?? "";
+    const state = JSON.parse(localStorage.getItem("vibe-office.workspace.v1") || "{}");
+    const message = state.messages.find((item) => item.id === "smoke-task-room-retry-message");
+    const task = state.tasks.find((item) => item.id === "smoke-task-room-retry-task");
+    return {
+      conversationText: clean(document.querySelector(".conversation-body")?.textContent),
+      retryText: clean(document.querySelector(".message-retry-button")?.textContent),
+      userMessageStatus: message?.status ?? "",
+      userMessageAttempt: message?.requestAttempt ?? 0,
+      taskState: task?.state ?? "",
+    };
+  });
+}
+
 function createRefreshSeed() {
   const now = "2026-06-18T12:00:00.000Z";
   const agent = createSmokeAgent("smoke-agent-refresh", "Lucy");
@@ -138,27 +247,27 @@ function createRefreshSeed() {
   };
 }
 
-function createTimeoutSeed() {
+function createTimeoutSeed(idPrefix = "timeout") {
   const now = "2026-06-18T12:00:00.000Z";
-  const agent = createSmokeAgent("smoke-agent-timeout", "Smoke Agent");
+  const agent = createSmokeAgent(`smoke-agent-${idPrefix}`, "Smoke Agent");
   const conversation = {
-    id: "smoke-timeout-conversation",
+    id: `smoke-${idPrefix}-conversation`,
     projectId: "__free_chat__",
     mode: "direct",
     title: "Timeout smoke chat",
     primaryAgentId: agent.id,
     participantAgentIds: [agent.id],
-    a2aContextId: "free-chat:smoke-agent-timeout",
+    a2aContextId: `free-chat:smoke-agent-${idPrefix}`,
     createdAt: now,
     updatedAt: now,
   };
   const message = {
-    id: "smoke-timeout-message",
+    id: `smoke-${idPrefix}-message`,
     conversationId: conversation.id,
     projectId: "__free_chat__",
     role: "user",
     contentParts: [{ kind: "text", text: "Trigger timeout smoke." }],
-    requestId: "smoke-timeout-request",
+    requestId: `smoke-${idPrefix}-request`,
     requestAttempt: 1,
     requestStartedAt: now,
     requestCompletedAt: now,
@@ -192,20 +301,127 @@ function createTimeoutSeed() {
   };
 }
 
-function createSmokeAgent(id, name) {
+function createTaskRoomRetrySeed() {
+  const now = "2026-06-18T12:00:00.000Z";
+  const chief = createSmokeAgent("smoke-chief-retry", "Chief Smoke", {
+    isChief: true,
+    officeRole: "chief",
+    tags: ["planning"],
+    supportsTaskLifecycle: true,
+  });
+  const participant = createSmokeAgent("smoke-participant-retry", "Participant Smoke", {
+    officeRole: "writer",
+    tags: ["drafts"],
+  });
+  const project = {
+    id: "project-task-room-retry-smoke",
+    name: "Retry Smoke Project",
+    namespace: "retry-smoke-project",
+    description: "Project workspace.",
+  };
+  const conversation = {
+    id: "smoke-task-room-retry-conversation",
+    projectId: project.id,
+    mode: "task_room",
+    title: "Retry Smoke Project task room",
+    chiefAgentId: chief.id,
+    participantAgentIds: [participant.id],
+    a2aContextId: "retry-smoke-project:task-room",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const task = {
+    id: "smoke-task-room-retry-task",
+    projectId: project.id,
+    contextId: conversation.a2aContextId,
+    title: "Recover task room retry",
+    ownerAgentId: chief.id,
+    participantAgentIds: [participant.id],
+    state: "failed",
+    summary: "Previous task room failure.",
+    events: [
+      {
+        id: "smoke-task-room-retry-task-failed",
+        taskId: "smoke-task-room-retry-task",
+        agentId: chief.id,
+        label: "Task Room request failed.",
+        state: "failed",
+        timestamp: now,
+      },
+    ],
+    artifactIds: [],
+    updatedAt: now,
+  };
+  const run = {
+    id: "smoke-task-room-retry-run",
+    projectId: project.id,
+    conversationId: conversation.id,
+    taskId: task.id,
+    type: "chief_delegation",
+    ownerAgentId: chief.id,
+    participantAgentIds: [chief.id, participant.id],
+    state: "failed",
+    summary: "Previous task room failure.",
+    eventIds: ["smoke-task-room-retry-run-failed"],
+    artifactIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  const message = {
+    id: "smoke-task-room-retry-message",
+    conversationId: conversation.id,
+    projectId: project.id,
+    role: "user",
+    contentParts: [{ kind: "text", text: "Recover task room retry." }],
+    taskId: task.id,
+    runId: run.id,
+    requestId: "smoke-task-room-retry-request",
+    requestAttempt: 1,
+    requestStartedAt: now,
+    requestCompletedAt: now,
+    status: "failed",
+    errorKind: "interrupted",
+    errorText: "Task Room was interrupted before the agent returned. You can retry this request.",
+    createdAt: now,
+  };
+
+  return {
+    agents: [chief, participant],
+    workspace: {
+      version: 1,
+      projects: [project],
+      conversations: [conversation],
+      messages: [message],
+      runs: [run],
+      tasks: [task],
+      artifacts: [],
+    },
+    ui: {
+      selectedAgentId: chief.id,
+      selectedProjectId: project.id,
+      chatScope: "project",
+      conversationMode: "task-room",
+      outputMode: "runs",
+      activeFreeChatConversationIds: {},
+    },
+  };
+}
+
+function createSmokeAgent(id, name, overrides = {}) {
   return {
     id,
     name,
     role: "stability / smoke",
     officeRole: "operator",
     location: "local smoke",
-    endpoint: "http://127.0.0.1:9/v1/chat/completions",
+    endpoint: `${new URL(appUrl).origin}/smoke-openai`,
     a2aEndpoint: "http://127.0.0.1:9/a2a",
     agentCardUrl: "http://127.0.0.1:9/.well-known/agent-card.json",
     model: "smoke-model",
     runtimeProvider: "openai",
     tags: ["testing"],
     status: "online",
+    ...overrides,
   };
 }
 

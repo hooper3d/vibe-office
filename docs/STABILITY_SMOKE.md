@@ -64,7 +64,45 @@ Notes:
 - The smoke seeds localStorage inside that isolated context and does not touch the user's in-app browser state.
 - Set `VIBE_OFFICE_BROWSER` if Edge is installed in a non-default path.
 
+## Retry Click Flow Smoke
+
+Purpose:
+
+- Verify a failed Direct Chat message can be retried from the visible UI.
+- Verify a failed Task Room user message can be retried from the visible UI.
+- Verify retry increments the original request attempt instead of creating a detached message.
+- Verify successful retry clears the inline failure and removes the Retry action.
+
+Latest check:
+
+- Date: 2026-06-18
+- Command: `npm run smoke:browser`
+- App URL: `http://127.0.0.1:5180/`
+- Seeded Direct Chat state:
+  - Active agent: `Smoke Agent`
+  - Active scope: `Free Chat`
+  - Failed user message: `errorKind: timeout`
+- Seeded Task Room state:
+  - Active project: `Retry Smoke Project`
+  - Active mode: `Task Room`
+  - Failed user message linked to a failed project task/run
+- Browser-visible result:
+  - Direct Chat retry renders `Recovered direct retry reply.`
+  - Direct Chat original user message becomes `sent`
+  - Direct Chat original request attempt becomes `2`
+  - Task Room retry renders `Recovered task room retry result.`
+  - Task Room original user message becomes `sent`
+  - Task Room original request attempt becomes `2`
+  - Task Room project task becomes `completed`
+  - Retry action is removed after successful recovery
+- Result: passed.
+
+Notes:
+
+- Provider calls are intercepted inside the isolated Playwright browser context and return deterministic OpenAI-compatible responses.
+- The smoke verifies Vibe Office retry state, not external provider availability.
+
 ## Still Needed
 
-- Browser-visible Direct Chat retry click flow.
-- Browser-visible Task Room retry click flow.
+- Browser-visible interrupted pending request recovery for Direct Chat after reload.
+- Browser-visible interrupted pending request recovery for Task Room after reload.
