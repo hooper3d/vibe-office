@@ -28,6 +28,7 @@ import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
+import { useAppSelectionController } from "./services/appSelectionController";
 import { useAppSyncController } from "./services/appSyncController";
 import { useComposerController } from "./services/composerController";
 import {
@@ -41,10 +42,6 @@ import { useDirectChatController } from "./services/directChatController";
 import { useProjectDialogState } from "./services/projectDialogState";
 import { useProjectSetupController } from "./services/projectSetupController";
 import { useFreeChatController } from "./services/freeChatController";
-import {
-  applyMissingProjectSelection,
-  normalizeConversationModeForScope,
-} from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
 import { usePendingRecoveryController } from "./services/pendingRecoveryController";
 import {
@@ -63,7 +60,6 @@ import { useTaskRoomController } from "./services/taskRoomController";
 import {
   getAvailableTaskParticipants,
   getSelectedTaskParticipants,
-  toggleTaskParticipantSelection,
 } from "./services/taskParticipantSelectionState";
 import { loadThemeMode, type ThemeMode } from "./services/themeStorage";
 import { useWorkspaceChromeController } from "./services/workspaceChromeController";
@@ -335,6 +331,23 @@ export function App() {
     setPreviewUrl,
     setSplitPercent,
   });
+  const appSelectionController = useAppSelectionController({
+    availableTaskParticipants,
+    chatScope,
+    chiefAgentId: chiefAgent?.id,
+    conversationMode,
+    freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+    projects,
+    selectedAgent,
+    selectedAgentId,
+    selectedProjectId,
+    selectedWorkspaceProjectId: selectedWorkspaceProject?.id,
+    setChatScope,
+    setConversationMode,
+    setSelectedAgentId,
+    setSelectedProjectId,
+    setTaskParticipantIds,
+  });
   usePendingRecoveryController({
     agents,
     applyRequestWorkspaceState,
@@ -366,32 +379,6 @@ export function App() {
     tasks,
     themeMode,
   });
-
-  useEffect(() => {
-    const nextSelection = normalizeConversationModeForScope({ selectedProjectId, chatScope, conversationMode });
-    if (nextSelection.conversationMode !== conversationMode) setConversationMode(nextSelection.conversationMode);
-  }, [chatScope, conversationMode, selectedProjectId]);
-
-  useEffect(() => {
-    setTaskParticipantIds(availableTaskParticipants.map((agent) => agent.id));
-  }, [availableTaskParticipants, chiefAgent?.id, selectedWorkspaceProject?.id]);
-
-  useEffect(() => {
-    if (selectedAgent && selectedAgent.id !== selectedAgentId) {
-      setSelectedAgentId(selectedAgent.id);
-    }
-  }, [selectedAgent, selectedAgentId]);
-
-  useEffect(() => {
-    const nextSelection = applyMissingProjectSelection({
-      projects,
-      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
-      selection: { selectedProjectId, chatScope, conversationMode },
-    });
-    if (nextSelection.selectedProjectId !== selectedProjectId) setSelectedProjectId(nextSelection.selectedProjectId);
-    if (nextSelection.chatScope !== chatScope) setChatScope(nextSelection.chatScope);
-    if (nextSelection.conversationMode !== conversationMode) setConversationMode(nextSelection.conversationMode);
-  }, [chatScope, conversationMode, projects, selectedProjectId]);
 
   useEffect(() => {
     const backfilled = applyMediaArtifactBackfillState(requestStoreRef.current.snapshot());
@@ -440,16 +427,6 @@ export function App() {
     setAttachedWorkspaceFiles((current) => detachWorkspaceFileState({ attachments: current, path }));
   }
 
-  function toggleTaskParticipant(agentId: string, checked: boolean) {
-    setTaskParticipantIds((current) =>
-      toggleTaskParticipantSelection({
-        selectedParticipantIds: current,
-        agentId,
-        checked,
-      }),
-    );
-  }
-
   function applyRequestWorkspaceState(state: RequestWorkspaceState, outputMode?: OutputMode) {
     requestStoreRef.current.replace(state);
     setConversations(state.conversations);
@@ -476,15 +453,8 @@ export function App() {
         onDeleteProject={projectSetupController.requestDeleteProject}
         onEditAgent={agentSetup.openAgentEditor}
         onEditProject={projectDialog.openProjectEditor}
-        onSelectAgent={(agentId) => {
-          setSelectedAgentId(agentId);
-          setConversationMode("single");
-        }}
-        onSelectProject={(projectId, scope) => {
-          setSelectedProjectId(projectId);
-          setChatScope(scope);
-          setConversationMode("single");
-        }}
+        onSelectAgent={appSelectionController.selectAgent}
+        onSelectProject={appSelectionController.selectProject}
         onToggleTheme={toggleTheme}
       />
 
@@ -521,7 +491,7 @@ export function App() {
             onRetryTaskRoomMessage={taskRoomController.retryTaskRoomMessage}
             onSelectFreeChat={() => setChatScope("free")}
             onSubmitMessage={composerController.submitMessage}
-            onToggleTaskParticipant={toggleTaskParticipant}
+            onToggleTaskParticipant={appSelectionController.toggleTaskParticipant}
           />
 
           <div
