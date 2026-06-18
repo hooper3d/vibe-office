@@ -13,6 +13,12 @@ export type ProviderConnectionTestResult = {
   mode: ProviderConnectionMode;
 };
 
+export type ProviderAdapter = {
+  testConnection(): Promise<ProviderConnectionTestResult>;
+  sendProjectMessage(project: Project, text: string, history?: ChatHistoryMessage[]): Promise<A2ATask>;
+  sendFreeChatMessage(text: string, history?: ChatHistoryMessage[]): Promise<A2ATask>;
+};
+
 export type A2ACompatibilityMetadata = Pick<
   AgentInstance,
   | "a2aLastCompatibilityCheckAt"

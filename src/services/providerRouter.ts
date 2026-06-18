@@ -7,6 +7,7 @@ import { OpenAIProvider } from "./openaiProvider";
 import {
   createSyntheticAgentCard,
   type ChatHistoryMessage,
+  type ProviderAdapter,
   type ProviderConnectionTestResult,
 } from "./providerTypes";
 
@@ -14,28 +15,42 @@ export type ProviderRouterOptions = {
   agent: AgentInstance;
   timeoutMs: number;
   transport: AgentHttpTransport;
+  providers?: Partial<ProviderRouterProviderSet>;
+};
+
+export type ProviderRouterProviderSet = {
+  nativeA2A: NativeA2AProviderAdapter;
+  openAI: ProviderAdapter;
+  hermesCompatibility: ProviderAdapter;
+  anthropic: ProviderAdapter;
+};
+
+export type NativeA2AProviderAdapter = ProviderAdapter & {
+  getAgentCard(): Promise<A2AAgentCard>;
+  getProjectTask(taskId: string, contextId: string): Promise<A2ATask>;
+  cancelProjectTask(taskId: string, contextId: string): Promise<A2ATask>;
 };
 
 export class ProviderRouter {
   private agent: AgentInstance;
-  private nativeA2AProvider: NativeA2AProvider;
-  private openAIProvider: OpenAIProvider;
-  private hermesCompatibilityProvider: OpenAIProvider;
-  private anthropicProvider: AnthropicProvider;
+  private nativeA2AProvider: NativeA2AProviderAdapter;
+  private openAIProvider: ProviderAdapter;
+  private hermesCompatibilityProvider: ProviderAdapter;
+  private anthropicProvider: ProviderAdapter;
 
-  constructor({ agent, timeoutMs, transport }: ProviderRouterOptions) {
+  constructor({ agent, timeoutMs, transport, providers = {} }: ProviderRouterOptions) {
     this.agent = agent;
-    this.nativeA2AProvider = new NativeA2AProvider({
+    this.nativeA2AProvider = providers.nativeA2A ?? new NativeA2AProvider({
       agent,
       timeoutMs,
       transport,
     });
-    this.openAIProvider = new OpenAIProvider({
+    this.openAIProvider = providers.openAI ?? new OpenAIProvider({
       agent,
       timeoutMs,
       transport,
     });
-    this.hermesCompatibilityProvider = new OpenAIProvider({
+    this.hermesCompatibilityProvider = providers.hermesCompatibility ?? new OpenAIProvider({
       agent,
       timeoutMs,
       transport,
@@ -43,7 +58,7 @@ export class ProviderRouter {
       adapterName: "hermes-openai-compatible",
       providerLabel: "Hermes",
     });
-    this.anthropicProvider = new AnthropicProvider({
+    this.anthropicProvider = providers.anthropic ?? new AnthropicProvider({
       agent,
       timeoutMs,
       transport,

@@ -7,12 +7,13 @@ import {
   getFreeChatContextId,
   getProjectSystemContent,
   type ChatHistoryMessage,
+  type ProviderAdapter,
   type ProviderConnectionMode,
   type ProviderConnectionTestResult,
   type ProviderMessageRequest,
 } from "./providerTypes";
 
-export class OpenAIProvider {
+export class OpenAIProvider implements ProviderAdapter {
   private agent: AgentInstance;
   private timeoutMs: number;
   private transport: AgentHttpTransport;

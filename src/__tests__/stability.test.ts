@@ -61,7 +61,14 @@ import {
   type LocalTrustedProviderCommand,
 } from "../services/agentHttpTransport";
 import { HermesA2AAdapter } from "../services/hermesA2AAdapter";
-import { createA2ACompatibilityMetadata } from "../services/providerTypes";
+import { ProviderRouter } from "../services/providerRouter";
+import {
+  createA2ACompatibilityMetadata,
+  createCompletedTextTask,
+  createSyntheticAgentCard,
+  type ProviderAdapter,
+  type ProviderConnectionMode,
+} from "../services/providerTypes";
 import { A2AClient } from "../services/a2aClient";
 import {
   applyAgentAvatarUpdate,
@@ -2743,6 +2750,84 @@ test("provider setup detects obvious runtime endpoint mismatches", () => {
     }),
     null,
   );
+});
+
+test("provider router uses provider adapters by runtime and isolates Hermes fallback", async () => {
+  const calls: string[] = [];
+  const createProvider = (label: string, mode: ProviderConnectionMode, failProject = false): ProviderAdapter => ({
+    async testConnection() {
+      calls.push(`${label}:test`);
+      return {
+        card: createSyntheticAgentCard(agent, label),
+        mode,
+      };
+    },
+    async sendProjectMessage(projectToUse) {
+      calls.push(`${label}:project:${projectToUse.id}`);
+      if (failProject) throw new Error(`${label} unavailable`);
+      return createCompletedTextTask({
+        contextId: projectToUse.namespace,
+        content: `${label} project`,
+        metadata: { adapter: label },
+      });
+    },
+    async sendFreeChatMessage() {
+      calls.push(`${label}:free`);
+      return createCompletedTextTask({
+        contextId: `free-chat:${label}`,
+        content: `${label} free`,
+        metadata: { adapter: label },
+      });
+    },
+  });
+  const nativeProvider = {
+    ...createProvider("native", "native-a2a", true),
+    async getAgentCard() {
+      calls.push("native:card");
+      return createSyntheticAgentCard(agent, "native");
+    },
+    async getProjectTask() {
+      throw new Error("unused");
+    },
+    async cancelProjectTask() {
+      throw new Error("unused");
+    },
+  };
+  const transport: AgentHttpTransport = {
+    async commandJson() {
+      throw new Error("Provider router injection should not hit transport.");
+    },
+  };
+
+  const openAIRouter = new ProviderRouter({
+    agent: { ...agent, runtimeProvider: "openai" },
+    timeoutMs: 1000,
+    transport,
+    providers: {
+      nativeA2A: nativeProvider,
+      openAI: createProvider("openai", "openai-compatible"),
+      hermesCompatibility: createProvider("hermes", "hermes-adapter"),
+      anthropic: createProvider("anthropic", "anthropic-compatible"),
+    },
+  });
+  const openAITask = await openAIRouter.sendFreeChatMessage("hi");
+
+  const hermesRouter = new ProviderRouter({
+    agent: { ...agent, runtimeProvider: "hermes" },
+    timeoutMs: 1000,
+    transport,
+    providers: {
+      nativeA2A: nativeProvider,
+      openAI: createProvider("openai-unused", "openai-compatible"),
+      hermesCompatibility: createProvider("hermes", "hermes-adapter"),
+      anthropic: createProvider("anthropic-unused", "anthropic-compatible"),
+    },
+  });
+  const hermesTask = await hermesRouter.sendProjectMessage(project, "recover");
+
+  assert.equal(openAITask.metadata?.adapter, "openai");
+  assert.equal(hermesTask.metadata?.adapter, "hermes");
+  assert.deepEqual(calls, ["openai:free", "native:project:project-vibe", "hermes:project:project-vibe"]);
 });
 
 test("provider adapter routes OpenAI-compatible free chat through local provider commands", async () => {

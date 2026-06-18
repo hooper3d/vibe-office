@@ -7,11 +7,12 @@ import {
   getFreeChatContextId,
   getProjectSystemContent,
   type ChatHistoryMessage,
+  type ProviderAdapter,
   type ProviderConnectionTestResult,
   type ProviderMessageRequest,
 } from "./providerTypes";
 
-export class AnthropicProvider {
+export class AnthropicProvider implements ProviderAdapter {
   private agent: AgentInstance;
   private timeoutMs: number;
   private transport: AgentHttpTransport;

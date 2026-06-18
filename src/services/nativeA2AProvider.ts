@@ -2,9 +2,9 @@ import type { A2AAgentCard, A2AMessage, A2ATask } from "../domain/a2a";
 import type { AgentInstance, Project } from "../domain/types";
 import { A2AClient } from "./a2aClient";
 import type { AgentHttpTransport } from "./agentHttpTransport";
-import { getFreeChatContextId, type ChatHistoryMessage, type ProviderConnectionTestResult } from "./providerTypes";
+import { getFreeChatContextId, type ChatHistoryMessage, type ProviderAdapter, type ProviderConnectionTestResult } from "./providerTypes";
 
-export class NativeA2AProvider {
+export class NativeA2AProvider implements ProviderAdapter {
   private agent: AgentInstance;
   private client: A2AClient;
 
