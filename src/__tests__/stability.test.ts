@@ -59,7 +59,13 @@ import {
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { A2AClient } from "../services/a2aClient";
-import { applyAgentDelete, applyAgentSetupSave, normalizeChief, resolveSelectedAgent } from "../services/agentSetupState";
+import {
+  applyAgentAvatarUpdate,
+  applyAgentDelete,
+  applyAgentSetupSave,
+  normalizeChief,
+  resolveSelectedAgent,
+} from "../services/agentSetupState";
 import {
   applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
@@ -879,6 +885,25 @@ test("agent selection resolves selected agent with chief and first-agent fallbac
   assert.equal(resolveSelectedAgent({ agents: [chief, operator], selectedAgentId: "missing-agent" })?.id, chief.id);
   assert.equal(resolveSelectedAgent({ agents: [operator], selectedAgentId: "missing-agent" })?.id, operator.id);
   assert.equal(resolveSelectedAgent({ agents: [], selectedAgentId: "missing-agent" }), undefined);
+});
+
+test("agent avatar update state changes only the target agent", () => {
+  const updated = applyAgentAvatarUpdate({
+    agents: [agent, participant],
+    agentId: participant.id,
+    avatarUrl: "data:image/png;base64,avatar",
+  });
+
+  assert.equal(updated[0].avatarUrl, agent.avatarUrl);
+  assert.equal(updated[1].avatarUrl, "data:image/png;base64,avatar");
+  assert.equal(
+    applyAgentAvatarUpdate({
+      agents: updated,
+      agentId: participant.id,
+      avatarUrl: undefined,
+    })[1].avatarUrl,
+    undefined,
+  );
 });
 
 test("agent readiness state merges local trusted and static setup issues", () => {

@@ -29,7 +29,13 @@ import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { readAvatarFile } from "./services/avatarFile";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
-import { applyAgentDelete, applyAgentSetupSave, normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
+import {
+  applyAgentAvatarUpdate,
+  applyAgentDelete,
+  applyAgentSetupSave,
+  normalizeChief,
+  resolveSelectedAgent,
+} from "./services/agentSetupState";
 import {
   applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
@@ -691,7 +697,7 @@ export function App() {
   }
 
   function updateAgentAvatar(agentId: string, avatarUrl?: string) {
-    setAgents((current) => current.map((agent) => (agent.id === agentId ? { ...agent, avatarUrl } : agent)));
+    setAgents((current) => applyAgentAvatarUpdate({ agents: current, agentId, avatarUrl }));
   }
 
   async function handleExistingAgentAvatar(agentId: string, file?: File) {

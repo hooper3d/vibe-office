@@ -88,6 +88,18 @@ export function resolveSelectedAgent({
   return agents.find((agent) => agent.id === selectedAgentId) ?? agents.find((agent) => agent.isChief) ?? agents[0];
 }
 
+export function applyAgentAvatarUpdate({
+  agents,
+  agentId,
+  avatarUrl,
+}: {
+  agents: AgentInstance[];
+  agentId: string;
+  avatarUrl?: string;
+}) {
+  return agents.map((agent) => (agent.id === agentId ? { ...agent, avatarUrl } : agent));
+}
+
 export function normalizeChief(agents: AgentInstance[]) {
   if (agents.length === 0) return agents;
   if (agents.some((agent) => agent.officeRole)) {
