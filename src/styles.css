@@ -1499,6 +1499,26 @@ textarea::placeholder {
   line-height: 18px;
 }
 
+.lifecycle-meta {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.lifecycle-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .task-event {
   display: grid;
   grid-template-columns: auto auto 1fr;

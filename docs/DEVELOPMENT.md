@@ -296,11 +296,11 @@ Health fallback is not discovery. It may only confirm whether a manually configu
 
 ## Milestones
 
-### Current Recorded Milestone: M5 Artifact Viewer Prototype
+### Current Recorded Milestone: M6 A2A Task Lifecycle
 
 Status: completed on 2026-06-18.
 
-The prototype now has a project-scoped Artifact Viewer. Generated outputs can be selected, inspected, copied, opened when they expose a supported URL, and downloaded where the browser permits downloads.
+The prototype now has project-scoped A2A task lifecycle handling. Remote task references are stored separately from local task ids, active remote tasks can be polled, failed tasks can be retried, supported tasks can be canceled, and unsupported provider capabilities are clearly marked.
 
 Validated in browser:
 
@@ -320,6 +320,10 @@ Validated in browser:
 - Image file artifacts render inline.
 - Generated `MEDIA:/...` image references can become project-scoped artifacts through the local trusted layer.
 - Copy, open URL, and download controls are available from the artifact detail view.
+- Tasks tab exposes refresh, retry, and cancel lifecycle controls.
+- Tasks tab shows A2A protocol, transport, selected interface, remote link, and cancel capability metadata.
+- Local Chief-led orchestration tasks are marked as local when they do not have a remote A2A lifecycle link.
+- Unsupported lifecycle and cancel capabilities are marked without granting remote agents local file access.
 - Switching Project hides conversation and output records from other Projects.
 - Refresh restores configured agents, projects, conversations, runs, tasks, and artifacts.
 - Agent profile management supports avatar upload, role selection, capability tags, notes, host/IP, runtime settings, delete, and edit-from-sidebar.
@@ -335,9 +339,9 @@ Important boundary:
 - Chief-led Task Room is intentionally one-round in v0.1: one Chief plan, one delegated task per selected participant, and one Chief aggregation.
 - Generated media is served only through the local trusted layer and currently allows known image files from controlled generated-media temp roots.
 
-Next milestone:
+Next phase:
 
-- M6 A2A Task Lifecycle: support longer-running tasks with polling, retry/cancel affordances, and clearer state transitions.
+- v0.1 stabilization and release review: run full end-to-end acceptance, tighten copy, and prepare the next v0.2 plan.
 
 ### Milestone 0: Real Agent Onboarding
 
@@ -526,13 +530,13 @@ Acceptance:
 
 ### Milestone 6: A2A Task Lifecycle
 
-Status: foundation in progress.
+Status: completed on 2026-06-18.
 
 Goal:
 
 Support longer-running agent tasks.
 
-M6 foundation progress:
+Completed:
 
 - A2A client exposes `tasks/get`.
 - A2A client exposes `tasks/cancel`.
@@ -546,15 +550,18 @@ M6 foundation progress:
 - Local Chief-led orchestration tasks are not auto-polled as remote A2A tasks unless a remote task link exists.
 - Unsupported lifecycle operations are recorded as task events instead of failing silently.
 - Agent profile data can track:
-      - protocol version
-      - transport binding
-      - supported interfaces
-      - selected interface
-      - last compatibility check time
-      - task lifecycle support
-      - cancel support
+  - protocol version
+  - transport binding
+  - supported interfaces
+  - selected interface
+  - last compatibility check time
+  - task lifecycle support
+  - cancel support
 - Native A2A HTTP requests send the selected `A2A-Version` header when a real protocol version is known.
 - Compatibility adapter calls do not fake native A2A version support.
+- Repeated lifecycle polling does not add duplicate task events when the remote task state is unchanged.
+- `tasks/get` unsupported and `tasks/cancel` unsupported are tracked separately.
+- Tasks tab shows protocol/interface metadata so the selected A2A binding is visible to the user.
 
 Scope:
 

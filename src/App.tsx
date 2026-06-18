@@ -381,7 +381,7 @@ export function App() {
       const remoteTask = await new HermesA2AAdapter({ agent: owner }).cancelProjectTask(address.taskId, address.contextId);
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Task cancel requested.");
     } catch (error) {
-      recordLifecycleUnsupported(task, error instanceof Error ? error.message : "Task cancel is unsupported by this provider.");
+      recordCancelUnsupported(task, error instanceof Error ? error.message : "Task cancel is unsupported by this provider.");
     } finally {
       setTaskLifecycleBusyId("");
     }
@@ -476,28 +476,7 @@ export function App() {
 
     setTasks((current) =>
       current.map((item) =>
-        item.id === task.id
-          ? {
-              ...item,
-              state: mappedState,
-              remoteTaskId: remoteTask.id || item.remoteTaskId,
-              remoteContextId: remoteTask.contextId || item.remoteContextId,
-              summary,
-              events: [
-                ...item.events,
-                {
-                  id: eventId,
-                  taskId: task.id,
-                  agentId,
-                  label,
-                  state: mappedState,
-                  timestamp: updatedAt,
-                },
-              ],
-              artifactIds: mergeIds(item.artifactIds, returnedArtifactIds),
-              updatedAt,
-            }
-          : item,
+        item.id === task.id ? mergeLifecycleTaskUpdate(item, remoteTask, agentId, label, mappedState, summary, eventId, updatedAt, returnedArtifactIds) : item,
       ),
     );
 
@@ -532,6 +511,33 @@ export function App() {
                       taskId: task.id,
                       agentId: task.ownerAgentId,
                       label: `Lifecycle unsupported: ${reason}`,
+                      state: "unsupported",
+                      timestamp: at,
+                    },
+                  ],
+              updatedAt: at,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function recordCancelUnsupported(task: ProjectTask, reason: string) {
+    const at = new Date().toISOString();
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === task.id
+          ? {
+              ...item,
+              events: hasCancelUnsupportedEvent(item)
+                ? item.events
+                : [
+                    ...item.events,
+                    {
+                      id: `${task.id}-cancel-unsupported`,
+                      taskId: task.id,
+                      agentId: task.ownerAgentId,
+                      label: `Cancel unsupported: ${reason}`,
                       state: "unsupported",
                       timestamp: at,
                     },
@@ -2271,6 +2277,52 @@ function createA2ACompatibilityMetadata(result: HermesConnectionTestResult): A2A
   };
 }
 
+function mergeLifecycleTaskUpdate(
+  task: ProjectTask,
+  remoteTask: A2ATask,
+  agentId: string,
+  label: string,
+  mappedState: WorkState,
+  summary: string,
+  eventId: string,
+  updatedAt: string,
+  returnedArtifactIds: string[],
+) {
+  const mergedArtifactIds = mergeIds(task.artifactIds, returnedArtifactIds);
+  const remoteTaskId = remoteTask.id || task.remoteTaskId;
+  const remoteContextId = remoteTask.contextId || task.remoteContextId;
+  const shouldRecordEvent =
+    !task.events.some((event) => event.id === eventId) &&
+    (task.state !== mappedState ||
+      task.summary !== summary ||
+      task.remoteTaskId !== remoteTaskId ||
+      task.remoteContextId !== remoteContextId ||
+      mergedArtifactIds.length !== task.artifactIds.length);
+
+  return {
+    ...task,
+    state: mappedState,
+    remoteTaskId,
+    remoteContextId,
+    summary,
+    events: shouldRecordEvent
+      ? [
+          ...task.events,
+          {
+            id: eventId,
+            taskId: task.id,
+            agentId,
+            label,
+            state: mappedState,
+            timestamp: updatedAt,
+          },
+        ]
+      : task.events,
+    artifactIds: mergedArtifactIds,
+    updatedAt,
+  };
+}
+
 function getTaskLifecycleAddress(task: ProjectTask, runs: ProjectRun[]) {
   if (task.remoteTaskId) {
     return {
@@ -2300,6 +2352,10 @@ function isTaskTerminal(state: WorkState) {
 
 function hasLifecycleUnsupportedEvent(task: ProjectTask) {
   return task.events.some((event) => event.state === "unsupported" || event.label.startsWith("Lifecycle unsupported:"));
+}
+
+function hasCancelUnsupportedEvent(task: ProjectTask) {
+  return task.events.some((event) => event.state === "unsupported" && event.label.startsWith("Cancel unsupported:"));
 }
 
 function mergeIds(first: string[], second: string[]) {
@@ -3008,8 +3064,9 @@ function TaskLifecycleActions({
   const failed = task.state === "failed";
   const terminal = isTaskTerminal(task.state);
   const unsupported = hasLifecycleUnsupportedEvent(task);
+  const cancelUnsupported = hasCancelUnsupportedEvent(task);
   const lifecycleKnownUnsupported = !lifecycleLinked || unsupported || owner?.supportsTaskLifecycle === false;
-  const cancelKnownUnsupported = lifecycleKnownUnsupported || owner?.supportsCancel === false;
+  const cancelKnownUnsupported = !lifecycleLinked || unsupported || cancelUnsupported || owner?.supportsCancel === false;
   const refreshBusy = busyActionId === `refresh:${task.id}`;
   const retryBusy = busyActionId === `retry:${task.id}`;
   const cancelBusy = busyActionId === `cancel:${task.id}`;
@@ -3049,6 +3106,41 @@ function TaskLifecycleActions({
       {lifecycleKnownUnsupported ? (
         <span className="lifecycle-note">{lifecycleLinked ? "Lifecycle unsupported" : "No remote lifecycle link"}</span>
       ) : null}
+      {cancelUnsupported && !lifecycleKnownUnsupported ? <span className="lifecycle-note">Cancel unsupported</span> : null}
+      <TaskLifecycleMetadata lifecycleLinked={lifecycleLinked} owner={owner} task={task} />
+    </div>
+  );
+}
+
+function TaskLifecycleMetadata({
+  lifecycleLinked,
+  owner,
+  task,
+}: {
+  lifecycleLinked: boolean;
+  owner?: AgentInstance;
+  task: ProjectTask;
+}) {
+  const binding = owner?.a2aTransportBinding ?? (lifecycleLinked ? "unknown transport" : "local orchestration");
+  const version = owner?.a2aProtocolVersion ? `A2A ${owner.a2aProtocolVersion}` : lifecycleLinked ? "A2A version unknown" : "local";
+  const selectedInterface = owner?.a2aSelectedInterface ?? (lifecycleLinked ? "remote task lifecycle" : "no remote lifecycle");
+  const taskReference = task.remoteTaskId ? "remote task linked" : "local task";
+  const cancelState =
+    owner?.supportsCancel === false || hasCancelUnsupportedEvent(task)
+      ? "cancel unsupported"
+      : owner?.supportsCancel === true
+        ? "cancel supported"
+        : lifecycleLinked
+          ? "cancel unknown"
+          : "cancel unavailable";
+
+  return (
+    <div className="lifecycle-meta" aria-label="A2A lifecycle metadata">
+      <span>{version}</span>
+      <span>{binding}</span>
+      <span>{selectedInterface}</span>
+      <span>{taskReference}</span>
+      <span>{cancelState}</span>
     </div>
   );
 }
