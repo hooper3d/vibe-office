@@ -53,6 +53,10 @@ export async function searchWorkspaceFiles(root: string, query: string) {
   return workspaceRequest<WorkspaceFileSearchResult>("/workspace-local/search", { root, query });
 }
 
+export function mediaFileUrl(path: string) {
+  return `/workspace-local/media?path=${encodeURIComponent(path)}`;
+}
+
 async function workspaceRequest<T>(url: string, payload: Record<string, unknown>): Promise<T> {
   const response = await fetch(url, {
     method: "POST",

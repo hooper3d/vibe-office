@@ -52,6 +52,7 @@ import { HermesA2AAdapter } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
+  mediaFileUrl,
   readWorkspaceFile,
   searchWorkspaceFiles,
   type WorkspaceFileAttachment,
@@ -241,6 +242,55 @@ export function App() {
       artifacts,
     });
   }, [artifacts, conversations, messages, projects, runs, tasks]);
+
+  useEffect(() => {
+    const mediaLinks = createBackfilledMediaArtifacts(messages);
+    if (mediaLinks.length === 0) return;
+
+    const existingArtifactIds = new Set(artifacts.map((artifact) => artifact.id));
+    const missingArtifacts = mediaLinks
+      .map((link) => link.artifact)
+      .filter((artifact) => !existingArtifactIds.has(artifact.id));
+    const hasMissingTaskLinks = tasks.some((task) =>
+      mediaLinks.some((link) => link.artifact.taskId === task.id && !task.artifactIds.includes(link.artifact.id)),
+    );
+    const hasMissingRunLinks = runs.some((run) =>
+      mediaLinks.some((link) => link.runId === run.id && !run.artifactIds.includes(link.artifact.id)),
+    );
+
+    if (missingArtifacts.length === 0 && !hasMissingTaskLinks && !hasMissingRunLinks) return;
+
+    if (missingArtifacts.length > 0) {
+      setArtifacts((current) => [
+        ...missingArtifacts.filter((artifact) => !current.some((item) => item.id === artifact.id)),
+        ...current,
+      ]);
+    }
+
+    if (hasMissingTaskLinks) {
+      setTasks((current) =>
+        current.map((task) => {
+          const artifactIds = mediaLinks
+            .filter((link) => link.artifact.taskId === task.id)
+            .map((link) => link.artifact.id)
+            .filter((artifactId) => !task.artifactIds.includes(artifactId));
+          return artifactIds.length > 0 ? { ...task, artifactIds: [...task.artifactIds, ...artifactIds] } : task;
+        }),
+      );
+    }
+
+    if (hasMissingRunLinks) {
+      setRuns((current) =>
+        current.map((run) => {
+          const artifactIds = mediaLinks
+            .filter((link) => link.runId === run.id)
+            .map((link) => link.artifact.id)
+            .filter((artifactId) => !run.artifactIds.includes(artifactId));
+          return artifactIds.length > 0 ? { ...run, artifactIds: [...run.artifactIds, ...artifactIds] } : run;
+        }),
+      );
+    }
+  }, [artifacts, messages, runs, tasks]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -623,9 +673,20 @@ export function App() {
 
       try {
         const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, agentRequestText);
-        const returnedArtifacts = mapA2AArtifacts(remoteTask, selectedProject.id, targetAgent.id);
-        const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
         const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned an A2A task state.`;
+        const mediaArtifact = createMediaArtifactFromText({
+          projectId: selectedProject.id,
+          taskId: remoteTask.id || runId,
+          agentId: targetAgent.id,
+          name: `${targetAgent.name} media`,
+          text: responseSummary,
+          createdAt: remoteTask.status.timestamp ?? new Date().toISOString(),
+        });
+        const returnedArtifacts = [
+          ...mapA2AArtifacts(remoteTask, selectedProject.id, targetAgent.id),
+          ...(mediaArtifact ? [mediaArtifact] : []),
+        ];
+        const returnedArtifactIds = returnedArtifacts.map((artifact) => artifact.id);
         const mappedState = mapA2AState(remoteTask.status.state);
         const shouldCreateTask = !isDirectMessageResponse(remoteTask);
         const taskId = shouldCreateTask ? remoteTask.id || crypto.randomUUID() : undefined;
@@ -856,6 +917,8 @@ export function App() {
     setAttachedWorkspaceFiles([]);
     setOutputMode("runs");
 
+    const taskArtifactIds: string[] = [];
+
     try {
       const chiefPlanTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedProject, chiefRequestText);
       const chiefPlan = extractA2ATaskText(chiefPlanTask) ?? `${targetAgent.name} returned a Chief task plan.`;
@@ -887,6 +950,20 @@ export function App() {
       };
       setMessages((current) => [...current, agentMessage]);
 
+      const chiefMediaArtifact = createMediaArtifactFromText({
+        projectId: selectedProject.id,
+        taskId,
+        agentId: targetAgent.id,
+        name: "Chief media",
+        text: chiefPlan,
+        createdAt: chiefPlanAt,
+      });
+      if (chiefMediaArtifact) {
+        taskArtifactIds.push(chiefMediaArtifact.id);
+        setArtifacts((current) => [chiefMediaArtifact, ...current]);
+        setOutputMode("artifacts");
+      }
+
       setTasks((current) =>
         current.map((task) =>
           task.id === taskId
@@ -905,6 +982,7 @@ export function App() {
                     timestamp: chiefPlanAt,
                   },
                 ],
+                artifactIds: [...taskArtifactIds],
                 updatedAt: chiefPlanAt,
               }
             : task,
@@ -917,6 +995,7 @@ export function App() {
                 ...run,
                 state: "working",
                 eventIds: [...run.eventIds, `${runId}-chief-response`],
+                artifactIds: [...taskArtifactIds],
                 updatedAt: chiefPlanAt,
               }
             : run,
@@ -924,7 +1003,6 @@ export function App() {
       );
 
       const participantResults: ParticipantTaskResult[] = [];
-      const taskArtifactIds: string[] = [];
 
       for (const participant of participants) {
         const delegatedAt = new Date().toISOString();
@@ -1572,16 +1650,17 @@ function extractA2ATaskText(task: A2ATask) {
 function mapA2AArtifacts(task: A2ATask, projectId: string, agentId: string): ProjectArtifact[] {
   return (task.artifacts ?? []).map((artifact, index) => {
     const text = artifact.parts.find((part) => part.kind === "text")?.text;
-    const hasFile = artifact.parts.some((part) => part.kind === "file");
+    const contentParts = addMediaPartsToParts(artifact.parts);
+    const hasFile = contentParts.some((part) => part.kind === "file");
     return {
       id: artifact.artifactId ?? `${task.id}-artifact-${index}`,
       projectId,
       taskId: task.id,
       agentId,
       name: artifact.name ?? `Artifact ${index + 1}`,
-      kind: text ? "text" : hasFile ? "file" : "json",
+      kind: hasFile ? "file" : text ? "text" : "json",
       summary: artifact.description ?? text ?? "A2A artifact returned by the agent.",
-      contentParts: artifact.parts,
+      contentParts,
       createdAt: task.status.timestamp ?? new Date().toISOString(),
     };
   });
@@ -1602,17 +1681,59 @@ function createTextArtifact({
   text: string;
   createdAt: string;
 }): ProjectArtifact {
+  const contentParts = createMediaAwareParts(text);
   return {
     id: crypto.randomUUID(),
     projectId,
     taskId,
     agentId,
     name,
-    kind: "text",
+    kind: getImageFileParts(contentParts).length > 0 ? "file" : "text",
     summary: text,
-    contentParts: createTextParts(text),
+    contentParts,
     createdAt,
   };
+}
+
+function createMediaArtifactFromText({
+  projectId,
+  taskId,
+  agentId,
+  name,
+  text,
+  createdAt,
+}: {
+  projectId: string;
+  taskId: string;
+  agentId: string;
+  name: string;
+  text: string;
+  createdAt: string;
+}) {
+  if (extractMediaReferences(text).length === 0) return undefined;
+  return createTextArtifact({ projectId, taskId, agentId, name, text, createdAt });
+}
+
+function createBackfilledMediaArtifacts(messages: ConversationMessage[]) {
+  return messages.flatMap((message) => {
+    if (message.role !== "agent" || !message.agentId || !message.taskId) return [];
+
+    const text = getPartText(message.contentParts);
+    return extractMediaReferences(text).map((reference, index) => ({
+      runId: message.runId,
+      artifact: {
+        id: `${message.id}-media-${index}`,
+        projectId: message.projectId,
+        taskId: message.taskId ?? message.runId ?? message.id,
+        agentId: message.agentId ?? "",
+        name: index === 0 ? "Generated media" : `Generated media ${index + 1}`,
+        kind: "file" as const,
+        summary: text,
+        contentParts: createMediaAwareParts(text),
+        createdAt: message.createdAt,
+      },
+    }));
+  });
 }
 
 function createConversation({
@@ -1655,6 +1776,78 @@ function createTextParts(text: string): A2APart[] {
       text,
     },
   ];
+}
+
+function createMediaAwareParts(text: string): A2APart[] {
+  return addMediaPartsToParts(createTextParts(text));
+}
+
+function addMediaPartsToParts(parts: A2APart[]) {
+  const mediaParts = parts.flatMap((part) => (part.kind === "text" ? createMediaFileParts(part.text) : []));
+  if (mediaParts.length === 0) return parts;
+
+  const existingUris = new Set(
+    parts.flatMap((part) => (part.kind === "file" && part.file.uri ? [part.file.uri] : [])),
+  );
+  const uniqueMediaParts = mediaParts.filter((part) => part.file.uri && !existingUris.has(part.file.uri));
+  return uniqueMediaParts.length > 0 ? [...parts, ...uniqueMediaParts] : parts;
+}
+
+function createMediaFileParts(text: string): Extract<A2APart, { kind: "file" }>[] {
+  return extractMediaReferences(text).map((reference) => ({
+    kind: "file",
+    file: {
+      name: reference.name,
+      mimeType: reference.mimeType,
+      uri: mediaFileUrl(reference.path),
+    },
+  }));
+}
+
+function extractMediaReferences(text: string) {
+  const references: Array<{ path: string; name: string; mimeType: string }> = [];
+  const seen = new Set<string>();
+  const mediaLinePattern = /(?:^|\s)MEDIA:\s*([^\r\n]+)/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = mediaLinePattern.exec(text)) !== null) {
+    const mediaPath = cleanMediaPath(match[1]);
+    const mimeType = getImageMimeTypeFromPath(mediaPath);
+    if (!mediaPath || !mimeType || seen.has(mediaPath)) continue;
+
+    seen.add(mediaPath);
+    references.push({
+      path: mediaPath,
+      name: getFileNameFromPath(mediaPath),
+      mimeType,
+    });
+  }
+
+  return references;
+}
+
+function cleanMediaPath(value: string) {
+  const [pathToken = ""] = value.trim().split(/\s+/);
+  return pathToken
+    .trim()
+    .replace(/^["'`]+|["'`,.;]+$/g, "")
+    .trim();
+}
+
+function getFileNameFromPath(filePath: string) {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() ?? "media artifact";
+}
+
+function getImageMimeTypeFromPath(filePath: string) {
+  const extension = filePath.split(/[?#]/)[0]?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "gif") return "image/gif";
+  if (extension === "webp") return "image/webp";
+  if (extension === "avif") return "image/avif";
+  if (extension === "bmp") return "image/bmp";
+  if (extension === "svg") return "image/svg+xml";
+  return "";
 }
 
 function buildAgentRequestText(text: string, project: Project, files: WorkspaceFileAttachment[]) {
@@ -1760,6 +1953,13 @@ function getPartText(parts: A2APart[]) {
       if (part.kind === "data") return JSON.stringify(part.data, null, 2);
       return part.file.name ?? part.file.uri ?? "File";
     })
+    .join("\n");
+}
+
+function getTextPartContent(parts: A2APart[]) {
+  return parts
+    .filter((part) => part.kind === "text")
+    .map((part) => part.text)
     .join("\n");
 }
 
@@ -1895,8 +2095,15 @@ function TabButton({
 }
 
 function DirectChat({ messages }: { messages: ConversationMessage[] }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const latestMessageId = messages[messages.length - 1]?.id;
+
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
+  }, [latestMessageId]);
+
   return (
-    <div className="conversation-body">
+    <div className="conversation-body" ref={bodyRef}>
       {messages.length === 0 ? (
         <div className="empty-state compact-empty">
           <MessageSquare size={32} />
@@ -1965,9 +2172,15 @@ function TaskRoom({
   onToggleParticipant: (agentId: string, checked: boolean) => void;
 }) {
   const participants = agents.filter((agent) => agent.id !== chief?.id && agent.status === "online");
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const latestMessageId = messages[messages.length - 1]?.id;
+
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
+  }, [latestMessageId, projectTask?.updatedAt]);
 
   return (
-    <div className="conversation-body">
+    <div className="conversation-body" ref={bodyRef}>
       <div className="task-summary">
         <div>
           <h3>{projectTask?.title ?? `${chief?.name ?? "Chief"} task room`}</h3>
@@ -2464,7 +2677,7 @@ function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[]; arti
 function ArtifactPreview({ artifact }: { artifact: ProjectArtifact }) {
   const parts = artifact.contentParts ?? createTextParts(artifact.summary);
   const imageParts = getImageFileParts(parts);
-  const text = getPartText(parts);
+  const text = getTextPartContent(parts);
 
   return (
     <div className="artifact-preview">

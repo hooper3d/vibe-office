@@ -1,7 +1,9 @@
 import { defineConfig } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 const IGNORED_DIRECTORY_NAMES = new Set([".git", "node_modules", "dist", ".next", ".vite", "coverage"]);
@@ -9,6 +11,9 @@ const MAX_LIST_ENTRIES = 300;
 const MAX_READ_BYTES = 160 * 1024;
 const MAX_SEARCH_BYTES = 96 * 1024;
 const MAX_SEARCH_RESULTS = 80;
+const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
+const WSL_MEDIA_ROOTS = ["/tmp/mmx-gen", "/tmp/vibe-office-media"];
+const WINDOWS_MEDIA_ROOTS = [os.tmpdir(), path.join(os.tmpdir(), "vibe-office-m4-demo")];
 
 export default defineConfig({
   plugins: [react(), localWorkspaceFileLayer()],
@@ -169,6 +174,39 @@ function localWorkspaceFileLayer(): Plugin {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }
       });
+
+      server.middlewares.use("/workspace-local/media", async (req, res) => {
+        if (req.method !== "GET") return sendJson(res, 405, { error: "Use GET for workspace media requests." });
+
+        try {
+          const requestUrl = new URL(req.url || "/", "http://vibe-office.local");
+          const mediaPath = String(requestUrl.searchParams.get("path") || "").trim();
+          const mimeType = getImageMimeType(mediaPath);
+
+          if (!mediaPath || !mimeType) {
+            return sendJson(res, 400, { error: "Select a supported image artifact." });
+          }
+
+          if (isWslMediaPath(mediaPath)) {
+            const buffer = await readWslMediaFile(mediaPath);
+            return sendBinary(res, 200, buffer, mimeType);
+          }
+
+          const target = getVerifiedLocalMediaPath(mediaPath);
+          const stat = await fs.stat(target);
+          if (!stat.isFile()) {
+            return sendJson(res, 400, { error: "Media artifact is not a readable file." });
+          }
+          if (stat.size > MAX_MEDIA_BYTES) {
+            return sendJson(res, 413, { error: `Media artifact is larger than ${formatBytes(MAX_MEDIA_BYTES)}.` });
+          }
+
+          const buffer = await fs.readFile(target);
+          sendBinary(res, 200, buffer, mimeType);
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
     },
   };
 }
@@ -226,6 +264,73 @@ function sortWorkspaceEntries(
   return first.name.localeCompare(second.name);
 }
 
+function getVerifiedLocalMediaPath(mediaPath: string) {
+  const target = path.resolve(mediaPath);
+  const allowed = WINDOWS_MEDIA_ROOTS.some((root) => {
+    const resolvedRoot = path.resolve(root);
+    const relative = path.relative(resolvedRoot, target);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  });
+
+  if (!allowed) {
+    throw new Error("Media artifact access is limited to local generated media folders.");
+  }
+
+  return target;
+}
+
+function isWslMediaPath(mediaPath: string) {
+  const normalized = mediaPath.replace(/\\/g, "/");
+  return WSL_MEDIA_ROOTS.some((root) => normalized === root || normalized.startsWith(`${root}/`));
+}
+
+function readWslMediaFile(mediaPath: string) {
+  return new Promise<Buffer>((resolve, reject) => {
+    const child = spawn("wsl", ["cat", mediaPath], { stdio: ["ignore", "pipe", "pipe"] });
+    const chunks: Buffer[] = [];
+    const errorChunks: Buffer[] = [];
+    let totalBytes = 0;
+    let tooLarge = false;
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_MEDIA_BYTES) {
+        tooLarge = true;
+        child.kill();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      errorChunks.push(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (tooLarge) {
+        reject(new Error(`Media artifact is larger than ${formatBytes(MAX_MEDIA_BYTES)}.`));
+        return;
+      }
+      if (code !== 0) {
+        reject(new Error(Buffer.concat(errorChunks).toString("utf8").trim() || "Unable to read WSL media artifact."));
+        return;
+      }
+      resolve(Buffer.concat(chunks));
+    });
+  });
+}
+
+function getImageMimeType(mediaPath: string) {
+  const extension = path.extname(mediaPath).toLowerCase();
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".gif") return "image/gif";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".avif") return "image/avif";
+  if (extension === ".bmp") return "image/bmp";
+  if (extension === ".svg") return "image/svg+xml";
+  return "";
+}
+
 function readJsonBody(req: NodeJS.ReadableStream) {
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     let raw = "";
@@ -247,6 +352,18 @@ function sendJson(res: { statusCode: number; setHeader: (name: string, value: st
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(body));
+}
+
+function sendBinary(
+  res: { statusCode: number; setHeader: (name: string, value: string) => void; end: (body: Buffer) => void },
+  status: number,
+  body: Buffer,
+  contentType: string,
+) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "no-store");
+  res.end(body);
 }
 
 function getSafeErrorMessage(error: unknown) {
