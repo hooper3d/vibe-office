@@ -291,6 +291,26 @@ export function App() {
     () => taskRoomMessages.some((message) => message.role === "user" && message.status === "sending"),
     [taskRoomMessages],
   );
+  const respondingAgentIds = useMemo(() => {
+    const ids = new Set<string>();
+    const conversationById = new Map(conversations.map((conversation) => [conversation.id, conversation]));
+
+    messages.forEach((message) => {
+      if (message.role !== "user" || message.status !== "sending") return;
+
+      const conversation = conversationById.get(message.conversationId);
+      if (!conversation) return;
+
+      if (conversation.mode === "task_room") {
+        if (conversation.chiefAgentId) ids.add(conversation.chiefAgentId);
+        return;
+      }
+
+      if (conversation.primaryAgentId) ids.add(conversation.primaryAgentId);
+    });
+
+    return ids;
+  }, [conversations, messages]);
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
@@ -2055,14 +2075,15 @@ export function App() {
             ) : null}
             {agents.map((agent) => {
               const isActive = selectedAgentId === agent.id;
+              const isResponding = respondingAgentIds.has(agent.id);
               return (
                 <div className={`agent-row ${isActive ? "active" : ""}`} key={agent.id}>
                   <button
                     className="nav-item agent-item"
-                  onClick={() => {
-                    setSelectedAgentId(agent.id);
-                    setConversationMode("single");
-                  }}
+                    onClick={() => {
+                      setSelectedAgentId(agent.id);
+                      setConversationMode("single");
+                    }}
                   >
                     <AgentAvatar agent={agent} />
                     <span className="nav-item-content">
@@ -2071,8 +2092,8 @@ export function App() {
                         <span className="chief-dot">{getOfficeRoleLabel(agent.officeRole, agent.isChief)}</span>
                       </span>
                       <span className="nav-item-meta">
-                        <StatusDot status={agent.status} />
-                        {agent.tags.slice(0, 2).join(" / ")}
+                        <StatusDot status={isResponding ? "checking" : agent.status} />
+                        {isResponding ? "responding" : agent.tags.slice(0, 2).join(" / ")}
                       </span>
                     </span>
                   </button>
