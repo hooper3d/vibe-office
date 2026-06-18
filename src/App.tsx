@@ -38,9 +38,8 @@ import {
   resolveSelectedAgent,
 } from "./services/agentSetupState";
 import {
-  applyLocalTrustedAgentStatusMap,
-  applyLocalTrustedAgentStatuses,
   deriveAgentReadinessIssues,
+  readLocalTrustedAgentReadinessRefresh,
   removeAgentReadinessIssues,
   removeAgentReadinessStatus,
   type LocalTrustedAgentStatusById,
@@ -64,7 +63,6 @@ import {
 } from "./services/directRequestOrchestrator";
 import {
   deleteLocalTrustedAgent,
-  getLocalTrustedAgentStatuses,
   upsertLocalTrustedAgent,
 } from "./services/localTrustedAgentRegistry";
 import { useProjectDialogState } from "./services/projectDialogState";
@@ -618,14 +616,10 @@ export function App() {
     }
 
     try {
-      const statuses = await getLocalTrustedAgentStatuses(agentIds);
+      const refresh = await readLocalTrustedAgentReadinessRefresh({ agentIds, replace: options.replace });
       if (options.isCancelled?.()) return;
-      setLocalTrustedAgentStatuses((current) =>
-        applyLocalTrustedAgentStatusMap({ currentStatuses: current, replace: options.replace, statuses }),
-      );
-      setLocalTrustedAgentIssues((current) =>
-        applyLocalTrustedAgentStatuses({ currentIssues: current, replace: options.replace, statuses }),
-      );
+      setLocalTrustedAgentStatuses((current) => refresh.applyStatuses(current));
+      setLocalTrustedAgentIssues((current) => refresh.applyIssues(current));
     } catch {
       if (options.isCancelled?.()) return;
       if (options.replace) {

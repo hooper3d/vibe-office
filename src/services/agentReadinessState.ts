@@ -1,6 +1,6 @@
 import { getProviderSetupIssue } from "../domain/providerSetup";
 import type { AgentInstance } from "../domain/types";
-import type { LocalTrustedAgentSafeStatus } from "./localTrustedAgentRegistry";
+import { getLocalTrustedAgentStatuses, type LocalTrustedAgentSafeStatus } from "./localTrustedAgentRegistry";
 
 export type AgentReadinessIssuesById = Record<string, string[]>;
 export type LocalTrustedAgentStatusById = Record<string, LocalTrustedAgentSafeStatus>;
@@ -46,6 +46,28 @@ export function applyLocalTrustedAgentStatuses({
 }) {
   const nextIssues = Object.fromEntries(statuses.map((status) => [status.id, status.issues]));
   return replace ? nextIssues : { ...currentIssues, ...nextIssues };
+}
+
+export async function readLocalTrustedAgentReadinessRefresh({
+  agentIds,
+  replace,
+  readStatuses = getLocalTrustedAgentStatuses,
+}: {
+  agentIds: string[];
+  replace?: boolean;
+  readStatuses?: (agentIds: string[]) => Promise<LocalTrustedAgentSafeStatus[]>;
+}) {
+  const statuses = await readStatuses(agentIds);
+
+  return {
+    applyIssues(currentIssues: AgentReadinessIssuesById) {
+      return applyLocalTrustedAgentStatuses({ currentIssues, replace, statuses });
+    },
+    applyStatuses(currentStatuses: LocalTrustedAgentStatusById) {
+      return applyLocalTrustedAgentStatusMap({ currentStatuses, replace, statuses });
+    },
+    statuses,
+  };
 }
 
 export function removeAgentReadinessIssues(currentIssues: AgentReadinessIssuesById, agentId: string) {

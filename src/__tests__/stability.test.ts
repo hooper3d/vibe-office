@@ -72,6 +72,7 @@ import {
   applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
   deriveAgentReadinessIssues,
+  readLocalTrustedAgentReadinessRefresh,
   removeAgentReadinessIssues,
   removeAgentReadinessStatus,
 } from "../services/agentReadinessState";
@@ -1035,6 +1036,42 @@ test("agent readiness state applies status refreshes and removes deleted agents"
   };
   assert.deepEqual(removeAgentReadinessStatus(statuses, "agent-b"), {
     "agent-a": statuses["agent-a"],
+  });
+});
+
+test("agent readiness refresh reads safe statuses and applies UI maps", async () => {
+  const requestedAgentIds: string[][] = [];
+  const refresh = await readLocalTrustedAgentReadinessRefresh({
+    agentIds: ["agent-a"],
+    async readStatuses(agentIds) {
+      requestedAgentIds.push(agentIds);
+      return [
+        {
+          id: "agent-a",
+          runtimeProvider: "openai",
+          model: "deepseek-chat",
+          hasCredential: true,
+          registered: true,
+          issues: [],
+        },
+      ];
+    },
+  });
+
+  assert.deepEqual(requestedAgentIds, [["agent-a"]]);
+  assert.deepEqual(refresh.applyIssues({ "agent-b": ["stale"] }), {
+    "agent-a": [],
+    "agent-b": ["stale"],
+  });
+  assert.deepEqual(refresh.applyStatuses({}), {
+    "agent-a": {
+      id: "agent-a",
+      runtimeProvider: "openai",
+      model: "deepseek-chat",
+      hasCredential: true,
+      registered: true,
+      issues: [],
+    },
   });
 });
 
