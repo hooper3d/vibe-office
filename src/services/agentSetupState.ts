@@ -10,6 +10,11 @@ export type AgentSetupSaveResult = {
   trustedAgent: AgentInstance;
 };
 
+export type AgentDeleteResult = {
+  agents: AgentInstance[];
+  selectedAgentId: string;
+};
+
 export function applyAgentSetupSave({
   agents,
   submittedAgent,
@@ -46,6 +51,30 @@ export function applyAgentSetupSave({
     mode: "created",
     selectedAgentId: submittedAgent.id,
     trustedAgent: submittedAgent,
+  };
+}
+
+export function applyAgentDelete({
+  agentId,
+  agents,
+  selectedAgentId,
+}: {
+  agentId: string;
+  agents: AgentInstance[];
+  selectedAgentId: string;
+}): AgentDeleteResult {
+  const remainingAgents = normalizeChief(agents.filter((agent) => agent.id !== agentId));
+  if (selectedAgentId !== agentId) {
+    return {
+      agents: remainingAgents,
+      selectedAgentId,
+    };
+  }
+
+  const fallbackAgent = remainingAgents.find((agent) => agent.isChief) ?? remainingAgents[0];
+  return {
+    agents: remainingAgents,
+    selectedAgentId: fallbackAgent?.id ?? "",
   };
 }
 

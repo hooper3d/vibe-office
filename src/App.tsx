@@ -29,12 +29,13 @@ import { getUserFacingAgentError } from "./services/agentErrorText";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { readAvatarFile } from "./services/avatarFile";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
-import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
+import { applyAgentDelete, applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
 import {
   applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
   deriveAgentReadinessIssues,
   removeAgentReadinessIssues,
+  removeAgentReadinessStatus,
   type LocalTrustedAgentStatusById,
 } from "./services/agentReadinessState";
 import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
@@ -663,17 +664,11 @@ export function App() {
     void deleteLocalTrustedAgent(agentId).catch(() => {
       // A stale local registry entry is less harmful than interrupting the delete UI flow.
     });
-    const remainingAgents = normalizeChief(agents.filter((agent) => agent.id !== agentId));
-    const fallbackAgent = remainingAgents.find((agent) => agent.isChief) ?? remainingAgents[0];
-    setAgents(remainingAgents);
+    const result = applyAgentDelete({ agentId, agents, selectedAgentId });
+    setAgents(result.agents);
     setLocalTrustedAgentIssues((current) => removeAgentReadinessIssues(current, agentId));
-    setLocalTrustedAgentStatuses((current) => {
-      const { [agentId]: _removedStatus, ...remainingStatuses } = current;
-      return remainingStatuses;
-    });
-    if (selectedAgentId === agentId) {
-      setSelectedAgentId(fallbackAgent?.id ?? "");
-    }
+    setLocalTrustedAgentStatuses((current) => removeAgentReadinessStatus(current, agentId));
+    if (result.selectedAgentId !== selectedAgentId) setSelectedAgentId(result.selectedAgentId);
     projectDialog.clearConfirmAction();
   }
 

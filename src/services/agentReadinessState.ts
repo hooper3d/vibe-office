@@ -52,3 +52,8 @@ export function removeAgentReadinessIssues(currentIssues: AgentReadinessIssuesBy
   const { [agentId]: _removedIssues, ...remainingIssues } = currentIssues;
   return remainingIssues;
 }
+
+export function removeAgentReadinessStatus(currentStatuses: LocalTrustedAgentStatusById, agentId: string) {
+  const { [agentId]: _removedStatus, ...remainingStatuses } = currentStatuses;
+  return remainingStatuses;
+}

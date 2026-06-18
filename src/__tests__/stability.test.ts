@@ -59,12 +59,13 @@ import {
 } from "../services/agentHttpTransport";
 import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/hermesA2AAdapter";
 import { A2AClient } from "../services/a2aClient";
-import { applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
+import { applyAgentDelete, applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
 import {
   applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
   deriveAgentReadinessIssues,
   removeAgentReadinessIssues,
+  removeAgentReadinessStatus,
 } from "../services/agentReadinessState";
 import { loadConfiguredAgents, saveConfiguredAgents } from "../services/agentStorage";
 import {
@@ -788,6 +789,44 @@ test("agent setup save deduplicates providers and keeps one chief", () => {
   assert.equal(result.agents[1].apiKey, undefined);
 });
 
+test("agent delete state removes agents and falls back to the remaining chief", () => {
+  const chief: AgentInstance = {
+    ...agent,
+    id: "agent-chief-delete",
+    officeRole: "chief",
+    isChief: true,
+  };
+  const operator: AgentInstance = {
+    ...participant,
+    id: "agent-operator-keep",
+    officeRole: "operator",
+    isChief: false,
+  };
+  const writer: AgentInstance = {
+    ...participant,
+    id: "agent-writer-keep",
+    officeRole: "writer",
+    isChief: false,
+  };
+
+  const selectedDeleted = applyAgentDelete({
+    agentId: chief.id,
+    agents: [chief, operator, writer],
+    selectedAgentId: chief.id,
+  });
+  assert.deepEqual(selectedDeleted.agents.map((item) => item.id), [operator.id, writer.id]);
+  assert.equal(selectedDeleted.agents[0].isChief, false);
+  assert.equal(selectedDeleted.selectedAgentId, operator.id);
+
+  const selectedKept = applyAgentDelete({
+    agentId: writer.id,
+    agents: [chief, operator, writer],
+    selectedAgentId: operator.id,
+  });
+  assert.deepEqual(selectedKept.agents.map((item) => item.id), [chief.id, operator.id]);
+  assert.equal(selectedKept.selectedAgentId, operator.id);
+});
+
 test("agent readiness state merges local trusted and static setup issues", () => {
   const minimaxAgent: AgentInstance = {
     ...agent,
@@ -832,6 +871,28 @@ test("agent readiness state applies status refreshes and removes deleted agents"
   });
   assert.deepEqual(replaced, { "agent-c": [] });
   assert.deepEqual(removeAgentReadinessIssues(merged, "agent-b"), { "agent-a": ["fresh"] });
+
+  const statuses = {
+    "agent-a": {
+      id: "agent-a",
+      runtimeProvider: "openai" as const,
+      model: "model-a",
+      hasCredential: true,
+      registered: true,
+      issues: [],
+    },
+    "agent-b": {
+      id: "agent-b",
+      runtimeProvider: "anthropic" as const,
+      model: "model-b",
+      hasCredential: false,
+      registered: true,
+      issues: ["stale"],
+    },
+  };
+  assert.deepEqual(removeAgentReadinessStatus(statuses, "agent-b"), {
+    "agent-a": statuses["agent-a"],
+  });
 });
 
 test("agent chief normalization preserves legacy chief fallback", () => {
