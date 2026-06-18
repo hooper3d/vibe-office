@@ -49,7 +49,7 @@ import {
   projects as seedProjects,
 } from "./domain/seedData";
 import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "./domain/projectScope";
-import type { AgentInstance, AgentOfficeRole, AgentStatus, Project } from "./domain/types";
+import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -796,7 +796,10 @@ export function App() {
 
     const normalizedEndpoint = newAgent.endpoint.replace(/\/$/, "");
     const duplicateAgent = agents.find(
-      (agent) => agent.endpoint.replace(/\/$/, "") === normalizedEndpoint && agent.model === newAgent.model,
+      (agent) =>
+        agent.endpoint.replace(/\/$/, "") === normalizedEndpoint &&
+        agent.model === newAgent.model &&
+        (agent.runtimeProvider ?? "hermes") === (newAgent.runtimeProvider ?? "hermes"),
     );
 
     if (duplicateAgent) {
@@ -2810,11 +2813,29 @@ function mapA2AState(state: A2ATaskState): WorkState {
 
 function createA2ACompatibilityMetadata(result: HermesConnectionTestResult): A2ACompatibilityMetadata {
   const nativeA2A = result.mode === "native-a2a";
+  const providerInterfaces: Record<HermesConnectionTestResult["mode"], string[]> = {
+    "native-a2a": ["message/send", "tasks/get", "tasks/cancel"],
+    "hermes-adapter": ["chat/completions"],
+    "openai-compatible": ["chat/completions"],
+    "anthropic-compatible": ["messages"],
+  };
+  const providerTransport: Record<HermesConnectionTestResult["mode"], string> = {
+    "native-a2a": "json-rpc/http",
+    "hermes-adapter": "hermes-compatible-http",
+    "openai-compatible": "openai-compatible-http",
+    "anthropic-compatible": "anthropic-compatible-http",
+  };
+  const providerSelectedInterface: Record<HermesConnectionTestResult["mode"], string> = {
+    "native-a2a": "message/send + tasks/get",
+    "hermes-adapter": "Hermes compatibility",
+    "openai-compatible": "OpenAI chat completions",
+    "anthropic-compatible": "Anthropic messages",
+  };
   return {
     a2aProtocolVersion: result.card.protocolVersion ?? (nativeA2A ? "unknown" : "compatibility"),
-    a2aTransportBinding: nativeA2A ? "json-rpc/http" : "openai-compatible-http",
-    a2aSupportedInterfaces: nativeA2A ? ["message/send", "tasks/get", "tasks/cancel"] : ["chat/completions"],
-    a2aSelectedInterface: nativeA2A ? "message/send + tasks/get" : "chat/completions compatibility",
+    a2aTransportBinding: providerTransport[result.mode],
+    a2aSupportedInterfaces: providerInterfaces[result.mode],
+    a2aSelectedInterface: providerSelectedInterface[result.mode],
     a2aLastCompatibilityCheckAt: new Date().toISOString(),
     supportsTaskLifecycle: nativeA2A,
     supportsCancel: nativeA2A ? undefined : false,
@@ -3138,11 +3159,23 @@ function getUserFacingAgentError(error: unknown) {
 }
 
 function sanitizeAgentErrorText(text: string) {
-  if (text.includes("Hermes chat completion timed out")) {
+  if (text.includes("Agent did not respond before the timeout") || text.includes("Hermes chat completion timed out")) {
     return "Agent did not respond before the timeout. You can retry, or increase this agent's timeout in Advanced settings.";
+  }
+  if (text.includes("OpenAI-compatible chat failed")) {
+    return text.replace("OpenAI-compatible chat failed", "Agent request failed");
+  }
+  if (text.includes("Anthropic-compatible message failed")) {
+    return text.replace("Anthropic-compatible message failed", "Agent request failed");
   }
   if (text.includes("Hermes chat completion failed")) {
     return text.replace("Hermes chat completion failed", "Agent request failed");
+  }
+  if (text.includes("OpenAI-compatible chat auth failed")) {
+    return text.replace("OpenAI-compatible chat auth failed", "Agent authentication failed");
+  }
+  if (text.includes("Anthropic-compatible message auth failed")) {
+    return text.replace("Anthropic-compatible message auth failed", "Agent authentication failed");
   }
   if (text.includes("Hermes chat completion auth failed")) {
     return text.replace("Hermes chat completion auth failed", "Agent authentication failed");
@@ -4335,6 +4368,8 @@ function OfficeRoleSelector({ selectedRole }: { selectedRole?: AgentOfficeRole }
 function getRuntimeRoot(endpoint: string) {
   const trimmed = endpoint.trim().replace(/\/+$/, "");
   return trimmed
+    .replace(/\/v1\/messages$/i, "")
+    .replace(/\/messages$/i, "")
     .replace(/\/v1\/chat\/completions$/i, "")
     .replace(/\/chat\/completions$/i, "")
     .replace(/\/v1$/i, "");
@@ -4375,6 +4410,7 @@ function SetupWizard({
   const profileName = profileAgent?.name ?? "New Agent";
   const profileNote = profileAgent?.role ?? "";
   const profileOfficeRole = profileAgent?.officeRole ?? (profileAgent ? (profileAgent.isChief ? "chief" : "operator") : undefined);
+  const profileRuntimeProvider: AgentRuntimeProvider = profileAgent?.runtimeProvider ?? "hermes";
   const profileTags = (profileAgent?.tags ?? []).filter((tag) => !NON_CAPABILITY_TAGS.includes(tag));
   const capabilityOptions = Array.from(new Set([...CAPABILITY_TAG_OPTIONS, ...profileTags]));
   const defaultRuntimeBaseUrl = profileAgent?.endpoint ?? "";
@@ -4505,8 +4541,10 @@ function SetupWizard({
                     <div className="form-grid runtime-user-fields">
                       <label>
                         Provider type
-                        <select defaultValue="hermes" aria-label="Runtime type">
-                          <option value="hermes">OpenAI-compatible</option>
+                        <select name="runtimeProvider" defaultValue={profileRuntimeProvider} aria-label="Runtime type">
+                          <option value="hermes">Hermes</option>
+                          <option value="openai">OpenAI</option>
+                          <option value="anthropic">Anthropic</option>
                         </select>
                       </label>
                       <label>

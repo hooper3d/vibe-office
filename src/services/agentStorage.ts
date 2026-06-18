@@ -1,4 +1,4 @@
-import type { AgentInstance, AgentOfficeRole } from "../domain/types";
+import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "../domain/types";
 
 const STORAGE_KEY = "vibe-office.configured-agents";
 
@@ -87,6 +87,7 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     apiKey: typeof safeAgent.apiKey === "string" ? safeAgent.apiKey : undefined,
     avatarUrl: typeof safeAgent.avatarUrl === "string" ? safeAgent.avatarUrl : undefined,
     ipAddress: typeof safeAgent.ipAddress === "string" ? safeAgent.ipAddress : undefined,
+    runtimeProvider: normalizeRuntimeProvider(safeAgent.runtimeProvider, safeAgent),
     officeRole: normalizeOfficeRole(safeAgent.officeRole, safeAgent.isChief),
     timeoutSeconds: typeof safeAgent.timeoutSeconds === "number" && safeAgent.timeoutSeconds > 0 ? safeAgent.timeoutSeconds : undefined,
     a2aProtocolVersion: typeof safeAgent.a2aProtocolVersion === "string" ? safeAgent.a2aProtocolVersion : undefined,
@@ -100,6 +101,17 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     supportsTaskLifecycle: typeof safeAgent.supportsTaskLifecycle === "boolean" ? safeAgent.supportsTaskLifecycle : undefined,
     supportsCancel: typeof safeAgent.supportsCancel === "boolean" ? safeAgent.supportsCancel : undefined,
   };
+}
+
+function normalizeRuntimeProvider(value: unknown, agent: AgentInstance): AgentRuntimeProvider {
+  if (value === "hermes" || value === "openai" || value === "anthropic") return value;
+  if (agent.a2aTransportBinding === "anthropic-compatible-http" || agent.a2aSelectedInterface?.includes("messages")) {
+    return "anthropic";
+  }
+  if (agent.a2aTransportBinding === "openai-compatible-http" || agent.a2aSelectedInterface?.includes("chat/completions")) {
+    return "openai";
+  }
+  return "hermes";
 }
 
 function normalizeOfficeRole(value: unknown, isChief?: boolean): AgentOfficeRole {

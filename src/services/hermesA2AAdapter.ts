@@ -1,5 +1,5 @@
 import type { A2AAgentCard, A2AMessage, A2ATask } from "../domain/a2a";
-import type { AgentInstance, Project } from "../domain/types";
+import type { AgentInstance, AgentRuntimeProvider, Project } from "../domain/types";
 import { A2AClient } from "./a2aClient";
 
 export type ChatHistoryMessage = {
@@ -14,7 +14,7 @@ export type HermesA2AAdapterOptions = {
 
 export type HermesConnectionTestResult = {
   card: A2AAgentCard;
-  mode: "native-a2a" | "hermes-adapter";
+  mode: "native-a2a" | "hermes-adapter" | "openai-compatible" | "anthropic-compatible";
 };
 
 export class HermesA2AAdapter {
@@ -25,7 +25,10 @@ export class HermesA2AAdapter {
   constructor(options: HermesA2AAdapterOptions) {
     this.agent = options.agent;
     this.timeoutMs = (options.agent.timeoutSeconds ?? 60) * 1000;
-    const nativeA2A = options.agent.a2aTransportBinding === "json-rpc/http" && options.agent.a2aProtocolVersion !== "compatibility";
+    const nativeA2A =
+      this.runtimeProvider() === "hermes" &&
+      options.agent.a2aTransportBinding === "json-rpc/http" &&
+      options.agent.a2aProtocolVersion !== "compatibility";
     this.client = new A2AClient({
       endpoint: options.agent.a2aEndpoint,
       apiKey: options.apiKey ?? options.agent.apiKey,
@@ -44,21 +47,47 @@ export class HermesA2AAdapter {
   }
 
   async testConnection(): Promise<HermesConnectionTestResult> {
+    const provider = this.runtimeProvider();
+
+    if (provider === "openai") {
+      await this.validateOpenAIChat();
+      return {
+        card: await this.getHermesBackedAgentCard("OpenAI-compatible"),
+        mode: "openai-compatible",
+      };
+    }
+
+    if (provider === "anthropic") {
+      await this.validateAnthropicMessages();
+      return {
+        card: await this.getHermesBackedAgentCard("Anthropic-compatible"),
+        mode: "anthropic-compatible",
+      };
+    }
+
     try {
       return {
         card: await this.client.getAgentCard(this.agent.agentCardUrl),
         mode: "native-a2a",
       };
     } catch {
-      await this.validateHermesChat();
+      await this.validateOpenAIChat();
       return {
-        card: await this.getHermesBackedAgentCard(),
+        card: await this.getHermesBackedAgentCard("Hermes-compatible"),
         mode: "hermes-adapter",
       };
     }
   }
 
   async sendProjectMessage(project: Project, text: string, history: ChatHistoryMessage[] = []) {
+    const provider = this.runtimeProvider();
+    if (provider === "openai") {
+      return this.sendOpenAIChatAsA2ATask(project, text, history);
+    }
+    if (provider === "anthropic") {
+      return this.sendAnthropicMessagesAsA2ATask(project, text, history);
+    }
+
     const message: A2AMessage = {
       messageId: crypto.randomUUID(),
       role: "user",
@@ -89,6 +118,14 @@ export class HermesA2AAdapter {
 
   async sendFreeChatMessage(text: string, history: ChatHistoryMessage[] = []) {
     const contextId = `free-chat:${this.agent.id}`;
+    const provider = this.runtimeProvider();
+    if (provider === "openai") {
+      return this.sendOpenAIChatAsFreeChatTask(contextId, text, history);
+    }
+    if (provider === "anthropic") {
+      return this.sendAnthropicMessagesAsFreeChatTask(contextId, text, history);
+    }
+
     const message: A2AMessage = {
       messageId: crypto.randomUUID(),
       role: "user",
@@ -127,10 +164,14 @@ export class HermesA2AAdapter {
     return this.client.cancelTask(taskId, contextId);
   }
 
-  private async getHermesBackedAgentCard(): Promise<A2AAgentCard> {
+  private runtimeProvider(): AgentRuntimeProvider {
+    return this.agent.runtimeProvider ?? "hermes";
+  }
+
+  private async getHermesBackedAgentCard(providerLabel = "Model-compatible"): Promise<A2AAgentCard> {
     return {
       name: this.agent.name,
-      description: this.agent.role,
+      description: this.agent.role || providerLabel,
       url: this.agent.a2aEndpoint,
       version: "0.1.0",
       protocolVersion: "1.0",
@@ -148,7 +189,7 @@ export class HermesA2AAdapter {
   }
 
   private async sendHermesChatAsA2ATask(project: Project, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
-    return this.sendHermesChatCompletionAsTask({
+    return this.sendOpenAIChatCompletionAsTask({
       contextId: project.namespace,
       text,
       history,
@@ -162,7 +203,7 @@ export class HermesA2AAdapter {
   }
 
   private async sendHermesChatAsFreeChatTask(contextId: string, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
-    return this.sendHermesChatCompletionAsTask({
+    return this.sendOpenAIChatCompletionAsTask({
       contextId,
       text,
       history,
@@ -174,7 +215,34 @@ export class HermesA2AAdapter {
     });
   }
 
-  private async sendHermesChatCompletionAsTask({
+  private async sendOpenAIChatAsA2ATask(project: Project, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
+    return this.sendOpenAIChatCompletionAsTask({
+      contextId: project.namespace,
+      text,
+      history,
+      systemContent: `Vibe Office project namespace: ${project.namespace}. Keep this task scoped to this project.`,
+      metadata: {
+        adapter: "openai-compatible",
+        responseKind: "direct-message",
+        projectId: project.id,
+      },
+    });
+  }
+
+  private async sendOpenAIChatAsFreeChatTask(contextId: string, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
+    return this.sendOpenAIChatCompletionAsTask({
+      contextId,
+      text,
+      history,
+      systemContent: "Context: Vibe Office Free Chat.",
+      metadata: {
+        adapter: "openai-compatible",
+        responseKind: "free-chat",
+      },
+    });
+  }
+
+  private async sendOpenAIChatCompletionAsTask({
     contextId,
     text,
     history,
@@ -202,9 +270,9 @@ export class HermesA2AAdapter {
         content: text,
       },
     ];
-    const response = await fetchWithTimeout(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
+    const response = await fetchWithTimeout(toHermesProxyUrl(toOpenAIChatCompletionsUrl(this.agent.endpoint)), {
       method: "POST",
-      headers: this.buildHermesHeaders(true),
+      headers: this.buildOpenAIHeaders(true),
       body: JSON.stringify({
         model: this.agent.model,
         messages,
@@ -212,7 +280,7 @@ export class HermesA2AAdapter {
     }, this.timeoutMs, "Agent did not respond before the timeout.");
 
     if (!response.ok) {
-      throw new Error(`Hermes chat completion failed: ${response.status}${await readErrorSuffix(response)}`);
+      throw new Error(`OpenAI-compatible chat failed: ${response.status}${await readErrorSuffix(response)}`);
     }
 
     const payload = (await response.json()) as {
@@ -222,7 +290,7 @@ export class HermesA2AAdapter {
         };
       }>;
     };
-    const content = payload.choices?.[0]?.message?.content ?? "Hermes returned an empty response.";
+    const content = payload.choices?.[0]?.message?.content ?? "OpenAI-compatible provider returned an empty response.";
     const now = new Date().toISOString();
 
     return {
@@ -247,10 +315,111 @@ export class HermesA2AAdapter {
     };
   }
 
-  private async validateHermesChat() {
-    const response = await fetchWithTimeout(toHermesProxyUrl(`${this.agent.endpoint.replace(/\/$/, "")}/chat/completions`), {
+  private async sendAnthropicMessagesAsA2ATask(project: Project, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
+    return this.sendAnthropicMessagesAsTask({
+      contextId: project.namespace,
+      text,
+      history,
+      systemContent: `Vibe Office project namespace: ${project.namespace}. Keep this task scoped to this project.`,
+      metadata: {
+        adapter: "anthropic-compatible",
+        responseKind: "direct-message",
+        projectId: project.id,
+      },
+    });
+  }
+
+  private async sendAnthropicMessagesAsFreeChatTask(contextId: string, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
+    return this.sendAnthropicMessagesAsTask({
+      contextId,
+      text,
+      history,
+      systemContent: "Context: Vibe Office Free Chat.",
+      metadata: {
+        adapter: "anthropic-compatible",
+        responseKind: "free-chat",
+      },
+    });
+  }
+
+  private async sendAnthropicMessagesAsTask({
+    contextId,
+    text,
+    history,
+    systemContent,
+    metadata,
+  }: {
+    contextId: string;
+    text: string;
+    history: ChatHistoryMessage[];
+    systemContent?: string;
+    metadata: Record<string, unknown>;
+  }): Promise<A2ATask> {
+    const response = await fetchWithTimeout(toHermesProxyUrl(toAnthropicMessagesUrl(this.agent.endpoint)), {
       method: "POST",
-      headers: this.buildHermesHeaders(true),
+      headers: this.buildAnthropicHeaders(true),
+      body: JSON.stringify({
+        model: this.agent.model,
+        max_tokens: 4096,
+        ...(systemContent ? { system: systemContent } : {}),
+        messages: [
+          ...history.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          {
+            role: "user" as const,
+            content: text,
+          },
+        ],
+      }),
+    }, this.timeoutMs, "Agent did not respond before the timeout.");
+
+    if (!response.ok) {
+      throw new Error(`Anthropic-compatible message failed: ${response.status}${await readErrorSuffix(response)}`);
+    }
+
+    const payload = (await response.json()) as {
+      content?: Array<{
+        type?: string;
+        text?: string;
+        thinking?: string;
+      }>;
+    };
+    const content =
+      payload.content
+        ?.filter((part) => part.type === "text" && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("\n\n")
+        .trim() || "Anthropic-compatible provider returned an empty response.";
+    const now = new Date().toISOString();
+
+    return {
+      id: crypto.randomUUID(),
+      contextId,
+      status: {
+        state: "completed",
+        timestamp: now,
+        message: {
+          messageId: crypto.randomUUID(),
+          role: "agent",
+          contextId,
+          parts: [
+            {
+              kind: "text",
+              text: content,
+            },
+          ],
+        },
+      },
+      metadata,
+    };
+  }
+
+  private async validateOpenAIChat() {
+    const response = await fetchWithTimeout(toHermesProxyUrl(toOpenAIChatCompletionsUrl(this.agent.endpoint)), {
+      method: "POST",
+      headers: this.buildOpenAIHeaders(true),
       body: JSON.stringify({
         model: this.agent.model,
         messages: [
@@ -264,7 +433,28 @@ export class HermesA2AAdapter {
     }, this.timeoutMs, "Agent connection test timed out.");
 
     if (!response.ok) {
-      throw new Error(`Hermes chat completion auth failed: ${response.status}${await readErrorSuffix(response)}`);
+      throw new Error(`OpenAI-compatible chat auth failed: ${response.status}${await readErrorSuffix(response)}`);
+    }
+  }
+
+  private async validateAnthropicMessages() {
+    const response = await fetchWithTimeout(toHermesProxyUrl(toAnthropicMessagesUrl(this.agent.endpoint)), {
+      method: "POST",
+      headers: this.buildAnthropicHeaders(true),
+      body: JSON.stringify({
+        model: this.agent.model,
+        max_tokens: 8,
+        messages: [
+          {
+            role: "user",
+            content: "Reply with exactly: ok",
+          },
+        ],
+      }),
+    }, this.timeoutMs, "Agent connection test timed out.");
+
+    if (!response.ok) {
+      throw new Error(`Anthropic-compatible message auth failed: ${response.status}${await readErrorSuffix(response)}`);
     }
   }
 
@@ -273,7 +463,7 @@ export class HermesA2AAdapter {
     return `${endpoint.protocol}//${endpoint.host}`;
   }
 
-  private buildHermesHeaders(isJson: boolean) {
+  private buildOpenAIHeaders(isJson: boolean) {
     const headers: Record<string, string> = {
       Accept: "application/json",
     };
@@ -288,6 +478,37 @@ export class HermesA2AAdapter {
 
     return headers;
   }
+
+  private buildAnthropicHeaders(isJson: boolean) {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "anthropic-version": "2023-06-01",
+    };
+
+    if (isJson) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    if (this.agent.apiKey) {
+      headers["x-api-key"] = this.agent.apiKey;
+      headers.Authorization = `Bearer ${this.agent.apiKey}`;
+    }
+
+    return headers;
+  }
+}
+
+function toOpenAIChatCompletionsUrl(endpoint: string) {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
+  return `${trimmed}/chat/completions`;
+}
+
+function toAnthropicMessagesUrl(endpoint: string) {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (/\/messages$/i.test(trimmed)) return trimmed;
+  if (/\/v1$/i.test(trimmed)) return `${trimmed}/messages`;
+  return `${trimmed}/v1/messages`;
 }
 
 function toHermesProxyUrl(url: string) {

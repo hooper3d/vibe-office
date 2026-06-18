@@ -1,4 +1,4 @@
-import type { AgentInstance, AgentOfficeRole } from "./types";
+import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "./types";
 
 export function createAgentFromHermesSetup(form: FormData): AgentInstance {
   const name = readFormValue(form, "name", "New Agent");
@@ -18,10 +18,17 @@ export function createAgentFromHermesSetup(form: FormData): AgentInstance {
     avatarUrl: readOptionalFormValue(form, "avatarUrl"),
     ipAddress: readOptionalFormValue(form, "ipAddress"),
     model,
+    runtimeProvider: readRuntimeProvider(form),
     timeoutSeconds: readTimeoutSeconds(form),
     tags: normalizeTags(readFormValues(form, "tags")),
     status: "online",
   };
+}
+
+function readRuntimeProvider(form: FormData): AgentRuntimeProvider {
+  const value = readFormValue(form, "runtimeProvider", "hermes");
+  if (value === "openai" || value === "anthropic") return value;
+  return "hermes";
 }
 
 function readOfficeRole(form: FormData): AgentOfficeRole {

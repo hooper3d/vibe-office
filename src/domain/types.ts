@@ -1,5 +1,6 @@
 export type AgentStatus = "online" | "checking" | "offline";
 export type AgentOfficeRole = "chief" | "builder" | "writer" | "operator";
+export type AgentRuntimeProvider = "hermes" | "openai" | "anthropic";
 
 export type AgentInstance = {
   id: string;
@@ -14,6 +15,7 @@ export type AgentInstance = {
   avatarUrl?: string;
   ipAddress?: string;
   model: string;
+  runtimeProvider?: AgentRuntimeProvider;
   timeoutSeconds?: number;
   tags: string[];
   status: AgentStatus;
