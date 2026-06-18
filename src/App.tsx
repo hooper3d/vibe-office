@@ -59,6 +59,7 @@ import {
 } from "./domain/requestLifecycle";
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
+import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, getA2ATaskTimestamp, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -1049,21 +1050,23 @@ export function App() {
   }) {
     try {
       const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text, chatHistory);
-      const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
-      const completedAt = getA2ATaskTimestamp(remoteTask);
+      const result = await executeFreeChatRequest({
+        agent: targetAgent,
+        text,
+        history: chatHistory,
+      });
 
       setMessages((current) => markConversationMessageSent(current, userMessageId));
 
       setMessages((current) => [
         ...current,
         createAgentMessageFromTask({
-          task: remoteTask,
+          task: result.task,
           conversationId: conversation.id,
           projectId: FREE_CHAT_PROJECT_ID,
           agentId: targetAgent.id,
-          fallbackText: responseSummary,
-          createdAt: completedAt,
+          fallbackText: result.summary,
+          createdAt: result.completedAt,
         }),
       ]);
       setConversations((current) =>
@@ -1071,7 +1074,7 @@ export function App() {
           item.id === conversation.id
             ? {
                 ...item,
-                updatedAt: completedAt,
+                updatedAt: result.completedAt,
               }
             : item,
         ),
@@ -1316,9 +1319,16 @@ export function App() {
   }) {
     try {
       const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(project, agentRequestText, chatHistory);
-      const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a task update.`;
-      const completedAt = getA2ATaskTimestamp(remoteTask);
+      const result = await executeProjectAgentRequest({
+        agent: targetAgent,
+        project,
+        text: agentRequestText,
+        history: chatHistory,
+        fallbackSummary: `${targetAgent.name} returned a task update.`,
+      });
+      const remoteTask = result.task;
+      const responseSummary = result.summary;
+      const completedAt = result.completedAt;
       const mediaArtifact = createMediaArtifactFromText({
         projectId: project.id,
         taskId: remoteTask.id || runId,
