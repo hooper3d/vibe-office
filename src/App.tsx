@@ -59,6 +59,7 @@ import {
 } from "./domain/requestLifecycle";
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
+import { createAgentMessageFromTask, extractA2ATaskText, getA2ATaskTimestamp, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
@@ -1050,23 +1051,20 @@ export function App() {
       const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
       const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text, chatHistory);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
-      const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
+      const completedAt = getA2ATaskTimestamp(remoteTask);
 
       setMessages((current) => markConversationMessageSent(current, userMessageId));
 
       setMessages((current) => [
         ...current,
-        {
-          id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
+        createAgentMessageFromTask({
+          task: remoteTask,
           conversationId: conversation.id,
           projectId: FREE_CHAT_PROJECT_ID,
-          role: "agent",
           agentId: targetAgent.id,
-          contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
-          a2aMessageId: remoteTask.status.message?.messageId,
-          status: "sent",
+          fallbackText: responseSummary,
           createdAt: completedAt,
-        },
+        }),
       ]);
       setConversations((current) =>
         current.map((item) =>
@@ -1320,13 +1318,14 @@ export function App() {
       const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
       const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(project, agentRequestText, chatHistory);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a task update.`;
+      const completedAt = getA2ATaskTimestamp(remoteTask);
       const mediaArtifact = createMediaArtifactFromText({
         projectId: project.id,
         taskId: remoteTask.id || runId,
         agentId: targetAgent.id,
         name: `${targetAgent.name} media`,
         text: responseSummary,
-        createdAt: remoteTask.status.timestamp ?? new Date().toISOString(),
+        createdAt: completedAt,
       });
       const returnedArtifacts = [
         ...mapA2AArtifacts(remoteTask, project.id, targetAgent.id),
@@ -1336,24 +1335,20 @@ export function App() {
       const mappedState = mapA2AState(remoteTask.status.state);
       const shouldCreateTask = !isDirectMessageResponse(remoteTask);
       const taskId = shouldCreateTask ? remoteTask.id || crypto.randomUUID() : undefined;
-      const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
 
       setMessages((current) => markConversationMessageSent(current, userMessageId, { runId }));
 
       if (responseSummary) {
-        const agentMessage: ConversationMessage = {
-          id: remoteTask.status.message?.messageId ?? crypto.randomUUID(),
+        const agentMessage = createAgentMessageFromTask({
+          task: remoteTask,
           conversationId: conversation.id,
           projectId: project.id,
-          role: "agent",
           agentId: targetAgent.id,
-          contentParts: remoteTask.status.message?.parts ?? createTextParts(responseSummary),
-          a2aMessageId: remoteTask.status.message?.messageId,
+          fallbackText: responseSummary,
           taskId,
           runId,
-          status: "sent",
           createdAt: completedAt,
-        };
+        });
         setMessages((current) => [...current, agentMessage]);
       }
 
@@ -1643,23 +1638,20 @@ export function App() {
     try {
       const chiefPlanTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, chiefRequestText);
       const chiefPlan = extractA2ATaskText(chiefPlanTask) ?? `${targetAgent.name} returned a Chief task plan.`;
-      const chiefPlanAt = chiefPlanTask.status.timestamp ?? new Date().toISOString();
+      const chiefPlanAt = getA2ATaskTimestamp(chiefPlanTask);
 
       setMessages((current) => markConversationMessageSent(current, userMessageId));
 
-      const agentMessage: ConversationMessage = {
-        id: chiefPlanTask.status.message?.messageId ?? crypto.randomUUID(),
+      const agentMessage = createAgentMessageFromTask({
+        task: chiefPlanTask,
         conversationId: conversation.id,
         projectId: selectedWorkspaceProject.id,
-        role: "agent",
         agentId: targetAgent.id,
-        contentParts: chiefPlanTask.status.message?.parts ?? createTextParts(chiefPlan),
-        a2aMessageId: chiefPlanTask.status.message?.messageId,
+        fallbackText: chiefPlan,
         taskId,
         runId,
-        status: "sent",
         createdAt: chiefPlanAt,
-      };
+      });
       setMessages((current) => [...current, agentMessage]);
 
       const chiefMediaArtifact = createMediaArtifactFromText({
@@ -1811,20 +1803,17 @@ export function App() {
         const aggregateTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(selectedWorkspaceProject, aggregateRequestText);
         finalSummary = extractA2ATaskText(aggregateTask) ?? `${targetAgent.name} aggregated the participant results.`;
         finalState = mapA2AState(aggregateTask.status.state);
-        finalAt = aggregateTask.status.timestamp ?? finalAt;
-        const aggregateMessage: ConversationMessage = {
-          id: aggregateTask.status.message?.messageId ?? crypto.randomUUID(),
+        finalAt = getA2ATaskTimestamp(aggregateTask);
+        const aggregateMessage = createAgentMessageFromTask({
+          task: aggregateTask,
           conversationId: conversation.id,
           projectId: selectedWorkspaceProject.id,
-          role: "agent",
           agentId: targetAgent.id,
-          contentParts: aggregateTask.status.message?.parts ?? createTextParts(finalSummary),
-          a2aMessageId: aggregateTask.status.message?.messageId,
+          fallbackText: finalSummary,
           taskId,
           runId,
-          status: "sent",
           createdAt: finalAt,
-        };
+        });
         setMessages((current) => [...current, aggregateMessage]);
       } catch (error) {
         finalState = "failed";
@@ -2339,18 +2328,6 @@ export function App() {
   );
 }
 
-function extractA2ATaskText(task: A2ATask) {
-  const parts = task.status.message?.parts ?? [];
-  const text = parts.find((part) => part.kind === "text")?.text;
-  if (text) return text;
-
-  const artifactText = task.artifacts
-    ?.flatMap((artifact) => artifact.parts)
-    .find((part) => part.kind === "text")?.text;
-
-  return artifactText;
-}
-
 function mapA2AArtifacts(task: A2ATask, projectId: string, agentId: string): ProjectArtifact[] {
   return (task.artifacts ?? []).map((artifact, index) => {
     const text = artifact.parts.find((part) => part.kind === "text")?.text;
@@ -2842,10 +2819,6 @@ function getTaskEventDisplayLabel(label: string) {
 
 function mergeIds(first: string[], second: string[]) {
   return Array.from(new Set([...first, ...second]));
-}
-
-function isDirectMessageResponse(task: A2ATask) {
-  return task.metadata?.responseKind === "direct-message";
 }
 
 async function readAvatarFile(file?: File): Promise<{ dataUrl?: string; error?: string }> {
