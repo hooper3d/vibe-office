@@ -22,12 +22,7 @@ import type {
   ProjectRun,
   ProjectTask,
 } from "./domain/projectScope";
-import {
-  failRunForMessage,
-  failTaskRoomTaskForMessage,
-  markConversationMessageFailed,
-  markConversationMessageSending,
-} from "./domain/requestLifecycle";
+import { markConversationMessageFailed } from "./domain/requestLifecycle";
 import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError } from "./services/agentErrorText";
@@ -52,11 +47,8 @@ import {
 import { createA2ACompatibilityMetadata, HermesA2AAdapter, type A2ACompatibilityMetadata } from "./services/hermesA2AAdapter";
 import { deleteLocalTrustedAgent, stripAgentCredential, upsertLocalTrustedAgent } from "./services/localTrustedAgentRegistry";
 import { applyProjectDelete, applyProjectSave, canDeleteProject } from "./services/projectSetupState";
-import {
-  getPendingRequestMessages,
-  getRespondingAgentIds,
-  resolvePendingRequestRecovery,
-} from "./services/requestRecovery";
+import { getRespondingAgentIds } from "./services/requestRecovery";
+import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
 import {
   completeTaskRoomRetrySubmission,
   prepareDirectRetrySubmission,
@@ -350,53 +342,47 @@ export function App() {
   }, [artifacts, conversations, messages, projects, runs, tasks]);
 
   useEffect(() => {
-    const pendingMessages = getPendingRequestMessages(messages, requestStoreRef.current.activeRequestIds());
-    if (pendingMessages.length === 0) return;
+    const submission = getNextPendingRecoverySubmission({
+      activeRequestIds: requestStoreRef.current.activeRequestIds(),
+      agents,
+      freeChatProjectId: FREE_CHAT_PROJECT_ID,
+      projects,
+      state: requestStoreRef.current.snapshot(),
+    });
+    if (submission.kind === "none") return;
 
-    pendingMessages.forEach((message) => {
-      const recovery = resolvePendingRequestRecovery({
-        message,
-        conversations,
-        agents,
-        projects,
-        freeChatProjectId: FREE_CHAT_PROJECT_ID,
-      });
+    if (submission.kind === "fail") {
+      requestStoreRef.current.replace(submission.state);
+      setMessages(submission.state.messages);
+      setTasks(submission.state.tasks);
+      setRuns(submission.state.runs);
+      return;
+    }
 
-      if (recovery.kind === "fail") {
-        if (recovery.failTaskRoom) {
-          markTaskRoomMessageFailed(message, recovery.reason);
-        } else {
-          markInterruptedMessageFailed(message, recovery.reason);
-        }
-        return;
-      }
+    const trackedRequestId = requestStoreRef.current.begin(submission.message);
+    requestStoreRef.current.replace(submission.state);
+    setMessages(submission.state.messages);
 
-      const trackedRequestId = requestStoreRef.current.begin(message);
-      const preparedMessages = markConversationMessageSending(requestStoreRef.current.snapshot().messages, message.id);
-      requestStoreRef.current.sync({ messages: preparedMessages });
-      setMessages(preparedMessages);
-
-      if (recovery.kind === "free-chat") {
-        void completeFreeChatRequest({
-          conversation: recovery.conversation,
-          targetAgent: recovery.targetAgent,
-          userMessageId: message.id,
-          text: recovery.text,
-        }).finally(() => {
-          requestStoreRef.current.end(trackedRequestId);
-        });
-        return;
-      }
-
-      void resumeProjectDirectRequest({
-        message,
-        conversation: recovery.conversation,
-        project: recovery.project,
-        targetAgent: recovery.targetAgent,
-        text: recovery.text,
+    if (submission.recovery.kind === "free-chat") {
+      void completeFreeChatRequest({
+        conversation: submission.recovery.conversation,
+        targetAgent: submission.recovery.targetAgent,
+        userMessageId: submission.message.id,
+        text: submission.recovery.text,
       }).finally(() => {
         requestStoreRef.current.end(trackedRequestId);
       });
+      return;
+    }
+
+    void resumeProjectDirectRequest({
+      message: submission.message,
+      conversation: submission.recovery.conversation,
+      project: submission.recovery.project,
+      targetAgent: submission.recovery.targetAgent,
+      text: submission.recovery.text,
+    }).finally(() => {
+      requestStoreRef.current.end(trackedRequestId);
     });
   }, [agents, conversations, messages, projects]);
 
@@ -890,18 +876,6 @@ export function App() {
     const failedMessages = markConversationMessageFailed(requestStoreRef.current.snapshot().messages, message.id, reason);
     requestStoreRef.current.sync({ messages: failedMessages });
     setMessages(failedMessages);
-  }
-
-  function markTaskRoomMessageFailed(message: ConversationMessage, reason: string) {
-    const failedAt = new Date().toISOString();
-    markInterruptedMessageFailed(message, reason);
-
-    const snapshot = requestStoreRef.current.snapshot();
-    const failedTasks = failTaskRoomTaskForMessage(snapshot.tasks, message, reason, failedAt);
-    const failedRuns = failRunForMessage(snapshot.runs, message, failedAt, reason);
-    requestStoreRef.current.sync({ tasks: failedTasks, runs: failedRuns });
-    setTasks(failedTasks);
-    setRuns(failedRuns);
   }
 
   function getDirectRequestState(): DirectRequestState {

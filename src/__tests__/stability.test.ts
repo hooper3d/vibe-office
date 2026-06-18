@@ -16,6 +16,10 @@ import {
   resolveTaskRoomMessageRetry,
 } from "../services/requestRecovery";
 import {
+  applyPendingRecoveryFailure,
+  getNextPendingRecoverySubmission,
+} from "../services/requestRecoverySubmissionState";
+import {
   completeTaskRoomMessageRetry,
   prepareDirectMessageRetry,
   prepareTaskRoomMessageRetry,
@@ -313,6 +317,80 @@ test("pending recovery ignores active requests and recovers free/project direct 
     freeChatProjectId,
   });
   assert.equal(freeRecovery.kind, "free-chat");
+});
+
+test("pending recovery submission prepares ready and failed interrupted states", () => {
+  const freeConversation = conversation({
+    id: "free-conversation",
+    projectId: freeChatProjectId,
+    a2aContextId: "free-chat:agent-lucy",
+  });
+  const freeMessage = userMessage({
+    id: "free-message",
+    conversationId: freeConversation.id,
+    projectId: freeChatProjectId,
+    requestId: "free-request",
+  });
+  const freeSubmission = getNextPendingRecoverySubmission({
+    activeRequestIds: new Set(),
+    agents: [agent],
+    freeChatProjectId,
+    projects: [project],
+    state: directRequestState({
+      conversations: [freeConversation],
+      messages: [freeMessage],
+    }),
+  });
+  assert.equal(freeSubmission.kind, "ready");
+  if (freeSubmission.kind === "ready") {
+    assert.equal(freeSubmission.recovery.kind, "free-chat");
+    assert.equal(freeSubmission.message.id, "free-message");
+    assert.equal(freeSubmission.state.messages[0].status, "sending");
+  }
+
+  const missingProjectSubmission = getNextPendingRecoverySubmission({
+    activeRequestIds: new Set(),
+    agents: [agent],
+    freeChatProjectId,
+    projects: [],
+    state: directRequestState({
+      conversations: [conversation()],
+      messages: [userMessage()],
+    }),
+    now: () => at,
+  });
+  assert.equal(missingProjectSubmission.kind, "fail");
+  if (missingProjectSubmission.kind === "fail") {
+    assert.equal(missingProjectSubmission.state.messages[0].status, "failed");
+    assert.equal(missingProjectSubmission.state.tasks.length, 0);
+    assert.equal(missingProjectSubmission.state.runs.length, 0);
+  }
+
+  const taskRoomConversation = conversation({
+    mode: "task_room",
+    chiefAgentId: agent.id,
+    primaryAgentId: undefined,
+  });
+  const interruptedTaskMessage = userMessage({
+    conversationId: taskRoomConversation.id,
+    taskId: "task-1",
+    runId: "run-1",
+  });
+  const failedTaskRoom = applyPendingRecoveryFailure({
+    state: taskRoomRequestState({
+      conversations: [taskRoomConversation],
+      messages: [interruptedTaskMessage],
+      tasks: [task()],
+      runs: [run()],
+    }),
+    message: interruptedTaskMessage,
+    reason: "Task Room was interrupted before the agent returned. You can retry this request.",
+    failTaskRoom: true,
+    failedAt: at,
+  });
+  assert.equal(failedTaskRoom.messages[0].status, "failed");
+  assert.equal(failedTaskRoom.tasks[0].state, "failed");
+  assert.equal(failedTaskRoom.runs[0].state, "failed");
 });
 
 test("retry resolution keeps direct chat and task room responsibilities separate", () => {

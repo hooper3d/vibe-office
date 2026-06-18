@@ -23,7 +23,7 @@ npm run regression:providers:list
 
 Current service test coverage:
 
-- 36 service-level tests pass.
+- 37 service-level tests pass.
 - Browser smoke passes.
 - Build passes after including `localTrusted` in TypeScript checking.
 
@@ -72,7 +72,7 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 1475 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, Free Chat selection helpers, Task lifecycle state reducers, Output Area selectors, request submission state helpers, composer submission intent routing, and retry submission state helpers.
+- `src/App.tsx` is still about 1449 lines after extracting the right Output Area shell, Agent setup save-state helpers, Project setup/delete helpers, Free Chat selection helpers, Task lifecycle state reducers, Output Area selectors, request submission state helpers, composer submission intent routing, retry submission state helpers, and pending recovery submission helpers.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
 - The new `src/components/OutputPanel.tsx` centralizes Free Chat history, project output tabs, Browser preview, grouped Outputs, and no-project right-panel state.
 - The new `src/services/agentSetupState.ts` centralizes add/edit/deduplicate/chief-normalization behavior and keeps credential-bearing payloads separate from UI agent state.
@@ -83,6 +83,7 @@ Evidence:
 - The new `src/services/requestSubmissionState.ts` centralizes optimistic Free Chat, Project Direct Chat, and Task Room submission state creation before remote provider execution.
 - The new `src/services/composerSubmissionState.ts` centralizes the composer entry routing for Free Chat, Project Chat, Task Room, and ignored submission states.
 - The new `src/services/requestRetrySubmissionState.ts` centralizes Direct Chat and Task Room retry preparation/completion state around retryable user messages.
+- The new `src/services/requestRecoverySubmissionState.ts` centralizes interrupted pending request recovery preparation and failure state for Direct Chat and Task Room.
 
 Impact:
 
@@ -191,7 +192,7 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 36 tests pass. |
+| Service tests | Good | 37 tests pass. |
 | Browser smoke | Good | Smoke passes. |
 | Credential safety | Improved | P0 fixed and committed; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |
