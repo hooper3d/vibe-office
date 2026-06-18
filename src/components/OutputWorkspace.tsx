@@ -10,7 +10,14 @@ import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import type { ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance } from "../domain/types";
 import { ProjectArtifacts } from "./ProjectArtifacts";
-import { countTrackableTaskOutputs, ProjectTasks } from "./ProjectTasks";
+import { ProjectTasks } from "./ProjectTasks";
+import {
+  countTrackableTaskOutputs,
+  filterArtifactsByAgent,
+  filterRunsByAgent,
+  filterTasksByAgent,
+  getVisibleOutputAgentIds,
+} from "../services/outputSelectors";
 
 export function BrowserPreview({
   browserUrl,
@@ -262,43 +269,4 @@ function PreviewOutputSection({
       )}
     </OutputSection>
   );
-}
-
-function getVisibleOutputAgentIds({
-  agents,
-  runs,
-  tasks,
-  artifacts,
-}: {
-  agents: AgentInstance[];
-  runs: ProjectRun[];
-  tasks: ProjectTask[];
-  artifacts: ProjectArtifact[];
-}) {
-  const ids = new Set<string>();
-  runs.forEach((run) => {
-    ids.add(run.ownerAgentId);
-    run.participantAgentIds.forEach((agentId) => ids.add(agentId));
-  });
-  tasks.forEach((task) => {
-    ids.add(task.ownerAgentId);
-    task.participantAgentIds.forEach((agentId) => ids.add(agentId));
-  });
-  artifacts.forEach((artifact) => ids.add(artifact.agentId));
-  return agents.map((agent) => agent.id).filter((agentId) => ids.has(agentId));
-}
-
-function filterRunsByAgent(runs: ProjectRun[], agentId: string) {
-  if (agentId === "all") return runs;
-  return runs.filter((run) => run.ownerAgentId === agentId || run.participantAgentIds.includes(agentId));
-}
-
-function filterTasksByAgent(tasks: ProjectTask[], agentId: string) {
-  if (agentId === "all") return tasks;
-  return tasks.filter((task) => task.ownerAgentId === agentId || task.participantAgentIds.includes(agentId));
-}
-
-function filterArtifactsByAgent(artifacts: ProjectArtifact[], agentId: string) {
-  if (agentId === "all") return artifacts;
-  return artifacts.filter((artifact) => artifact.agentId === agentId);
 }

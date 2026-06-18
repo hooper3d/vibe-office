@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { A2ATask } from "../domain/a2a";
-import type { Conversation, ConversationMessage, ProjectRun, ProjectTask } from "../domain/projectScope";
+import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
 import { getProviderSetupIssue } from "../domain/hermesSetup";
@@ -56,6 +56,15 @@ import {
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { applyProjectDelete, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
+import {
+  countTrackableTaskOutputs,
+  filterArtifactsByAgent,
+  filterRunsByAgent,
+  filterTasksByAgent,
+  getStandaloneOutputTasks,
+  getVisibleOutputAgentIds,
+  getVisibleOutputRuns,
+} from "../services/outputSelectors";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import {
   applyTaskLifecycleRemoteUpdate,
@@ -872,6 +881,58 @@ test("task lifecycle helpers preserve unsupported and retry states", () => {
   assert.equal(failed[0].state, "failed");
   assert.equal(failed[0].summary, "Retry failed.");
   assert.equal(failed[0].events[failed[0].events.length - 1]?.label, "Retry failed.");
+});
+
+test("output selectors keep chat records separate from trackable project outputs", () => {
+  const hiddenDirectRun = run({
+    id: "run-direct-chat",
+    taskId: undefined,
+    type: "direct_message",
+    state: "completed",
+    artifactIds: [],
+    participantAgentIds: [],
+  });
+  const trackedDirectRun = run({
+    id: "run-direct-task",
+    taskId: "task-direct",
+    type: "direct_message",
+    state: "completed",
+    artifactIds: [],
+  });
+  const chiefRun = run({ id: "run-chief", taskId: "task-chief" });
+  const standaloneTask = task({
+    id: "task-standalone",
+    ownerAgentId: participant.id,
+    participantAgentIds: [],
+  });
+  const tasks = [
+    task({ id: "task-chief" }),
+    task({ id: "task-direct" }),
+    standaloneTask,
+  ];
+  const artifact: ProjectArtifact = {
+    id: "artifact-1",
+    projectId: project.id,
+    taskId: standaloneTask.id,
+    agentId: participant.id,
+    name: "Standalone artifact",
+    kind: "text",
+    summary: "Artifact body.",
+    contentParts: [{ kind: "text", text: "Artifact body." }],
+    createdAt: at,
+  };
+  const runs = [hiddenDirectRun, trackedDirectRun, chiefRun];
+
+  assert.deepEqual(getVisibleOutputRuns(runs).map((item) => item.id), ["run-direct-task", "run-chief"]);
+  assert.deepEqual(getStandaloneOutputTasks(runs, tasks).map((item) => item.id), ["task-standalone"]);
+  assert.equal(countTrackableTaskOutputs(runs, tasks), 3);
+  assert.deepEqual(getVisibleOutputAgentIds({ agents: [agent, participant], runs, tasks, artifacts: [artifact] }), [
+    agent.id,
+    participant.id,
+  ]);
+  assert.deepEqual(filterRunsByAgent(runs, participant.id).map((item) => item.id), ["run-direct-task", "run-chief"]);
+  assert.deepEqual(filterTasksByAgent(tasks, participant.id).map((item) => item.id), ["task-chief", "task-direct", "task-standalone"]);
+  assert.deepEqual(filterArtifactsByAgent([artifact], participant.id).map((item) => item.id), ["artifact-1"]);
 });
 
 test("local trusted registry preserves credentials when metadata is rewritten without keys", async () => {

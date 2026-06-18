@@ -1,45 +1,15 @@
 import { ArrowRight, Loader2, MessageSquare, RefreshCw, XCircle } from "lucide-react";
-import type { ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "../domain/projectScope";
+import type { ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance } from "../domain/types";
-
-function getTaskLifecycleAddress(task: ProjectTask, runs: ProjectRun[]) {
-  if (task.remoteTaskId) {
-    return {
-      taskId: task.remoteTaskId,
-      contextId: task.remoteContextId ?? task.contextId,
-    };
-  }
-
-  const linkedRun = runs.find((run) => run.taskId === task.id);
-  if (linkedRun?.type === "direct_message") {
-    return {
-      taskId: task.id,
-      contextId: task.contextId,
-    };
-  }
-
-  return null;
-}
-
-function isTaskActive(state: WorkState) {
-  return state === "submitting" || state === "submitted" || state === "working" || state === "input_required";
-}
-
-function isTaskTerminal(state: WorkState) {
-  return state === "completed" || state === "failed" || state === "canceled" || state === "unsupported";
-}
-
-function hasLifecycleUnsupportedEvent(task: ProjectTask) {
-  return task.events.some((event) => event.state === "unsupported" || event.label.startsWith("Lifecycle unsupported:"));
-}
-
-function hasCancelUnsupportedEvent(task: ProjectTask) {
-  return task.events.some((event) => event.state === "unsupported" && event.label.startsWith("Cancel unsupported:"));
-}
-
-function getTaskEventDisplayLabel(label: string) {
-  return label.replace("Agent returned an A2A task.", "Agent returned a task.").replace("A2A request failed", "Agent task request failed");
-}
+import {
+  getTaskEventDisplayLabel,
+  getTaskLifecycleAddress,
+  hasCancelUnsupportedEvent,
+  hasLifecycleUnsupportedEvent,
+  isTaskActive,
+  isTaskTerminal,
+} from "../services/taskLifecycleState";
+import { getStandaloneOutputTasks, getVisibleOutputRuns } from "../services/outputSelectors";
 
 export function ProjectTasks({
   agents,
@@ -60,11 +30,8 @@ export function ProjectTasks({
   onRefreshTask: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
 }) {
-  const visibleRuns = runs.filter(
-    (run) => run.type !== "direct_message" || run.state !== "completed" || run.artifactIds.length > 0 || Boolean(run.taskId),
-  );
-  const visibleRunTaskIds = new Set(visibleRuns.map((run) => run.taskId).filter(Boolean));
-  const standaloneTasks = tasks.filter((task) => !visibleRunTaskIds.has(task.id));
+  const visibleRuns = getVisibleOutputRuns(runs);
+  const standaloneTasks = getStandaloneOutputTasks(runs, tasks);
 
   if (visibleRuns.length === 0 && standaloneTasks.length === 0) {
     return (
@@ -154,15 +121,6 @@ export function ProjectTasks({
       })}
     </div>
   );
-}
-
-export function countTrackableTaskOutputs(runs: ProjectRun[], tasks: ProjectTask[]) {
-  const visibleRuns = runs.filter(
-    (run) => run.type !== "direct_message" || run.state !== "completed" || run.artifactIds.length > 0 || Boolean(run.taskId),
-  );
-  const visibleRunTaskIds = new Set(visibleRuns.map((run) => run.taskId).filter(Boolean));
-  const standaloneTasks = tasks.filter((task) => !visibleRunTaskIds.has(task.id));
-  return visibleRuns.length + standaloneTasks.length;
 }
 
 function TaskEventList({ agents, events }: { agents: AgentInstance[]; events: ProjectTask["events"] }) {

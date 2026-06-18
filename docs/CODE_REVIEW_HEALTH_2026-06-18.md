@@ -23,7 +23,7 @@ npm run regression:providers:list
 
 Current service test coverage:
 
-- 23 service-level tests pass.
+- 33 service-level tests pass.
 - Browser smoke passes.
 - Build passes after including `localTrusted` in TypeScript checking.
 
@@ -79,6 +79,7 @@ Evidence:
 - The new `src/services/projectSetupState.ts` centralizes Project validation, create/update state, delete eligibility, and project-scoped cleanup of conversations, messages, runs, tasks, and artifacts.
 - The new `src/services/conversationSelectionState.ts` centralizes Free Chat history sorting, title derivation, active conversation mapping, current direct-conversation resolution, and empty-chat reuse checks.
 - The new `src/services/taskLifecycleState.ts` centralizes remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
+- The new `src/services/outputSelectors.ts` centralizes Output Area run/task/artifact visibility, agent filtering, and output counts.
 
 Impact:
 
@@ -187,7 +188,7 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 32 tests pass. |
+| Service tests | Good | 33 tests pass. |
 | Browser smoke | Good | Smoke passes. |
 | Credential safety | Improved | P0 fixed and committed; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |
