@@ -75,7 +75,7 @@ import {
   shouldReuseEmptyFreeChat,
 } from "../services/conversationSelectionState";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
-import { applyProjectDelete, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
+import { applyProjectDelete, applyProjectDeleteSelection, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
 import {
   clearConfirmActionState,
   closeProjectDialogState,
@@ -1001,6 +1001,35 @@ test("project delete clears scoped records and protects free chat entry", () => 
   assert.deepEqual(nextState.runs.map((item) => item.projectId), [otherProject.id]);
   assert.deepEqual(nextState.tasks.map((item) => item.projectId), [otherProject.id]);
   assert.deepEqual(nextState.artifacts.map((item) => item.projectId), [otherProject.id]);
+});
+
+test("project delete selection returns to free chat only when the selected project is deleted", () => {
+  const currentSelection = {
+    selectedProjectId: project.id,
+    chatScope: "project" as const,
+    conversationMode: "task-room" as const,
+  };
+
+  assert.deepEqual(
+    applyProjectDeleteSelection({
+      deletedProjectId: project.id,
+      freeChatEntryProjectId: "default",
+      selection: currentSelection,
+    }),
+    {
+      selectedProjectId: "default",
+      chatScope: "free",
+      conversationMode: "single",
+    },
+  );
+  assert.deepEqual(
+    applyProjectDeleteSelection({
+      deletedProjectId: "project-two",
+      freeChatEntryProjectId: "default",
+      selection: currentSelection,
+    }),
+    currentSelection,
+  );
 });
 
 test("project dialog state opens, resets errors, and protects free chat entry", () => {

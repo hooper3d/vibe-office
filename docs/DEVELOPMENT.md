@@ -761,6 +761,7 @@ Implementation progress:
 - M9 provider regression now removes environment-generated temporary providers after a run, so ad-hoc matrix checks do not permanently pollute the local trusted agent registry.
 - Frontend provider adapters no longer export provider endpoint URL builders; endpoint resolution and credential/header injection stay inside the local trusted provider request layer.
 - Agent deletion state now lives in `src/services/agentSetupState.ts` and readiness status cleanup in `src/services/agentReadinessState.ts`, keeping App focused on applying state updates.
+- Project deletion selection fallback now lives in `src/services/projectSetupState.ts`, so deleting the active project returns to Free Chat through a tested state helper.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:

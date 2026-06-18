@@ -33,6 +33,15 @@ export type ProjectWorkspaceState = {
   artifacts: ProjectArtifact[];
 };
 
+export type ProjectChatScope = "free" | "project";
+export type ProjectConversationMode = "single" | "task-room";
+
+export type ProjectSelectionState = {
+  selectedProjectId: string;
+  chatScope: ProjectChatScope;
+  conversationMode: ProjectConversationMode;
+};
+
 export function applyProjectSave({
   projects,
   editingProjectId,
@@ -110,6 +119,23 @@ export function applyProjectDelete({
     runs: state.runs.filter((run) => run.projectId !== projectId),
     tasks: state.tasks.filter((task) => task.projectId !== projectId),
     artifacts: state.artifacts.filter((artifact) => artifact.projectId !== projectId),
+  };
+}
+
+export function applyProjectDeleteSelection({
+  deletedProjectId,
+  freeChatEntryProjectId,
+  selection,
+}: {
+  deletedProjectId: string;
+  freeChatEntryProjectId: string;
+  selection: ProjectSelectionState;
+}): ProjectSelectionState {
+  if (selection.selectedProjectId !== deletedProjectId) return selection;
+  return {
+    selectedProjectId: freeChatEntryProjectId,
+    chatScope: "free",
+    conversationMode: "single",
   };
 }
 

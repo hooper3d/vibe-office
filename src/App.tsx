@@ -60,7 +60,7 @@ import {
   upsertLocalTrustedAgent,
 } from "./services/localTrustedAgentRegistry";
 import { useProjectDialogState } from "./services/projectDialogState";
-import { applyProjectDelete, applyProjectSave, canDeleteProject } from "./services/projectSetupState";
+import { applyProjectDelete, applyProjectDeleteSelection, applyProjectSave, canDeleteProject } from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
 import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
 import {
@@ -731,11 +731,14 @@ export function App() {
     });
     setProjects(nextState.projects);
     applyRequestWorkspaceState(nextState);
-    if (selectedProjectId === projectId) {
-      setSelectedProjectId(FREE_CHAT_ENTRY_PROJECT_ID);
-      setChatScope("free");
-      setConversationMode("single");
-    }
+    const nextSelection = applyProjectDeleteSelection({
+      deletedProjectId: projectId,
+      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+      selection: { selectedProjectId, chatScope, conversationMode },
+    });
+    setSelectedProjectId(nextSelection.selectedProjectId);
+    setChatScope(nextSelection.chatScope);
+    setConversationMode(nextSelection.conversationMode);
     projectDialog.clearConfirmAction();
   }
 
