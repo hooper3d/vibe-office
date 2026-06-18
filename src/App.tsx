@@ -186,6 +186,7 @@ export function App() {
     () => availableTaskParticipants.filter((agent) => taskParticipantIds.includes(agent.id)),
     [availableTaskParticipants, taskParticipantIds],
   );
+  const activeSetupAgentId = agentSetup.setupAgentId ?? agentSetup.setupDraftAgentId ?? "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
   const agentSetupIssues = useMemo(
     () => deriveAgentReadinessIssues({ agents, localTrustedIssues: localTrustedAgentIssues }),
@@ -564,13 +565,14 @@ export function App() {
     agentSetup.markConnectionRunning();
 
     try {
-      const agent = createAgentFromHermesSetup(form);
+      const agent = createAgentFromHermesSetup(form, { id: activeSetupAgentId || undefined });
       const setupIssue = getProviderSetupIssue(agent);
       if (setupIssue) {
         agentSetup.markConnectionFailed(setupIssue);
         return;
       }
       if (!(await persistLocalTrustedAgent(agent))) return;
+      await refreshLocalTrustedAgentIssues([agent.id]);
       const result = await new HermesA2AAdapter({ agent: stripAgentCredential(agent) }).testConnection();
 
       agentSetup.markConnectionPassed(
@@ -598,6 +600,7 @@ export function App() {
   ) {
     if (agentIds.length === 0) {
       setLocalTrustedAgentIssues({});
+      setLocalTrustedAgentStatuses({});
       return;
     }
 
@@ -623,7 +626,7 @@ export function App() {
     event.preventDefault();
     if (agentSetup.isSavingAgent) return;
     const form = new FormData(event.currentTarget);
-    const newAgent = createAgentFromHermesSetup(form);
+    const newAgent = createAgentFromHermesSetup(form, { id: activeSetupAgentId || undefined });
     const setupIssue = getProviderSetupIssue(newAgent);
     if (setupIssue) {
       agentSetup.markConnectionFailed(setupIssue);
@@ -1330,7 +1333,7 @@ export function App() {
           onResetTest={agentSetup.resetConnectionTest}
           onSaveAgent={saveDemoAgent}
           agent={agentSetup.setupAgentId ? agents.find((agent) => agent.id === agentSetup.setupAgentId) : undefined}
-          localTrustedStatus={agentSetup.setupAgentId ? localTrustedAgentStatuses[agentSetup.setupAgentId] : undefined}
+          localTrustedStatus={activeSetupAgentId ? localTrustedAgentStatuses[activeSetupAgentId] : undefined}
           onDeleteAgent={requestDeleteAgent}
           onAgentAvatarFile={handleExistingAgentAvatar}
         />

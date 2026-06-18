@@ -1,13 +1,13 @@
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "./types";
 export { getProviderSetupIssue } from "./providerSetup";
 
-export function createAgentFromHermesSetup(form: FormData): AgentInstance {
+export function createAgentFromHermesSetup(form: FormData, options: { id?: string } = {}): AgentInstance {
   const name = readFormValue(form, "name", "New Agent");
   const role = readFormValue(form, "role", "");
   const model = readFormValue(form, "model", "");
 
   return {
-    id: `agent-${Date.now()}`,
+    id: options.id ?? `agent-${Date.now()}`,
     name,
     role,
     officeRole: readOfficeRole(form),

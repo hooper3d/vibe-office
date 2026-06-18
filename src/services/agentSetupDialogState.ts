@@ -6,6 +6,7 @@ export type ConnectionTestState = "idle" | "running" | "passed" | "failed";
 export function useAgentSetupDialogState() {
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
+  const [setupDraftAgentId, setSetupDraftAgentId] = useState<string | null>(null);
   const [testState, setTestState] = useState<ConnectionTestState>("idle");
   const [testMessage, setTestMessage] = useState("");
   const [lastConnectionMetadata, setLastConnectionMetadata] = useState<A2ACompatibilityMetadata | null>(null);
@@ -22,6 +23,7 @@ export function useAgentSetupDialogState() {
   function closeSetup() {
     setShowSetup(false);
     setSetupAgentId(null);
+    setSetupDraftAgentId(null);
     setTestState("idle");
     setTestMessage("");
     setLastConnectionMetadata(null);
@@ -29,6 +31,7 @@ export function useAgentSetupDialogState() {
 
   function openAddAgentDialog() {
     setSetupAgentId(null);
+    setSetupDraftAgentId(`agent-${Date.now()}`);
     setTestState("idle");
     setTestMessage("");
     setLastConnectionMetadata(null);
@@ -37,6 +40,7 @@ export function useAgentSetupDialogState() {
 
   function openAgentEditor(agentId: string) {
     setSetupAgentId(agentId);
+    setSetupDraftAgentId(null);
     setTestState("idle");
     setTestMessage("");
     setLastConnectionMetadata(null);
@@ -72,6 +76,7 @@ export function useAgentSetupDialogState() {
     resetConnectionTest,
     setIsSavingAgent,
     setupAgentId,
+    setupDraftAgentId,
     showSetup,
     testMessage,
     testState,

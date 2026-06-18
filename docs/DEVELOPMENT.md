@@ -751,6 +751,7 @@ Implementation progress:
 - Add/Edit Agent now blocks MiniMax M3 records saved as OpenAI-compatible; the M9 MiniMax target must be Anthropic-compatible.
 - Sidebar agent rows now surface existing provider setup issues with a lightweight warning indicator, so historical mismatches are visible before chat or M9 regression.
 - Local trusted agent status now reports safe `registered` and `hasCredential` diagnostics, and Add/Edit Agent shows local registry and API key readiness without exposing credentials.
+- Add/Edit Agent now reuses the same setup agent id for connection testing and saving, then refreshes local trusted readiness immediately after a test writes provider metadata.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:

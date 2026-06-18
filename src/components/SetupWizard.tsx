@@ -414,7 +414,8 @@ function getProviderHint(provider: AgentRuntimeProvider) {
 }
 
 function getRegistryDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgentSafeStatus): { state: ConnectionTestState; detail: string } {
-  if (!agent) return { state: "idle", detail: "Saved when the agent is added." };
+  if (!agent && status?.registered) return { state: "passed", detail: "Saved locally for this draft." };
+  if (!agent) return { state: "idle", detail: "Saved when the agent is tested or added." };
   if (!status) return { state: "idle", detail: "Checking local trusted layer." };
   if (!status.registered) return { state: "failed", detail: "Not saved locally." };
 
@@ -429,8 +430,8 @@ function getRegistryDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgent
 }
 
 function getCredentialDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgentSafeStatus): { state: ConnectionTestState; detail: string } {
-  const runtimeProvider = agent?.runtimeProvider ?? "hermes";
-  if (!agent) return { state: "idle", detail: "Saved after adding." };
+  const runtimeProvider = agent?.runtimeProvider ?? status?.runtimeProvider ?? "hermes";
+  if (!agent && !status) return { state: "idle", detail: "Saved after testing or adding." };
   if (runtimeProvider === "hermes") return { state: "passed", detail: "Not required." };
   if (!status) return { state: "idle", detail: "Checking local trusted layer." };
   if (!status.registered) return { state: "failed", detail: "Agent is not saved locally." };

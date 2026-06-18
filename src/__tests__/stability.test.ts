@@ -7,7 +7,7 @@ import type { A2ATask } from "../domain/a2a";
 import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
-import { getProviderSetupIssue } from "../domain/hermesSetup";
+import { createAgentFromHermesSetup, getProviderSetupIssue } from "../domain/hermesSetup";
 import { applyMediaArtifactBackfillState } from "../services/artifactBackfillState";
 import { resolveComposerSubmissionIntent } from "../services/composerSubmissionState";
 import {
@@ -663,6 +663,32 @@ test("configured agent storage does not restore legacy browser credentials", () 
 
     assert.equal(loadedAgent.apiKey, undefined);
   });
+});
+
+test("agent setup form parsing keeps a stable setup id across test and save", () => {
+  const form = new FormData();
+  form.set("name", "DeepSeek");
+  form.set("officeRole", "operator");
+  form.set("role", "browser / planning");
+  form.set("runtimeProvider", "openai");
+  form.set("endpoint", "https://api.deepseek.com");
+  form.set("a2aEndpoint", "https://api.deepseek.com/a2a");
+  form.set("agentCardUrl", "https://api.deepseek.com/.well-known/agent-card.json");
+  form.set("model", "deepseek-v4-flash");
+  form.set("apiKey", "local-trusted-secret");
+
+  const parsedAgent = createAgentFromHermesSetup(form, { id: "agent-draft-stable" });
+  const saveResult = applyAgentSetupSave({
+    agents: [agent],
+    submittedAgent: parsedAgent,
+  });
+
+  assert.equal(parsedAgent.id, "agent-draft-stable");
+  assert.equal(saveResult.mode, "created");
+  assert.equal(saveResult.trustedAgent.id, "agent-draft-stable");
+  assert.equal(saveResult.trustedAgent.apiKey, "local-trusted-secret");
+  assert.equal(saveResult.agents[1].id, "agent-draft-stable");
+  assert.equal(saveResult.agents[1].apiKey, undefined);
 });
 
 test("agent setup save keeps credentials in the trusted payload and out of UI state", () => {
