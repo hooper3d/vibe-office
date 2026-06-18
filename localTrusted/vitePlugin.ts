@@ -2,6 +2,7 @@ import type { Plugin, ViteDevServer } from "vite";
 import {
   getVerifiedTrustedAgentRecord,
   getLocalTrustedAgent,
+  getLocalTrustedAgentSafeStatuses,
   updateLocalTrustedAgentRegistry,
 } from "./agentRegistry";
 import {
@@ -62,6 +63,19 @@ export function localTrustedLayerPlugin(): Plugin {
             return registry;
           });
           sendJson(res, 200, { ok: true });
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
+
+      server.middlewares.use("/agent-local/agents/status", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent status requests." });
+
+        try {
+          const body = await readJsonBody(req);
+          const agentIds = Array.isArray(body.agentIds) ? body.agentIds.map((id) => String(id)) : undefined;
+          const statuses = await getLocalTrustedAgentSafeStatuses(agentIds);
+          sendJson(res, 200, { statuses });
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });
         }

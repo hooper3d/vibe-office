@@ -832,6 +832,7 @@ Prototype:
 
 - API keys are stored by the local trusted layer prototype registry and stripped from browser localStorage.
 - The current local trusted registry is a development bridge, not final secure credential storage.
+- The local trusted layer exposes safe agent readiness status for UI/regression checks: provider, model, `hasCredential`, and setup issues only. It must never return API keys.
 
 Next stage:
 

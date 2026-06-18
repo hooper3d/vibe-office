@@ -1,4 +1,5 @@
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "./types";
+export { getProviderSetupIssue } from "./providerSetup";
 
 export function createAgentFromHermesSetup(form: FormData): AgentInstance {
   const name = readFormValue(form, "name", "New Agent");
@@ -25,35 +26,10 @@ export function createAgentFromHermesSetup(form: FormData): AgentInstance {
   };
 }
 
-export function getProviderSetupIssue(agent: Pick<AgentInstance, "endpoint" | "runtimeProvider"> & Partial<Pick<AgentInstance, "model">>) {
-  const runtimeProvider = agent.runtimeProvider ?? "hermes";
-  const endpoint = agent.endpoint.trim().toLowerCase();
-  const model = agent.model?.trim().toLowerCase() ?? "";
-  if (!endpoint) return "Base URL is required.";
-
-  if (runtimeProvider === "openai" && (endpoint.includes("/anthropic") || endpoint.endsWith("/messages") || endpoint.includes("/messages?"))) {
-    return "Provider type is OpenAI-compatible, but this Base URL looks Anthropic-compatible. Switch Provider type to Anthropic-compatible or use an OpenAI-compatible /v1 endpoint.";
-  }
-
-  if (runtimeProvider === "openai" && isMiniMaxAnthropicTarget(endpoint, model)) {
-    return "MiniMax M3 should be configured as Anthropic-compatible for the M9 target. Switch Provider type to Anthropic-compatible and use the Anthropic-compatible endpoint.";
-  }
-
-  if (runtimeProvider === "anthropic" && (endpoint.endsWith("/chat/completions") || endpoint.includes("/chat/completions?"))) {
-    return "Provider type is Anthropic-compatible, but this Base URL looks OpenAI-compatible. Switch Provider type to OpenAI-compatible or use an Anthropic-compatible endpoint.";
-  }
-
-  return null;
-}
-
 function readRuntimeProvider(form: FormData): AgentRuntimeProvider {
   const value = readFormValue(form, "runtimeProvider", "hermes");
   if (value === "openai" || value === "anthropic") return value;
   return "hermes";
-}
-
-function isMiniMaxAnthropicTarget(endpoint: string, model: string) {
-  return /minimax|minimaxi/.test(`${endpoint} ${model}`) && /(^|[-_\s])m3($|[-_\s])|minimax-m3/.test(model);
 }
 
 function readOfficeRole(form: FormData): AgentOfficeRole {

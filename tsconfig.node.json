@@ -11,5 +11,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts", "localTrusted/**/*.ts"]
+  "include": ["vite.config.ts", "localTrusted/**/*.ts", "src/domain/providerSetup.ts", "src/domain/types.ts"]
 }

@@ -1382,6 +1382,71 @@ test("local trusted registry preserves credentials when metadata is rewritten wi
   }
 });
 
+test("local trusted registry exposes safe agent status without credentials", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-local-trusted-"));
+  const previousHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+  process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = localTrustedHome;
+
+  try {
+    const { getLocalTrustedAgentSafeStatuses, writeLocalTrustedAgentRegistry } = await import("../../localTrusted/agentRegistry");
+
+    await writeLocalTrustedAgentRegistry({
+      "agent-deepseek": {
+        ...agent,
+        id: "agent-deepseek",
+        endpoint: "https://api.deepseek.com",
+        a2aEndpoint: "https://api.deepseek.com/a2a",
+        agentCardUrl: "https://api.deepseek.com/.well-known/agent-card.json",
+        model: "deepseek-v4-flash",
+        runtimeProvider: "openai",
+      },
+      "agent-minimax": {
+        ...participant,
+        id: "agent-minimax",
+        endpoint: "https://api.minimaxi.com/v1",
+        a2aEndpoint: "https://api.minimaxi.com/a2a",
+        agentCardUrl: "https://api.minimaxi.com/.well-known/agent-card.json",
+        model: "MiniMax-M3",
+        runtimeProvider: "openai",
+        apiKey: "local-trusted-secret",
+      },
+      "agent-hermes": {
+        ...agent,
+        id: "agent-hermes",
+        endpoint: "https://hooper.ink/v1",
+        a2aEndpoint: "https://hooper.ink/a2a",
+        agentCardUrl: "https://hooper.ink/.well-known/agent-card.json",
+        model: "hermes-agent",
+        runtimeProvider: "hermes",
+      },
+    });
+
+    const statuses = await getLocalTrustedAgentSafeStatuses();
+    const deepseekStatus = statuses.find((status) => status.id === "agent-deepseek");
+    const minimaxStatus = statuses.find((status) => status.id === "agent-minimax");
+    const hermesStatus = statuses.find((status) => status.id === "agent-hermes");
+
+    assert.ok(deepseekStatus);
+    assert.ok(minimaxStatus);
+    assert.ok(hermesStatus);
+    assert.equal("apiKey" in deepseekStatus, false);
+    assert.equal("apiKey" in minimaxStatus, false);
+    assert.equal(deepseekStatus.hasCredential, false);
+    assert.match(deepseekStatus.issues.join("\n"), /API key is not saved/);
+    assert.equal(minimaxStatus.hasCredential, true);
+    assert.match(minimaxStatus.issues.join("\n"), /MiniMax M3 should be configured as Anthropic-compatible/);
+    assert.equal(hermesStatus.hasCredential, false);
+    assert.deepEqual(hermesStatus.issues, []);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
+    } else {
+      process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = previousHome;
+    }
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
 test("workspace file client sends command-shaped local trusted requests", () => {
   const request = createLocalTrustedWorkspaceCommandRequest({
     command: "workspace.read",

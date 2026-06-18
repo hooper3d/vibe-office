@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { getProviderSetupIssue } from "../src/domain/providerSetup";
 import { getLocalTrustedFilePath, readLocalTrustedCredentials, writeLocalTrustedCredentials } from "./credentialStore";
 
 function getLocalTrustedAgentRegistryPath() {
@@ -18,6 +19,14 @@ export type LocalTrustedAgentRecord = {
   model: string;
   runtimeProvider: "hermes" | "openai" | "anthropic";
   apiKey?: string;
+};
+
+export type LocalTrustedAgentSafeStatus = {
+  id: string;
+  runtimeProvider: LocalTrustedAgentRecord["runtimeProvider"];
+  model: string;
+  hasCredential: boolean;
+  issues: string[];
 };
 
 export function getVerifiedTrustedAgentRecord(value: unknown): LocalTrustedAgentRecord {
@@ -86,6 +95,31 @@ export async function readLocalTrustedAgentRegistry(): Promise<Record<string, Lo
   } catch {
     return {};
   }
+}
+
+export async function getLocalTrustedAgentSafeStatuses(agentIds?: string[]): Promise<LocalTrustedAgentSafeStatus[]> {
+  const registry = await readLocalTrustedAgentRegistry();
+  const requestedIds = agentIds?.map((id) => id.trim()).filter(Boolean);
+  const entries = requestedIds?.length
+    ? requestedIds.flatMap((id) => (registry[id] ? [[id, registry[id]] as const] : []))
+    : Object.entries(registry);
+
+  return entries.map(([id, agent]) => {
+    const issues: string[] = [];
+    const setupIssue = getProviderSetupIssue(agent);
+    if (setupIssue) issues.push(setupIssue);
+    if (agent.runtimeProvider !== "hermes" && !agent.apiKey) {
+      issues.push("API key is not saved in the local trusted layer.");
+    }
+
+    return {
+      id,
+      runtimeProvider: agent.runtimeProvider,
+      model: agent.model,
+      hasCredential: Boolean(agent.apiKey),
+      issues,
+    };
+  });
 }
 
 export async function writeLocalTrustedAgentRegistry(registry: Record<string, LocalTrustedAgentRecord>) {
