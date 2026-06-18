@@ -38,6 +38,17 @@ export const emptyWorkspaceState: WorkspaceState = {
   artifacts: [],
 };
 
+export function applyWorkspaceStateDefaults(state: WorkspaceState, defaults: WorkspaceState): WorkspaceState {
+  return {
+    projects: state.projects.length > 0 ? state.projects : defaults.projects,
+    conversations: state.conversations.length > 0 ? state.conversations : defaults.conversations,
+    messages: state.messages.length > 0 ? state.messages : defaults.messages,
+    runs: state.runs.length > 0 ? state.runs : defaults.runs,
+    tasks: state.tasks.length > 0 ? state.tasks : defaults.tasks,
+    artifacts: state.artifacts.length > 0 ? state.artifacts : defaults.artifacts,
+  };
+}
+
 export function loadWorkspaceState(): WorkspaceState {
   if (typeof window === "undefined") return emptyWorkspaceState;
 

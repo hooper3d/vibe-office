@@ -123,7 +123,7 @@ import { getSplitPercentFromClientX, nudgeSplitPercent } from "./services/splitP
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { attachWorkspaceFileState, detachWorkspaceFileState } from "./services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "./services/workspaceSelectionState";
-import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
+import { applyWorkspaceStateDefaults, loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   type WorkspaceFileAttachment,
   type WorkspaceFileReadResult,
@@ -138,6 +138,14 @@ type DirectoryPickerHandle = {
 const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
+const seedWorkspaceDefaults = {
+  projects: seedProjects,
+  conversations: seedConversations,
+  messages: conversationMessages,
+  runs: projectRuns,
+  tasks: projectTasks,
+  artifacts: projectArtifacts,
+};
 
 function normalizeOutputMode(mode?: string): OutputMode {
   if (mode === "workspace" || mode === "browser" || mode === "outputs") return mode;
@@ -152,27 +160,15 @@ declare global {
 }
 
 export function App() {
-  const [initialWorkspace] = useState(() => loadWorkspaceState());
+  const [initialWorkspace] = useState(() => applyWorkspaceStateDefaults(loadWorkspaceState(), seedWorkspaceDefaults));
   const [initialUiState] = useState(() => loadUiState());
   const [agents, setAgents] = useState<AgentInstance[]>(() => loadConfiguredAgents());
-  const [projects, setProjects] = useState<Project[]>(() =>
-    initialWorkspace.projects.length > 0 ? initialWorkspace.projects : seedProjects,
-  );
-  const [conversations, setConversations] = useState<Conversation[]>(() =>
-    initialWorkspace.conversations.length > 0 ? initialWorkspace.conversations : seedConversations,
-  );
-  const [messages, setMessages] = useState<ConversationMessage[]>(() =>
-    initialWorkspace.messages.length > 0 ? initialWorkspace.messages : conversationMessages,
-  );
-  const [runs, setRuns] = useState<ProjectRun[]>(() =>
-    initialWorkspace.runs.length > 0 ? initialWorkspace.runs : projectRuns,
-  );
-  const [tasks, setTasks] = useState<ProjectTask[]>(() =>
-    initialWorkspace.tasks.length > 0 ? initialWorkspace.tasks : projectTasks,
-  );
-  const [artifacts, setArtifacts] = useState<ProjectArtifact[]>(() =>
-    initialWorkspace.artifacts.length > 0 ? initialWorkspace.artifacts : projectArtifacts,
-  );
+  const [projects, setProjects] = useState<Project[]>(() => initialWorkspace.projects);
+  const [conversations, setConversations] = useState<Conversation[]>(() => initialWorkspace.conversations);
+  const [messages, setMessages] = useState<ConversationMessage[]>(() => initialWorkspace.messages);
+  const [runs, setRuns] = useState<ProjectRun[]>(() => initialWorkspace.runs);
+  const [tasks, setTasks] = useState<ProjectTask[]>(() => initialWorkspace.tasks);
+  const [artifacts, setArtifacts] = useState<ProjectArtifact[]>(() => initialWorkspace.artifacts);
   const [selectedAgentId, setSelectedAgentId] = useState(initialUiState.selectedAgentId ?? "");
   const [selectedProjectId, setSelectedProjectId] = useState(initialUiState.selectedProjectId ?? FREE_CHAT_ENTRY_PROJECT_ID);
   const [chatScope, setChatScope] = useState<ChatScope>(

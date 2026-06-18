@@ -144,7 +144,7 @@ import {
 } from "../services/taskParticipantSelectionState";
 import { attachWorkspaceFileState, detachWorkspaceFileState } from "../services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "../services/workspaceSelectionState";
-import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
+import { applyWorkspaceStateDefaults, emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 import {
   createLocalTrustedWorkspaceCommandRequest,
   type WorkspaceFileAttachment,
@@ -2945,6 +2945,34 @@ test("workspace storage migrates recoverable state and falls back safely", () =>
       saveWorkspaceState(emptyWorkspaceState);
     }),
   );
+});
+
+test("workspace state defaults fill only empty persisted collections", () => {
+  const defaults = {
+    ...emptyWorkspaceState,
+    projects: [project],
+    conversations: [conversation()],
+    messages: [userMessage()],
+    runs: [run()],
+    tasks: [task()],
+    artifacts: [artifact()],
+  };
+  const persistedProject = { ...project, id: "persisted-project", name: "Persisted" };
+
+  const initialized = applyWorkspaceStateDefaults(
+    {
+      ...emptyWorkspaceState,
+      projects: [persistedProject],
+    },
+    defaults,
+  );
+
+  assert.deepEqual(initialized.projects.map((item) => item.id), [persistedProject.id]);
+  assert.deepEqual(initialized.conversations.map((item) => item.id), ["conversation-1"]);
+  assert.deepEqual(initialized.messages.map((item) => item.id), ["message-1"]);
+  assert.deepEqual(initialized.runs.map((item) => item.id), ["run-1"]);
+  assert.deepEqual(initialized.tasks.map((item) => item.id), ["task-1"]);
+  assert.deepEqual(initialized.artifacts.map((item) => item.id), ["artifact-1"]);
 });
 
 test("split pane state clamps pointer and keyboard changes", () => {
