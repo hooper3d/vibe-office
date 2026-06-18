@@ -249,7 +249,46 @@ function normalizeWorkspaceContext(value: unknown): ConversationMessage["workspa
 }
 
 function normalizeParts(value: unknown): A2APart[] {
-  return Array.isArray(value) ? (value.filter(isRecord) as A2APart[]) : [];
+  return normalizeArray(value)
+    .map(normalizePart)
+    .filter((part): part is A2APart => Boolean(part));
+}
+
+function normalizePart(value: unknown): A2APart | null {
+  if (!isRecord(value)) return null;
+
+  if (value.kind === "text" && typeof value.text === "string") {
+    return {
+      kind: "text",
+      text: value.text,
+    };
+  }
+
+  if (value.kind === "data" && isRecord(value.data)) {
+    return {
+      kind: "data",
+      data: value.data,
+    };
+  }
+
+  if (value.kind === "file" && isRecord(value.file)) {
+    const file = value.file;
+    const name = typeof file.name === "string" ? file.name : undefined;
+    const mimeType = typeof file.mimeType === "string" ? file.mimeType : undefined;
+    const uri = typeof file.uri === "string" ? file.uri : undefined;
+    if (!name && !uri) return null;
+
+    return {
+      kind: "file",
+      file: {
+        name,
+        mimeType,
+        uri,
+      },
+    };
+  }
+
+  return null;
 }
 
 function normalizeStringArray(value: unknown): string[] {
