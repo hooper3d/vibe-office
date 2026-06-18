@@ -58,7 +58,6 @@ import type {
   WorkState,
 } from "./domain/projectScope";
 import {
-  failRunById,
   failRunForMessage,
   failTaskRoomTaskForMessage,
   markConversationMessageFailed,
@@ -68,11 +67,9 @@ import {
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agentErrorText";
-import { createAgentMessageFromTask, extractA2ATaskText, mapA2AState } from "./services/agentTaskResult";
+import { extractA2ATaskText, mapA2AState } from "./services/agentTaskResult";
 import {
   createBackfilledMediaArtifacts,
-  createMediaArtifactFromText,
-  createTextArtifact,
   createTextParts,
   getImageFileParts,
   mapA2AArtifacts,
@@ -101,6 +98,13 @@ import {
   executeParticipantTaskTurn,
   type ParticipantTaskResult,
 } from "./services/taskRoomRequest";
+import {
+  applyTaskRoomAggregationCompleted,
+  applyTaskRoomChiefPlanCompleted,
+  applyTaskRoomParticipantCompleted,
+  applyTaskRoomParticipantDelegated,
+  applyTaskRoomRequestFailed,
+} from "./services/taskRoomState";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
@@ -214,6 +218,7 @@ export function App() {
   const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
   const requestTrackerRef = useRef(createRequestTracker());
+  const conversationsRef = useRef(conversations);
   const messagesRef = useRef(messages);
   const runsRef = useRef(runs);
   const tasksRef = useRef(tasks);
@@ -366,6 +371,10 @@ export function App() {
       [selectedAgent.id]: currentConversation.id,
     }));
   }, [activeFreeChatConversationIds, chatScope, currentConversation, selectedAgent]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -1628,12 +1637,20 @@ export function App() {
     };
 
     if (!existingConversation) {
-      setConversations((current) => [conversation, ...current]);
+      const nextConversations = [conversation, ...conversationsRef.current];
+      conversationsRef.current = nextConversations;
+      setConversations(nextConversations);
     }
     requestTrackerRef.current.begin(requestId);
-    setMessages((current) => [...current, userMessage]);
-    setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
-    setRuns((current) => [projectRun, ...current]);
+    const nextMessages = [...messagesRef.current, userMessage];
+    const nextTasks = [projectTask, ...tasksRef.current.filter((task) => task.id !== taskId)];
+    const nextRuns = [projectRun, ...runsRef.current];
+    messagesRef.current = nextMessages;
+    tasksRef.current = nextTasks;
+    runsRef.current = nextRuns;
+    setMessages(nextMessages);
+    setTasks(nextTasks);
+    setRuns(nextRuns);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
     setOutputMode("runs");
@@ -1648,104 +1665,48 @@ export function App() {
         participants,
         files: taskFiles,
       });
-      const chiefPlanTask = chiefPlanResult.task;
-      const chiefPlan = chiefPlanResult.summary;
-      const chiefPlanAt = chiefPlanResult.completedAt;
-
-      setMessages((current) => markConversationMessageSent(current, userMessageId));
-
-      const agentMessage = createAgentMessageFromTask({
-        task: chiefPlanTask,
+      const chiefPlanState = applyTaskRoomChiefPlanCompleted({
+        state: {
+          messages: messagesRef.current,
+          tasks: tasksRef.current,
+          runs: runsRef.current,
+          artifacts: artifactsRef.current,
+        },
+        result: chiefPlanResult,
         conversationId: conversation.id,
         projectId: selectedWorkspaceProject.id,
-        agentId: targetAgent.id,
-        fallbackText: chiefPlan,
+        chiefAgentId: targetAgent.id,
         taskId,
         runId,
-        createdAt: chiefPlanAt,
+        userMessageId,
+        artifactIds: taskArtifactIds,
       });
-      setMessages((current) => [...current, agentMessage]);
-
-      const chiefMediaArtifact = createMediaArtifactFromText({
-        projectId: selectedWorkspaceProject.id,
-        taskId,
-        agentId: targetAgent.id,
-        name: "Chief media",
-        text: chiefPlan,
-        createdAt: chiefPlanAt,
-      });
-      if (chiefMediaArtifact) {
-        taskArtifactIds.push(chiefMediaArtifact.id);
-        setArtifacts((current) => [chiefMediaArtifact, ...current]);
+      taskArtifactIds.splice(0, taskArtifactIds.length, ...chiefPlanState.artifactIds);
+      const chiefPlan = chiefPlanState.chiefPlan;
+      messagesRef.current = chiefPlanState.state.messages;
+      tasksRef.current = chiefPlanState.state.tasks;
+      runsRef.current = chiefPlanState.state.runs;
+      artifactsRef.current = chiefPlanState.state.artifacts;
+      setMessages(chiefPlanState.state.messages);
+      setTasks(chiefPlanState.state.tasks);
+      setRuns(chiefPlanState.state.runs);
+      setArtifacts(chiefPlanState.state.artifacts);
+      if (chiefPlanState.addedArtifactCount > 0) {
         setOutputMode("artifacts");
       }
-
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                state: "working",
-                summary: "Chief plan ready. Delegating to selected participants.",
-                events: [
-                  ...task.events,
-                  {
-                    id: `${taskId}-chief-response`,
-                    taskId,
-                    agentId: targetAgent.id,
-                    label: "Chief returned the first task-room plan.",
-                    state: "working",
-                    timestamp: chiefPlanAt,
-                  },
-                ],
-                artifactIds: [...taskArtifactIds],
-                updatedAt: chiefPlanAt,
-              }
-            : task,
-        ),
-      );
-      setRuns((current) =>
-        current.map((run) =>
-          run.id === runId
-            ? {
-                ...run,
-                state: "working",
-                summary: chiefPlan,
-                eventIds: [...run.eventIds, `${runId}-chief-response`],
-                artifactIds: [...taskArtifactIds],
-                updatedAt: chiefPlanAt,
-              }
-            : run,
-        ),
-      );
 
       const participantResults: ParticipantTaskResult[] = [];
 
       for (const participant of participants) {
         const delegatedAt = new Date().toISOString();
-        setTasks((current) =>
-          current.map((task) =>
-            task.id === taskId
-              ? {
-                  ...task,
-                  state: "working",
-                  summary: `Delegated to ${participant.name}.`,
-                  events: [
-                    ...task.events,
-                    {
-                      id: `${taskId}-${participant.id}-delegated`,
-                      taskId,
-                      agentId: participant.id,
-                      label: `Delegated to ${participant.name}.`,
-                      state: "submitted",
-                      timestamp: delegatedAt,
-                    },
-                  ],
-                  updatedAt: delegatedAt,
-                }
-              : task,
-          ),
-        );
+        const delegatedTasks = applyTaskRoomParticipantDelegated({
+          tasks: tasksRef.current,
+          taskId,
+          participant,
+          delegatedAt,
+        });
+        tasksRef.current = delegatedTasks;
+        setTasks(delegatedTasks);
 
         let participantSummary = "";
         let participantState: WorkState = "completed";
@@ -1769,54 +1730,35 @@ export function App() {
           participantAt = new Date().toISOString();
         }
 
-        const participantArtifact = createTextArtifact({
+        const participantStateUpdate = applyTaskRoomParticipantCompleted({
+          state: {
+            tasks: tasksRef.current,
+            artifacts: artifactsRef.current,
+          },
           projectId: selectedWorkspaceProject.id,
           taskId,
-          agentId: participant.id,
-          name: `${participant.name} result`,
-          text: participantSummary,
-          createdAt: participantAt,
+          participant,
+          participantState,
+          participantSummary,
+          participantAt,
+          artifactIds: taskArtifactIds,
         });
-        taskArtifactIds.push(participantArtifact.id);
-        participantResults.push({
-          agentId: participant.id,
-          agentName: participant.name,
-          state: participantState,
-          summary: participantSummary,
-        });
-        setArtifacts((current) => [participantArtifact, ...current]);
-        setTasks((current) =>
-          current.map((task) =>
-            task.id === taskId
-              ? {
-                  ...task,
-                  state: "working",
-                  summary: `${participant.name} returned a result.`,
-                  events: [
-                    ...task.events,
-                    {
-                      id: `${taskId}-${participant.id}-result`,
-                      taskId,
-                      agentId: participant.id,
-                      label: participantState === "failed" ? `${participant.name} failed.` : `${participant.name} returned a result.`,
-                      state: participantState,
-                      timestamp: participantAt,
-                    },
-                  ],
-                  artifactIds: [...taskArtifactIds],
-                  updatedAt: participantAt,
-                }
-              : task,
-          ),
-        );
+        taskArtifactIds.splice(0, taskArtifactIds.length, ...participantStateUpdate.artifactIds);
+        participantResults.push(participantStateUpdate.participantResult);
+        artifactsRef.current = participantStateUpdate.state.artifacts;
+        tasksRef.current = participantStateUpdate.state.tasks;
+        setArtifacts(participantStateUpdate.state.artifacts);
+        setTasks(participantStateUpdate.state.tasks);
       }
 
       let finalSummary = "";
       let finalState: WorkState = "completed";
       let finalAt = new Date().toISOString();
+      let aggregateResult: Awaited<ReturnType<typeof executeChiefAggregationTurn>> | undefined;
+      let markUserMessageFailed = false;
 
       try {
-        const aggregateResult = await executeChiefAggregationTurn({
+        aggregateResult = await executeChiefAggregationTurn({
           chief: targetAgent,
           project: selectedWorkspaceProject,
           text,
@@ -1824,116 +1766,69 @@ export function App() {
           participantResults,
           files: taskFiles,
         });
-        const aggregateTask = aggregateResult.task;
         finalSummary = aggregateResult.summary;
-        finalState = mapA2AState(aggregateTask.status.state);
+        finalState = mapA2AState(aggregateResult.task.status.state);
         finalAt = aggregateResult.completedAt;
-        const aggregateMessage = createAgentMessageFromTask({
-          task: aggregateTask,
-          conversationId: conversation.id,
-          projectId: selectedWorkspaceProject.id,
-          agentId: targetAgent.id,
-          fallbackText: finalSummary,
-          taskId,
-          runId,
-          createdAt: finalAt,
-        });
-        setMessages((current) => [...current, aggregateMessage]);
       } catch (error) {
         finalState = "failed";
         finalSummary = getUserFacingAgentError(error);
         finalAt = new Date().toISOString();
-        setMessages((current) => markConversationMessageFailed(current, userMessageId, finalSummary));
+        markUserMessageFailed = true;
       }
 
-      const finalArtifact = createTextArtifact({
+      const finalStateUpdate = applyTaskRoomAggregationCompleted({
+        state: {
+          messages: messagesRef.current,
+          tasks: tasksRef.current,
+          runs: runsRef.current,
+          artifacts: artifactsRef.current,
+        },
+        conversations: conversationsRef.current,
+        result: aggregateResult,
+        conversationId: conversation.id,
         projectId: selectedWorkspaceProject.id,
+        chiefAgentId: targetAgent.id,
         taskId,
-        agentId: targetAgent.id,
-        name: "Chief summary",
-        text: finalSummary,
-        createdAt: finalAt,
+        runId,
+        finalState,
+        finalSummary,
+        finalAt,
+        participantAgentIds,
+        artifactIds: taskArtifactIds,
+        userMessageId,
+        markUserMessageFailed,
       });
-      const finalArtifactIds = [...taskArtifactIds, finalArtifact.id];
-      setArtifacts((current) => [finalArtifact, ...current]);
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                state: finalState,
-                summary: finalSummary,
-                events: [
-                  ...task.events,
-                  {
-                    id: `${taskId}-chief-aggregate`,
-                    taskId,
-                    agentId: targetAgent.id,
-                    label: finalState === "failed" ? "Chief aggregation failed." : "Chief aggregated participant results.",
-                    state: finalState,
-                    timestamp: finalAt,
-                  },
-                ],
-                artifactIds: finalArtifactIds,
-                updatedAt: finalAt,
-              }
-            : task,
-        ),
-      );
-      setRuns((current) =>
-        current.map((run) =>
-          run.id === runId
-            ? {
-                ...run,
-                state: finalState,
-                summary: finalSummary,
-                eventIds: [...run.eventIds, `${runId}-completed`],
-                artifactIds: finalArtifactIds,
-                updatedAt: finalAt,
-              }
-            : run,
-        ),
-      );
-      setConversations((current) =>
-        current.map((item) =>
-          item.id === conversation.id
-            ? {
-                ...item,
-                participantAgentIds,
-                updatedAt: finalAt,
-              }
-            : item,
-        ),
-      );
-      setOutputMode(finalArtifactIds.length > 0 ? "artifacts" : "runs");
+      messagesRef.current = finalStateUpdate.state.messages;
+      artifactsRef.current = finalStateUpdate.state.artifacts;
+      tasksRef.current = finalStateUpdate.state.tasks;
+      runsRef.current = finalStateUpdate.state.runs;
+      conversationsRef.current = finalStateUpdate.conversations;
+      setMessages(finalStateUpdate.state.messages);
+      setArtifacts(finalStateUpdate.state.artifacts);
+      setTasks(finalStateUpdate.state.tasks);
+      setRuns(finalStateUpdate.state.runs);
+      setConversations(finalStateUpdate.conversations);
+      setOutputMode(finalStateUpdate.finalArtifactIds.length > 0 ? "artifacts" : "runs");
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorMessage = getUserFacingAgentError(error);
-      setMessages((current) => markConversationMessageFailed(current, userMessageId, errorMessage));
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                state: "failed",
-                summary: errorMessage,
-                events: [
-                  ...task.events,
-                  {
-                    id: `${taskId}-failed`,
-                    taskId,
-                    agentId: targetAgent.id,
-                    label: "Chief task request failed.",
-                    state: "failed",
-                    timestamp: failedAt,
-                  },
-                ],
-                updatedAt: failedAt,
-              }
-            : task,
-        ),
-      );
-      setRuns((current) => failRunById(current, runId, failedAt, errorMessage));
+      const failedState = applyTaskRoomRequestFailed({
+        messages: messagesRef.current,
+        tasks: tasksRef.current,
+        runs: runsRef.current,
+        userMessageId,
+        taskId,
+        runId,
+        chiefAgentId: targetAgent.id,
+        errorMessage,
+        failedAt,
+      });
+      messagesRef.current = failedState.messages;
+      tasksRef.current = failedState.tasks;
+      runsRef.current = failedState.runs;
+      setMessages(failedState.messages);
+      setTasks(failedState.tasks);
+      setRuns(failedState.runs);
       setOutputMode("runs");
     } finally {
       requestTrackerRef.current.end(requestId);

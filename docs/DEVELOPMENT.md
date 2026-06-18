@@ -386,6 +386,7 @@ Completed:
 - Task Room Chief planning, participant execution, and Chief aggregation provider turns are routed through a task-room request service.
 - Free Chat completion/failure and conversation timestamp updates use pure state reducers instead of ad hoc component-local state edits.
 - Project Direct Chat completion/failure now uses state reducers for messages, runs, tasks, and artifacts.
+- Task Room Chief plan, participant result, Chief aggregation, and request-failure state writes now use state reducers for messages, tasks, runs, artifacts, and conversation timestamps.
 - Artifact/media mapping helpers are centralized outside the React component.
 
 Still open:
