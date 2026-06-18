@@ -103,10 +103,16 @@ export function createLocalTrustedWorkspaceCommandRequest(command: LocalTrustedW
 async function workspaceCommand<T>(command: LocalTrustedWorkspaceCommand): Promise<T> {
   const response = await fetch("/workspace-local/command", createLocalTrustedWorkspaceCommandRequest(command));
 
-  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  const body = (await response.json().catch(() => ({}))) as { error?: string | { message?: string } };
   if (!response.ok) {
-    throw new Error(body.error || "Workspace file request failed.");
+    throw new Error(getWorkspaceCommandErrorMessage(body) || "Workspace file request failed.");
   }
 
   return body as T;
+}
+
+function getWorkspaceCommandErrorMessage(body: { error?: string | { message?: string } }) {
+  if (typeof body.error === "string") return body.error;
+  if (body.error && typeof body.error.message === "string") return body.error.message;
+  return "";
 }

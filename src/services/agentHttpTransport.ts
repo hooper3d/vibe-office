@@ -83,11 +83,18 @@ export function createLocalTrustedProviderCommandRequest(command: LocalTrustedPr
 
 export async function readErrorSuffix(response: Response) {
   try {
-    const payload = (await response.json()) as { error?: { message?: string } };
-    return payload.error?.message ? `: ${payload.error.message}` : "";
+    const payload = (await response.json()) as { error?: string | { message?: string } };
+    const message = getResponseErrorMessage(payload);
+    return message ? `: ${message}` : "";
   } catch {
     return "";
   }
+}
+
+function getResponseErrorMessage(payload: { error?: string | { message?: string } }) {
+  if (typeof payload.error === "string") return payload.error;
+  if (payload.error && typeof payload.error.message === "string") return payload.error.message;
+  return "";
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, timeoutMessage: string) {

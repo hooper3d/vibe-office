@@ -40,6 +40,14 @@ export function sendJson(res: JsonResponseLike, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+export function sendSafeError(res: JsonResponseLike, status: number, error: unknown, fallback = "Local trusted request failed.") {
+  sendJson(res, status, {
+    error: {
+      message: getSafeErrorMessage(error, fallback),
+    },
+  });
+}
+
 export function sendBinary(
   res: BinaryResponseLike,
   status: number,
@@ -74,7 +82,7 @@ export async function forwardProviderRequest(
   res.end(responseBody);
 }
 
-export function getSafeErrorMessage(error: unknown) {
+export function getSafeErrorMessage(error: unknown, fallback = "Workspace file request failed.") {
   if (error instanceof Error) return error.message;
-  return "Workspace file request failed.";
+  return fallback;
 }

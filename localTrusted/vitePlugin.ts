@@ -6,10 +6,10 @@ import {
 import { readGeneratedMedia } from "./generatedMedia";
 import {
   forwardProviderRequest,
-  getSafeErrorMessage,
   readJsonBody,
   sendBinary,
   sendJson,
+  sendSafeError,
 } from "./http";
 import {
   executeWorkspaceCommand,
@@ -27,7 +27,7 @@ export function localTrustedLayerPlugin(): Plugin {
           const result = await executeAgentRegistryCommand({ command: "agent.upsert", payload: body });
           sendJson(res, result.status, result.body);
         } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+          sendSafeError(res, 400, error, "Local agent registry request failed.");
         }
       });
 
@@ -39,7 +39,7 @@ export function localTrustedLayerPlugin(): Plugin {
           const result = await executeAgentRegistryCommand({ command: "agent.delete", payload: body });
           sendJson(res, result.status, result.body);
         } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+          sendSafeError(res, 400, error, "Local agent registry request failed.");
         }
       });
 
@@ -51,7 +51,7 @@ export function localTrustedLayerPlugin(): Plugin {
           const result = await executeAgentRegistryCommand({ command: "agent.status", payload: body });
           sendJson(res, result.status, result.body);
         } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+          sendSafeError(res, 400, error, "Local agent status request failed.");
         }
       });
 
@@ -63,7 +63,7 @@ export function localTrustedLayerPlugin(): Plugin {
           const result = await executeAgentRegistryCommand(body);
           sendJson(res, result.status, result.body);
         } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+          sendSafeError(res, 400, error, "Local agent registry command failed.");
         }
       });
 
@@ -75,7 +75,7 @@ export function localTrustedLayerPlugin(): Plugin {
           const providerRequest = await getVerifiedProviderCommandRequest(body);
           await forwardProviderRequest(res, providerRequest);
         } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+          sendSafeError(res, 400, error, "Local provider command failed.");
         }
       });
 
@@ -87,7 +87,7 @@ export function localTrustedLayerPlugin(): Plugin {
           const result = await executeWorkspaceCommand(body);
           sendJson(res, result.status, result.body);
         } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+          sendSafeError(res, 400, error, "Workspace file request failed.");
         }
       });
 
@@ -101,7 +101,7 @@ export function localTrustedLayerPlugin(): Plugin {
           }
           sendBinary(res, result.status, result.body, result.contentType);
         } catch (error) {
-          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+          sendSafeError(res, 400, error, "Workspace media request failed.");
         }
       });
     },

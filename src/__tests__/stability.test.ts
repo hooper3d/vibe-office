@@ -57,6 +57,7 @@ import {
 } from "../services/taskRoomOrchestrator";
 import {
   createBrowserAgentHttpTransport,
+  readErrorSuffix,
   type AgentHttpTransport,
   type LocalTrustedProviderCommand,
 } from "../services/agentHttpTransport";
@@ -171,6 +172,7 @@ import { deriveWorkspaceSelection } from "../services/workspaceSelectionState";
 import { applyWorkspaceStateDefaults, emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 import {
   createLocalTrustedWorkspaceCommandRequest,
+  readWorkspaceFile,
   type WorkspaceFileAttachment,
   type WorkspaceFileReadResult,
 } from "../services/workspaceFileClient";
@@ -732,6 +734,24 @@ test("agent http transport delegates provider commands to the local trusted laye
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test("agent http transport preserves local trusted error details", async () => {
+  const objectError = await readErrorSuffix(
+    new Response(JSON.stringify({ error: { message: "API key is missing in the local trusted layer." } }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  const stringError = await readErrorSuffix(
+    new Response(JSON.stringify({ error: "Legacy local trusted error." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+
+  assert.equal(objectError, ": API key is missing in the local trusted layer.");
+  assert.equal(stringError, ": Legacy local trusted error.");
 });
 
 test("configured agent storage keeps provider credentials out of browser localStorage", () => {
@@ -2623,6 +2643,24 @@ test("workspace file client sends command-shaped local trusted requests", () => 
   });
 });
 
+test("workspace file client preserves local trusted error details", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: { message: "Workspace file context could not be restored." } }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      () => readWorkspaceFile("C:/workspace/project", "src/App.tsx"),
+      /Workspace file context could not be restored/,
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("workspace attachment state deduplicates, caps, and detaches files", () => {
   const makeFile = (name: string): WorkspaceFileReadResult => ({
     path: `docs/${name}.md`,
@@ -2727,6 +2765,8 @@ test("local trusted middleware exposes command-only provider and workspace route
   assert.match(source, /agent-local\/registry-command/);
   assert.doesNotMatch(source, /agent-local\/request/);
   assert.match(source, /workspace-local\/command/);
+  assert.match(source, /sendSafeError/);
+  assert.doesNotMatch(source, /error:\s*getSafeErrorMessage/);
   assert.doesNotMatch(source, /workspace-local\/list/);
   assert.doesNotMatch(source, /workspace-local\/read/);
   assert.doesNotMatch(source, /workspace-local\/search/);
