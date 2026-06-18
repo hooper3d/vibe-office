@@ -764,6 +764,9 @@ Acceptance:
 - M7-1 structure slimming continues: project task output rendering now lives in `src/components/ProjectTasks.tsx`, and project artifact browsing/preview/copy/download rendering now lives in `src/components/ProjectArtifacts.tsx`.
 - Workspace file browsing/list/read/search/attach rendering now lives in `src/components/WorkspaceFiles.tsx`, keeping `OutputWorkspace.tsx` focused on Browser preview and Output Area composition.
 - Direct Chat, Free Chat history, no-agent/no-project states, Task Room transcript rendering, Markdown message rendering, retry affordances, and the typing indicator now live in `src/components/ConversationViews.tsx`, leaving `App.tsx` closer to state and request orchestration.
+- Project create/edit and delete confirmation dialogs now live in `src/components/ProjectDialogs.tsx`.
+- Output tab rendering now lives in `src/components/OutputTabs.tsx`.
+- Project name derivation and namespace slug helpers now live in `src/services/projectNaming.ts`.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
 
 ## A2A Version / State Mapping
