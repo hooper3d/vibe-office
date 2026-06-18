@@ -90,6 +90,9 @@ function normalizeAgentInstance(value: unknown): AgentInstance | null {
     officeRole: normalizeOfficeRole(safeAgent.officeRole, safeAgent.isChief),
     a2aProtocolVersion: typeof safeAgent.a2aProtocolVersion === "string" ? safeAgent.a2aProtocolVersion : undefined,
     a2aTransportBinding: typeof safeAgent.a2aTransportBinding === "string" ? safeAgent.a2aTransportBinding : undefined,
+    a2aSupportedInterfaces: Array.isArray(safeAgent.a2aSupportedInterfaces)
+      ? safeAgent.a2aSupportedInterfaces.filter((item): item is string => typeof item === "string")
+      : undefined,
     a2aSelectedInterface: typeof safeAgent.a2aSelectedInterface === "string" ? safeAgent.a2aSelectedInterface : undefined,
     a2aLastCompatibilityCheckAt:
       typeof safeAgent.a2aLastCompatibilityCheckAt === "string" ? safeAgent.a2aLastCompatibilityCheckAt : undefined,

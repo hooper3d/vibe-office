@@ -10,15 +10,21 @@ import type {
 export type A2AClientOptions = {
   endpoint: string;
   apiKey?: string;
+  protocolVersion?: string;
+  useA2AVersionHeader?: boolean;
 };
 
 export class A2AClient {
   private endpoint: string;
   private apiKey?: string;
+  private protocolVersion?: string;
+  private useA2AVersionHeader: boolean;
 
   constructor(options: A2AClientOptions) {
     this.endpoint = options.endpoint.replace(/\/$/, "");
     this.apiKey = options.apiKey;
+    this.protocolVersion = options.protocolVersion;
+    this.useA2AVersionHeader = Boolean(options.useA2AVersionHeader && options.protocolVersion);
   }
 
   async getAgentCard(agentCardUrl = `${this.endpoint}/.well-known/agent-card.json`) {
@@ -100,6 +106,10 @@ export class A2AClient {
 
     if (this.apiKey) {
       headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
+    if (this.useA2AVersionHeader && this.protocolVersion) {
+      headers["A2A-Version"] = this.protocolVersion;
     }
 
     return headers;

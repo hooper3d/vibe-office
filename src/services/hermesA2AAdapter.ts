@@ -18,9 +18,12 @@ export class HermesA2AAdapter {
 
   constructor(options: HermesA2AAdapterOptions) {
     this.agent = options.agent;
+    const nativeA2A = options.agent.a2aTransportBinding === "json-rpc/http" && options.agent.a2aProtocolVersion !== "compatibility";
     this.client = new A2AClient({
       endpoint: options.agent.a2aEndpoint,
       apiKey: options.apiKey ?? options.agent.apiKey,
+      protocolVersion: nativeA2A ? options.agent.a2aProtocolVersion : undefined,
+      useA2AVersionHeader: nativeA2A,
     });
   }
 

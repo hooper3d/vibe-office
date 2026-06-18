@@ -546,12 +546,15 @@ M6 foundation progress:
 - Local Chief-led orchestration tasks are not auto-polled as remote A2A tasks unless a remote task link exists.
 - Unsupported lifecycle operations are recorded as task events instead of failing silently.
 - Agent profile data can track:
-  - protocol version
-  - transport binding
-  - selected interface
-  - last compatibility check time
-  - task lifecycle support
-  - cancel support
+      - protocol version
+      - transport binding
+      - supported interfaces
+      - selected interface
+      - last compatibility check time
+      - task lifecycle support
+      - cancel support
+- Native A2A HTTP requests send the selected `A2A-Version` header when a real protocol version is known.
+- Compatibility adapter calls do not fake native A2A version support.
 
 Scope:
 

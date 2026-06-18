@@ -80,6 +80,7 @@ type A2ACompatibilityMetadata = Pick<
   | "a2aLastCompatibilityCheckAt"
   | "a2aProtocolVersion"
   | "a2aSelectedInterface"
+  | "a2aSupportedInterfaces"
   | "a2aTransportBinding"
   | "supportsCancel"
   | "supportsTaskLifecycle"
@@ -2262,6 +2263,7 @@ function createA2ACompatibilityMetadata(result: HermesConnectionTestResult): A2A
   return {
     a2aProtocolVersion: result.card.protocolVersion ?? (nativeA2A ? "unknown" : "compatibility"),
     a2aTransportBinding: nativeA2A ? "json-rpc/http" : "openai-compatible-http",
+    a2aSupportedInterfaces: nativeA2A ? ["message/send", "tasks/get", "tasks/cancel"] : ["chat/completions"],
     a2aSelectedInterface: nativeA2A ? "message/send + tasks/get" : "chat/completions compatibility",
     a2aLastCompatibilityCheckAt: new Date().toISOString(),
     supportsTaskLifecycle: nativeA2A,

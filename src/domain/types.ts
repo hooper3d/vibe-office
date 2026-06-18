@@ -19,6 +19,7 @@ export type AgentInstance = {
   isChief?: boolean;
   a2aProtocolVersion?: string;
   a2aTransportBinding?: string;
+  a2aSupportedInterfaces?: string[];
   a2aSelectedInterface?: string;
   a2aLastCompatibilityCheckAt?: string;
   supportsTaskLifecycle?: boolean;
