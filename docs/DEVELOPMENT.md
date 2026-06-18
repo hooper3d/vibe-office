@@ -734,6 +734,7 @@ Implementation progress:
 - M9 provider regression harness started.
 - `npm run regression:providers` runs real-provider checks through `/agent-local/command` for configured Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible providers.
 - `npm run regression:providers:list` prints safe local trusted agent IDs for M9 without exposing API keys.
+- `npm run regression:providers:list` also reports M9 readiness for Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible, including missing keys and provider-type mismatches before the real matrix is run.
 - The M9 matrix covers connection, free chat, project chat, forced timeout, retry after timeout, and Chinese context continuity.
 - M9 can reuse existing local trusted agent IDs, or create temporary `m9-*` agents from shell-provided endpoint/model/key variables; see `docs/M9_PROVIDER_REGRESSION.md`.
 

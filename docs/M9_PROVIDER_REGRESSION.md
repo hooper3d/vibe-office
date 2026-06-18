@@ -24,6 +24,13 @@ To inspect safe local trusted agent IDs without printing keys:
 npm run regression:providers:list
 ```
 
+The list also prints M9 readiness for Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible:
+
+- `READY`: this target has a usable local trusted agent id.
+- `MISSING_KEY`: the provider record exists, but its API key is not in the local trusted registry.
+- `PROVIDER_MISMATCH`: a likely provider record exists, but its provider type does not match the M9 target. For example, MiniMax Anthropic-compatible must be registered as `anthropic`, not `openai`.
+- `NOT_FOUND`: no likely local trusted agent exists yet, or the configured `VIBE_M9_*_AGENT_ID` does not exist.
+
 ## Providers
 
 The script runs any provider whose existing agent ID or endpoint/model variables are present.

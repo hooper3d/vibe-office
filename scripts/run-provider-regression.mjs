@@ -2,6 +2,29 @@ const appUrl = normalizeBaseUrl(process.env.VIBE_OFFICE_URL || "http://127.0.0.1
 const defaultTimeoutMs = readNumber(process.env.VIBE_M9_REQUEST_TIMEOUT_MS, 45_000);
 const forcedTimeoutMs = readNumber(process.env.VIBE_M9_FORCED_TIMEOUT_MS, 1);
 const cliArgs = new Set(process.argv.slice(2));
+const m9Targets = [
+  {
+    label: "Hermes",
+    envName: "VIBE_M9_HERMES_AGENT_ID",
+    runtimeProvider: "hermes",
+    requiresKey: false,
+    hints: ["hermes", "8642", "hooper.ink"],
+  },
+  {
+    label: "DeepSeek OpenAI-compatible",
+    envName: "VIBE_M9_DEEPSEEK_AGENT_ID",
+    runtimeProvider: "openai",
+    requiresKey: true,
+    hints: ["deepseek"],
+  },
+  {
+    label: "MiniMax Anthropic-compatible",
+    envName: "VIBE_M9_MINIMAX_AGENT_ID",
+    runtimeProvider: "anthropic",
+    requiresKey: true,
+    hints: ["minimax", "minimaxi"],
+  },
+];
 
 if (cliArgs.has("--list")) {
   await printRegisteredAgents();
@@ -59,6 +82,7 @@ const results = [];
 for (const provider of providers) {
   console.log(`\n[M9] ${provider.label}`);
   try {
+    await assertExistingProviderReady(provider);
     await upsertProvider(provider);
     results.push(await runCheck(provider, "connection", () => runConnectionCheck(provider)));
     results.push(await runCheck(provider, "free-chat", () => runFreeChatCheck(provider)));
@@ -222,6 +246,22 @@ async function upsertProvider(provider) {
   });
 }
 
+async function assertExistingProviderReady(provider) {
+  if (!provider.usesExistingAgent) return;
+
+  const registry = await readLocalTrustedRegistry();
+  const agent = registry[provider.id];
+  if (!agent) {
+    throw new Error(`registered agent not found: ${provider.id}`);
+  }
+  if ((agent.runtimeProvider || "hermes") !== provider.runtimeProvider) {
+    throw new Error(`registered agent provider mismatch: expected ${provider.runtimeProvider}, got ${agent.runtimeProvider || "hermes"}`);
+  }
+  if (provider.runtimeProvider !== "hermes" && !(typeof agent.apiKey === "string" && agent.apiKey.length > 0)) {
+    throw new Error("registered provider is missing an API key in the local trusted registry");
+  }
+}
+
 async function postJson(url, body, timeoutMs = defaultTimeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -323,10 +363,15 @@ async function printRegisteredAgents() {
   console.log("Registered local trusted agents:");
   for (const agent of agents) {
     console.log(
-      `- ${agent.id} | ${agent.name || "Unnamed"} | provider=${agent.runtimeProvider} | model=${agent.model || "unknown"} | hasKey=${agent.hasKey} | endpoint=${agent.endpoint || "unknown"}`,
+      `- ${agent.id} | ${agent.name || "Unnamed"} | provider=${agent.runtimeProvider} | model=${agent.model || "unknown"} | hasKey=${agent.hasKey} | endpoint=${sanitizeUrlForDisplay(agent.endpoint) || "unknown"}`,
     );
   }
-  console.log("\nUse VIBE_M9_HERMES_AGENT_ID, VIBE_M9_DEEPSEEK_AGENT_ID, or VIBE_M9_MINIMAX_AGENT_ID with one of these ids.");
+  console.log("\nM9 readiness:");
+  for (const target of m9Targets) {
+    const readiness = getTargetReadiness(target, agents);
+    console.log(`- ${target.label}: ${readiness}`);
+  }
+  console.log("\nUse VIBE_M9_HERMES_AGENT_ID, VIBE_M9_DEEPSEEK_AGENT_ID, or VIBE_M9_MINIMAX_AGENT_ID with a ready id.");
 }
 
 async function readLocalTrustedRegistry() {
@@ -342,5 +387,52 @@ async function readLocalTrustedRegistry() {
     return parsed;
   } catch {
     return {};
+  }
+}
+
+function getTargetReadiness(target, agents) {
+  const configuredId = String(process.env[target.envName] || "").trim();
+  const candidates = configuredId
+    ? agents.filter((agent) => agent.id === configuredId)
+    : agents.filter((agent) => matchesTargetHints(agent, target));
+
+  if (configuredId && candidates.length === 0) {
+    return `NOT_FOUND ${target.envName}=${configuredId}`;
+  }
+
+  const ready = candidates.find(
+    (agent) =>
+      agent.runtimeProvider === target.runtimeProvider &&
+      (!target.requiresKey || agent.hasKey),
+  );
+  if (ready) return `READY ${ready.id}`;
+
+  const providerMismatch = candidates.find((agent) => agent.runtimeProvider !== target.runtimeProvider);
+  if (providerMismatch) {
+    return `PROVIDER_MISMATCH ${providerMismatch.id} expected=${target.runtimeProvider} actual=${providerMismatch.runtimeProvider}`;
+  }
+
+  const missingKey = candidates.find((agent) => target.requiresKey && !agent.hasKey);
+  if (missingKey) return `MISSING_KEY ${missingKey.id}`;
+
+  return "NOT_FOUND";
+}
+
+function matchesTargetHints(agent, target) {
+  const haystack = [agent.id, agent.name, agent.model, agent.endpoint].join(" ").toLowerCase();
+  return target.hints.some((hint) => haystack.includes(hint));
+}
+
+function sanitizeUrlForDisplay(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value.replace(/[?#].*$/, "");
   }
 }
