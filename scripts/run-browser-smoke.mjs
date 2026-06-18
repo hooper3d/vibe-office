@@ -29,11 +29,11 @@ try {
   await runProjectContextRecoveryFailureSmoke();
   console.log("Browser smoke checks passed.");
 } finally {
+  await browser.close();
   await cleanupSmokeAgents().catch((error) => {
     console.warn(`Unable to clean up smoke agents: ${error instanceof Error ? error.message : String(error)}`);
   });
   await assertLocalTrustedRegistryBoundary();
-  await browser.close();
 }
 
 async function runRefreshRestoreSmoke() {
@@ -840,7 +840,7 @@ function createSmokeAgent(id, name, overrides = {}) {
 }
 
 async function cleanupSmokeAgents() {
-  const ids = [...smokeAgentIds];
+  const ids = Array.from(new Set([...smokeAgentIds, ...(await readRegisteredSmokeAgentIds())]));
   if (ids.length === 0) return;
 
   await Promise.all(
@@ -860,9 +860,36 @@ async function cleanupSmokeAgents() {
   );
 }
 
+async function readRegisteredSmokeAgentIds() {
+  const registryPath = getLocalTrustedRegistryPath();
+  let raw = "";
+  try {
+    raw = await readFile(registryPath, "utf8");
+  } catch {
+    return [];
+  }
+
+  try {
+    const registry = JSON.parse(raw);
+    if (!registry || typeof registry !== "object" || Array.isArray(registry)) return [];
+    return Object.keys(registry).filter(isSmokeAgentId);
+  } catch {
+    return [];
+  }
+}
+
+function isSmokeAgentId(agentId) {
+  return (
+    agentId.startsWith("smoke-agent-") ||
+    agentId.startsWith("smoke-chief-") ||
+    agentId.startsWith("smoke-participant-") ||
+    agentId.startsWith("agent-smoke-")
+  );
+}
+
 async function assertLocalTrustedRegistryBoundary() {
-  const registryPath = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
-  const credentialPath = path.join(os.homedir(), ".vibe-office", "agent-credentials.local.json");
+  const registryPath = getLocalTrustedRegistryPath();
+  const credentialPath = getLocalTrustedCredentialPath();
   let raw = "";
   try {
     raw = await readFile(registryPath, "utf8");
@@ -885,6 +912,18 @@ async function assertLocalTrustedRegistryBoundary() {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
     throw new Error("Local trusted credential store must remain valid JSON after browser smoke cleanup.");
   }
+}
+
+function getLocalTrustedHome() {
+  return process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME || path.join(os.homedir(), ".vibe-office");
+}
+
+function getLocalTrustedRegistryPath() {
+  return path.join(getLocalTrustedHome(), "agent-registry.local.json");
+}
+
+function getLocalTrustedCredentialPath() {
+  return path.join(getLocalTrustedHome(), "agent-credentials.local.json");
 }
 
 function assertEqual(actual, expected, label) {
