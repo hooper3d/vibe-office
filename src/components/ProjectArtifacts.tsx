@@ -1,31 +1,22 @@
-import { Copy, Download, ExternalLink, Eye, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import type { A2APart } from "../domain/a2a";
 import type { ProjectArtifact } from "../domain/projectScope";
 import type { AgentInstance } from "../domain/types";
-import { createTextParts, getImageFileParts } from "../services/artifactState";
-import { getTextPartContent } from "../services/messageContent";
-
-function MarkdownContent({ content }: { content: string }) {
-  return (
-    <div className="markdown-content">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-    </div>
-  );
-}
-
-function getDataPartContent(parts: A2APart[]) {
-  return parts
-    .filter((part) => part.kind === "data")
-    .map((part) => JSON.stringify(part.data, null, 2))
-    .join("\n\n");
-}
+import {
+  getArtifactCopyText,
+  getDownloadableFilePart,
+  getOpenableArtifactUrl,
+  safeArtifactFileName,
+} from "../services/projectArtifactContent";
+import {
+  ProjectArtifactBrowser,
+  ProjectArtifactDetail,
+  type ArtifactCopyState,
+} from "./ProjectArtifactViewer";
 
 export function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[]; artifacts: ProjectArtifact[] }) {
   const [selectedArtifactId, setSelectedArtifactId] = useState(artifacts[0]?.id ?? "");
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "manual">("idle");
+  const [copyState, setCopyState] = useState<ArtifactCopyState>("idle");
   const selectedArtifact = artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0];
 
   useEffect(() => {
@@ -37,6 +28,11 @@ export function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[
       setSelectedArtifactId(artifacts[0].id);
     }
   }, [artifacts, selectedArtifactId]);
+
+  function selectArtifact(artifactId: string) {
+    setSelectedArtifactId(artifactId);
+    setCopyState("idle");
+  }
 
   if (artifacts.length === 0) {
     return (
@@ -70,7 +66,7 @@ export function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[
 
     const content = getArtifactCopyText(artifact);
     const extension = artifact.kind === "json" ? "json" : "txt";
-    downloadText(content, `${safeFileName(artifact.name)}.${extension}`, artifact.kind === "json" ? "application/json" : "text/plain");
+    downloadText(content, `${safeArtifactFileName(artifact.name)}.${extension}`, artifact.kind === "json" ? "application/json" : "text/plain");
   }
 
   function openArtifactUrl(artifact: ProjectArtifact) {
@@ -85,152 +81,34 @@ export function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[
 
   return (
     <div className="artifact-viewer">
-      <div className="artifact-browser" aria-label="Project artifacts">
-        {artifacts.map((artifact) => {
-          const agent = agents.find((item) => item.id === artifact.agentId);
-          const isSelected = artifact.id === selectedArtifact?.id;
-          return (
-            <button
-              className={`artifact-list-item ${isSelected ? "selected" : ""}`}
-              key={artifact.id}
-              onClick={() => {
-                setSelectedArtifactId(artifact.id);
-                setCopyState("idle");
-              }}
-              type="button"
-            >
-              <div>
-                <h3>{artifact.name}</h3>
-                <span>{agent?.name ?? "Agent"} / {artifact.kind}</span>
-              </div>
-              <Eye size={15} aria-hidden="true" />
-            </button>
-          );
-        })}
-      </div>
-
+      <ProjectArtifactBrowser
+        agents={agents}
+        artifacts={artifacts}
+        selectedArtifactId={selectedArtifact?.id}
+        onSelectArtifact={selectArtifact}
+      />
       {selectedArtifact ? (
-        <article className="artifact-detail" aria-label="Artifact viewer">
-          <div className="artifact-detail-header">
-            <div>
-              <div className="eyebrow">Artifact Viewer</div>
-              <h3>{selectedArtifact.name}</h3>
-              <span>{selectedAgent?.name ?? "Agent"} / {selectedArtifact.kind}</span>
-            </div>
-            <div className="artifact-actions">
-              <button
-                aria-label="Copy artifact content"
-                className="icon-button mini-button"
-                disabled={!canCopy}
-                onClick={() => copyArtifactContent(selectedArtifact)}
-                title="Copy content"
-                type="button"
-              >
-                <Copy size={15} />
-              </button>
-              <button
-                aria-label="Download artifact"
-                className="icon-button mini-button"
-                disabled={!canDownload}
-                onClick={() => downloadArtifact(selectedArtifact)}
-                title="Download"
-                type="button"
-              >
-                <Download size={15} />
-              </button>
-              <button
-                aria-label="Open artifact URL"
-                className="icon-button mini-button"
-                disabled={!openableUrl}
-                onClick={() => openArtifactUrl(selectedArtifact)}
-                title="Open URL"
-                type="button"
-              >
-                <ExternalLink size={15} />
-              </button>
-            </div>
-          </div>
-          {copyState !== "idle" ? <span className={`copy-status ${copyState}`}>{copyState === "copied" ? "Copied" : "Select and copy"}</span> : null}
-          {copyState === "manual" ? (
-            <textarea
-              className="copy-fallback"
-              onFocus={(event) => event.currentTarget.select()}
-              readOnly
-              value={getArtifactCopyText(selectedArtifact)}
-            />
-          ) : null}
-          <ArtifactPreview artifact={selectedArtifact} />
-        </article>
+        <ProjectArtifactDetail
+          canCopy={canCopy}
+          canDownload={canDownload}
+          copyState={copyState}
+          openableUrl={openableUrl}
+          selectedAgent={selectedAgent}
+          selectedArtifact={selectedArtifact}
+          onCopyArtifact={copyArtifactContent}
+          onDownloadArtifact={downloadArtifact}
+          onOpenArtifact={openArtifactUrl}
+        />
       ) : null}
     </div>
   );
-}
-
-function ArtifactPreview({ artifact }: { artifact: ProjectArtifact }) {
-  const parts = artifact.contentParts ?? createTextParts(artifact.summary);
-  const imageParts = getImageFileParts(parts);
-  const text = getTextPartContent(parts);
-  const data = getDataPartContent(parts);
-
-  return (
-    <div className="artifact-preview">
-      {imageParts.map((part, index) =>
-        part.kind === "file" && part.file.uri ? (
-          <img
-            alt={part.file.name ?? `${artifact.name} image ${index + 1}`}
-            className="artifact-image"
-            key={`${artifact.id}-image-${index}`}
-            src={part.file.uri}
-          />
-        ) : null,
-      )}
-      {text ? <MarkdownContent content={text} /> : null}
-      {data ? (
-        <pre className="artifact-json">
-          <code>{data}</code>
-        </pre>
-      ) : null}
-    </div>
-  );
-}
-
-function getArtifactCopyText(artifact: ProjectArtifact) {
-  const parts = artifact.contentParts ?? createTextParts(artifact.summary);
-  const text = getTextPartContent(parts);
-  const data = getDataPartContent(parts);
-  const files = parts
-    .flatMap((part) => (part.kind === "file" && part.file.uri ? [part.file.uri] : []))
-    .join("\n");
-  return [text, data, files].filter(Boolean).join("\n\n");
-}
-
-function getDownloadableFilePart(artifact: ProjectArtifact) {
-  const parts = artifact.contentParts ?? [];
-  return parts.find((part): part is Extract<A2APart, { kind: "file" }> => part.kind === "file" && Boolean(part.file.uri));
-}
-
-function getOpenableArtifactUrl(artifact: ProjectArtifact) {
-  const parts = artifact.contentParts ?? [];
-  const fileUri = parts.find((part) => part.kind === "file" && isOpenableUrl(part.file.uri ?? ""));
-  if (fileUri?.kind === "file") return fileUri.file.uri ?? "";
-
-  const textUrl = getTextPartContent(parts)
-    .split(/\s+/)
-    .find((value) => isOpenableUrl(value));
-  if (textUrl) return textUrl;
-
-  return artifact.kind === "url" && isOpenableUrl(artifact.summary) ? artifact.summary : "";
-}
-
-function isOpenableUrl(value?: string) {
-  return Boolean(value && (/^https?:\/\//i.test(value) || value.startsWith("/workspace-local/media")));
 }
 
 async function downloadUri(uri: string, fileName: string) {
   const response = await fetch(uri);
   if (!response.ok) throw new Error("Unable to download artifact.");
   const blob = await response.blob();
-  downloadBlob(blob, safeFileName(fileName));
+  downloadBlob(blob, safeArtifactFileName(fileName));
 }
 
 async function copyTextToClipboard(content: string) {
@@ -275,9 +153,4 @@ function downloadBlob(blob: Blob, fileName: string) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-}
-
-function safeFileName(value: string) {
-  const cleaned = value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-").replace(/\s+/g, " ");
-  return cleaned || "artifact";
 }

@@ -2978,6 +2978,9 @@ test("output workspace keeps browser preview and project outputs in focused comp
   const projectOutputs = await readFile(path.join(process.cwd(), "src", "components", "ProjectOutputs.tsx"), "utf8");
   const projectOutputPrimitives = await readFile(path.join(process.cwd(), "src", "components", "ProjectOutputPrimitives.tsx"), "utf8");
   const projectTasks = await readFile(path.join(process.cwd(), "src", "components", "ProjectTasks.tsx"), "utf8");
+  const projectArtifacts = await readFile(path.join(process.cwd(), "src", "components", "ProjectArtifacts.tsx"), "utf8");
+  const projectArtifactViewer = await readFile(path.join(process.cwd(), "src", "components", "ProjectArtifactViewer.tsx"), "utf8");
+  const projectArtifactContent = await readFile(path.join(process.cwd(), "src", "services", "projectArtifactContent.ts"), "utf8");
 
   assert.match(outputWorkspace, /export \{ BrowserPreview \} from "\.\/BrowserPreview"/);
   assert.match(outputWorkspace, /export \{ ProjectOutputs \} from "\.\/ProjectOutputs"/);
@@ -2992,6 +2995,14 @@ test("output workspace keeps browser preview and project outputs in focused comp
   assert.match(projectOutputPrimitives, /export function PreviewOutputSection/);
   assert.match(projectTasks, /getTrackableTaskOutputItems/);
   assert.doesNotMatch(projectTasks, /getVisibleOutputRuns|getStandaloneOutputTasks/);
+  assert.match(projectArtifacts, /ProjectArtifactBrowser/);
+  assert.match(projectArtifacts, /ProjectArtifactDetail/);
+  assert.match(projectArtifacts, /projectArtifactContent/);
+  assert.doesNotMatch(projectArtifacts, /function ArtifactPreview|function getArtifactCopyText/);
+  assert.match(projectArtifactViewer, /export function ProjectArtifactBrowser/);
+  assert.match(projectArtifactViewer, /export function ProjectArtifactDetail/);
+  assert.match(projectArtifactContent, /export function getArtifactCopyText/);
+  assert.match(projectArtifactContent, /export function getOpenableArtifactUrl/);
 });
 
 test("app shell delegates main workspace rendering to a focused component", async () => {

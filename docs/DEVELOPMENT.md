@@ -770,6 +770,7 @@ Implementation progress:
 - Output selection recovery and type-filter normalization now live in `src/services/outputSelectors.ts`, keeping the output panel UI focused on rendering agent/type sections.
 - Output Area rendering primitives now live in `src/components/ProjectOutputPrimitives.tsx`, so `ProjectOutputs.tsx` owns agent/type orchestration while the index buttons, type tabs, sections, and preview row stay in a focused UI component file.
 - Trackable task output normalization now lives in `src/services/projectTaskOutputItems.ts`, so `ProjectTasks.tsx` renders one unified task-output list instead of separately mapping run records and standalone task records.
+- Artifact content parsing now lives in `src/services/projectArtifactContent.ts`, while artifact list/detail/preview rendering lives in `src/components/ProjectArtifactViewer.tsx`; `ProjectArtifacts.tsx` now keeps selection and action orchestration focused.
 - Browser smoke cleanup now closes the browser before deleting smoke agents and removes historical smoke-prefixed records, keeping the real local trusted registry clean for M9 readiness checks.
 - M9 provider regression now removes environment-generated temporary providers after a run, so ad-hoc matrix checks do not permanently pollute the local trusted agent registry.
 - Frontend provider adapters no longer export provider endpoint URL builders; endpoint resolution and credential/header injection stay inside the local trusted provider request layer.
