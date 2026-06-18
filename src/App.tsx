@@ -1717,6 +1717,7 @@ export function App() {
     if (!existingConversation) {
       setConversations((current) => [conversation, ...current]);
     }
+    activeRequestMessageIdsRef.current.add(userMessageId);
     setMessages((current) => [...current, userMessage]);
     setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
     setRuns((current) => [projectRun, ...current]);
@@ -2015,6 +2016,8 @@ export function App() {
       );
       setRuns((current) => failRunById(current, runId, failedAt));
       setOutputMode("runs");
+    } finally {
+      activeRequestMessageIdsRef.current.delete(userMessageId);
     }
   }
 
