@@ -1299,6 +1299,42 @@ test("output selectors keep chat records separate from trackable project outputs
   );
 });
 
+test("output selectors exclude agents that only have non-output direct chat runs", () => {
+  const chatOnlyAgent: AgentInstance = {
+    ...participant,
+    id: "agent-chat-only",
+    name: "Chat Only",
+  };
+  const hiddenDirectRun = run({
+    id: "run-chat-only",
+    ownerAgentId: chatOnlyAgent.id,
+    participantAgentIds: [],
+    taskId: undefined,
+    type: "direct_message",
+    state: "completed",
+    artifactIds: [],
+  });
+
+  assert.deepEqual(
+    getVisibleOutputAgentIds({
+      agents: [agent, chatOnlyAgent],
+      runs: [hiddenDirectRun],
+      tasks: [],
+      artifacts: [],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    getOutputAgentGroups({
+      agents: [agent, chatOnlyAgent],
+      runs: [hiddenDirectRun],
+      tasks: [],
+      artifacts: [],
+    }),
+    [],
+  );
+});
+
 test("artifact backfill state materializes generated media links into task and run outputs", () => {
   const mediaMessage: ConversationMessage = {
     id: "agent-media-message",

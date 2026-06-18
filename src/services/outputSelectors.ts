@@ -37,7 +37,7 @@ export function getVisibleOutputAgentIds({
   artifacts: ProjectArtifact[];
 }) {
   const ids = new Set<string>();
-  runs.forEach((run) => {
+  getVisibleOutputRuns(runs).forEach((run) => {
     ids.add(run.ownerAgentId);
     run.participantAgentIds.forEach((agentId) => ids.add(agentId));
   });
@@ -65,7 +65,7 @@ export function getOutputAgentGroups({
       const agent = agents.find((item) => item.id === agentId);
       if (!agent) return undefined;
 
-      const agentRuns = filterRunsByAgent(runs, agentId);
+      const agentRuns = filterRunsByAgent(getVisibleOutputRuns(runs), agentId);
       const agentTasks = filterTasksByAgent(tasks, agentId);
       const agentArtifacts = filterArtifactsByAgent(artifacts, agentId);
 
