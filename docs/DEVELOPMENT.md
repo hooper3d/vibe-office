@@ -724,6 +724,10 @@ Implementation progress:
 - Workspace list/read/search/media remains on `/workspace-local/*`.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
 - M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.
+- M9 provider regression harness started.
+- `npm run regression:providers` runs real-provider checks through `/agent-local/command` for configured Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible providers.
+- The M9 matrix covers connection, free chat, project chat, forced timeout, retry after timeout, and Chinese context continuity.
+- M9 can reuse existing local trusted agent IDs, or create temporary `m9-*` agents from shell-provided endpoint/model/key variables; see `docs/M9_PROVIDER_REGRESSION.md`.
 
 Acceptance:
 
