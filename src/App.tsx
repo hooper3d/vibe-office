@@ -83,6 +83,7 @@ import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProje
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { restoreWorkspaceAttachments } from "./services/workspaceContextRecovery";
+import { getUserFacingWorkspaceError } from "./services/workspaceErrorText";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
@@ -740,7 +741,7 @@ export function App() {
     } catch (error) {
       setTestState("failed");
       setLastConnectionMetadata(null);
-      setTestMessage(error instanceof Error ? error.message : "Unable to verify provider connection.");
+      setTestMessage(getUserFacingAgentError(error));
     }
   }
 
@@ -3313,7 +3314,7 @@ function WorkspaceFiles({
       setSelectedFile(null);
     } catch (error) {
       setListResult(null);
-      setError(error instanceof Error ? error.message : "Unable to list workspace files.");
+      setError(getUserFacingWorkspaceError(error, "Unable to list workspace files."));
     } finally {
       setLoadingState("idle");
     }
@@ -3337,7 +3338,7 @@ function WorkspaceFiles({
       setSelectedFile(await readWorkspaceFile(projectDirectory, entry.path));
     } catch (error) {
       setSelectedFile(null);
-      setError(error instanceof Error ? error.message : "Unable to read file.");
+      setError(getUserFacingWorkspaceError(error, "Unable to read file."));
     } finally {
       setLoadingState("idle");
     }
@@ -3364,7 +3365,7 @@ function WorkspaceFiles({
     } catch (error) {
       setSearchMatches([]);
       setSearchTruncated(false);
-      setError(error instanceof Error ? error.message : "Unable to search workspace files.");
+      setError(getUserFacingWorkspaceError(error, "Unable to search workspace files."));
     } finally {
       setLoadingState("idle");
     }
