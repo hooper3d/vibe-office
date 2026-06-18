@@ -745,6 +745,7 @@ Acceptance:
 - Project workspace still has conversation, files, browser preview, and outputs.
 - Outputs are easier to find by agent and type.
 - M7-1 structure slimming continues: project task output rendering now lives in `src/components/ProjectTasks.tsx`, and project artifact browsing/preview/copy/download rendering now lives in `src/components/ProjectArtifacts.tsx`.
+- Workspace file browsing/list/read/search/attach rendering now lives in `src/components/WorkspaceFiles.tsx`, keeping `OutputWorkspace.tsx` focused on Browser preview and Output Area composition.
 
 ## A2A Version / State Mapping
 
