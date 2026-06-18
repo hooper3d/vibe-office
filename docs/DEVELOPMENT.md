@@ -763,6 +763,7 @@ Implementation progress:
 - Agent deletion state now lives in `src/services/agentSetupState.ts` and readiness status cleanup in `src/services/agentReadinessState.ts`, keeping App focused on applying state updates.
 - Project deletion selection fallback now lives in `src/services/projectSetupState.ts`, so deleting the active project returns to Free Chat through a tested state helper.
 - Workspace project selection now lives in `src/services/workspaceSelectionState.ts`, keeping scoped tasks/runs/artifacts and latest Chief task derivation out of `App.tsx`.
+- Workspace file attachment add/remove rules now live in `src/services/workspaceAttachmentState.ts`, keeping dedupe and max-attachment behavior reusable outside `App.tsx`.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:
@@ -800,6 +801,7 @@ Acceptance:
 - Pending recovery submission state now lives in `src/services/requestRecoverySubmissionState.ts`, covering interrupted request resume preparation and Direct Chat / Task Room failure state after refresh or app interruption.
 - Request workspace state is now applied through one local `App.tsx` sync path, keeping React state and `requestRuntimeStore` aligned for direct/task-room completions, recovery, retry, submissions, and project delete cleanup.
 - Workspace selection state now lives in `src/services/workspaceSelectionState.ts`, covering selected project, selected workspace project, scoped tasks/runs/artifacts, and latest Chief task derivation.
+- Workspace attachment state now lives in `src/services/workspaceAttachmentState.ts`, covering dedupe, attach timestamps, max attached files, and detach-by-path behavior.
 - Generated media artifact backfill now lives in `src/services/artifactBackfillState.ts`, keeping artifacts plus task/run artifact links aligned in both React state and `requestRuntimeStore`.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
 

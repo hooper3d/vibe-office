@@ -118,9 +118,14 @@ import {
   recordCancelUnsupportedState,
   recordLifecycleUnsupportedState,
 } from "../services/taskLifecycleState";
+import { attachWorkspaceFileState, detachWorkspaceFileState } from "../services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "../services/workspaceSelectionState";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
-import { createLocalTrustedWorkspaceCommandRequest } from "../services/workspaceFileClient";
+import {
+  createLocalTrustedWorkspaceCommandRequest,
+  type WorkspaceFileAttachment,
+  type WorkspaceFileReadResult,
+} from "../services/workspaceFileClient";
 
 const at = "2026-06-18T10:00:00.000Z";
 const freeChatProjectId = "default";
@@ -1921,6 +1926,50 @@ test("workspace file client sends command-shaped local trusted requests", () => 
     root: "C:/workspace/project",
     path: "src/App.tsx",
   });
+});
+
+test("workspace attachment state deduplicates, caps, and detaches files", () => {
+  const makeFile = (name: string): WorkspaceFileReadResult => ({
+    path: `docs/${name}.md`,
+    content: name,
+    size: name.length,
+    updatedAt: at,
+    truncated: false,
+  });
+  let attachments = ["one", "two", "three"].reduce<WorkspaceFileAttachment[]>(
+    (current, name) =>
+      attachWorkspaceFileState({
+        attachments: current,
+        file: makeFile(name),
+        attachedAt: `${at}-${name}`,
+        limit: 3,
+      }),
+    [],
+  );
+
+  assert.deepEqual(attachments.map((item) => item.path), ["docs/one.md", "docs/two.md", "docs/three.md"]);
+  assert.equal(
+    attachWorkspaceFileState({
+      attachments,
+      file: makeFile("two"),
+      attachedAt: `${at}-duplicate`,
+      limit: 3,
+    }),
+    attachments,
+  );
+
+  attachments = attachWorkspaceFileState({
+    attachments,
+    file: makeFile("four"),
+    attachedAt: `${at}-four`,
+    limit: 3,
+  });
+
+  assert.deepEqual(attachments.map((item) => item.path), ["docs/two.md", "docs/three.md", "docs/four.md"]);
+  assert.deepEqual(
+    detachWorkspaceFileState({ attachments, path: "docs/three.md" }).map((item) => item.path),
+    ["docs/two.md", "docs/four.md"],
+  );
 });
 
 test("local trusted workspace commands list, read, search, and reject path escape", async () => {

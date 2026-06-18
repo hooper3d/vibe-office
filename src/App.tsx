@@ -99,6 +99,7 @@ import {
 import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
 import { getSplitPercentFromClientX, nudgeSplitPercent } from "./services/splitPaneState";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
+import { attachWorkspaceFileState, detachWorkspaceFileState } from "./services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "./services/workspaceSelectionState";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
@@ -755,24 +756,13 @@ export function App() {
   }
 
   function attachWorkspaceFile(file: WorkspaceFileReadResult) {
-    setAttachedWorkspaceFiles((current) => {
-      if (current.some((item) => item.path === file.path)) return current;
-
-      return [
-        ...current,
-        {
-          path: file.path,
-          content: file.content,
-          size: file.size,
-          updatedAt: file.updatedAt,
-          attachedAt: new Date().toISOString(),
-        },
-      ].slice(-4);
-    });
+    setAttachedWorkspaceFiles((current) =>
+      attachWorkspaceFileState({ attachments: current, file, attachedAt: new Date().toISOString() }),
+    );
   }
 
   function detachWorkspaceFile(path: string) {
-    setAttachedWorkspaceFiles((current) => current.filter((item) => item.path !== path));
+    setAttachedWorkspaceFiles((current) => detachWorkspaceFileState({ attachments: current, path }));
   }
 
   function toggleTaskParticipant(agentId: string, checked: boolean) {
