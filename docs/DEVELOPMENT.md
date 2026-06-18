@@ -743,6 +743,7 @@ Implementation progress:
 - Local trusted credential storage has been split out of the agent registry into `localTrusted/credentialStore.ts`; the registry file now stores provider metadata only, while credentials are read separately and hydrated inside the trusted layer.
 - Local trusted registry and credential files now use shared private atomic JSON writes with `0700` directory / `0600` file mode intent and best-effort chmod, including the M9 credential repair script.
 - Local trusted private JSON writes now clean up stale atomic-write `.tmp` leftovers by prefix and age, keeping the credential/registry directory tidy without touching fresh temp files or real credential files.
+- The M9 local credential repair script now uses the same stale atomic-write `.tmp` cleanup pattern as the app-side local trusted writer.
 - Browser smoke now verifies that the local trusted agent registry remains valid JSON and does not contain `apiKey` fields after agent upsert/delete cleanup.
 - Credential storage is now local-trusted-layer prototype storage; replacing the plain local registry file with OS-backed secure storage is still pending.
 - M8's remaining hardening work is replacing the prototype registry file with OS-backed secure storage and moving the local trusted layer out of Vite dev middleware for packaging.

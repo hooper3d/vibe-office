@@ -2468,7 +2468,7 @@ test("local trusted credential files use private atomic write helpers", async ()
 test("local trusted temp cleanup removes only stale atomic-write leftovers", async () => {
   const { cleanupStaleLocalTrustedTempFiles } = await import("../../localTrusted/credentialStore");
   const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-temp-cleanup-"));
-  const nowMs = Date.parse("2026-06-19T00:00:00.000Z");
+  const nowMs = Date.now();
   const oldTemp = path.join(localTrustedHome, "agent-credentials.local.1.1.old.tmp");
   const freshTemp = path.join(localTrustedHome, "agent-credentials.local.1.1.fresh.tmp");
   const unrelatedTemp = path.join(localTrustedHome, "agent-registry.local.1.1.old.tmp");
@@ -3235,6 +3235,67 @@ test("local agent credential updater can repair M9 metadata while preserving sav
     assert.equal(registry["agent-minimax"].runtimeProvider, "anthropic");
     assert.equal(registry["agent-minimax"].endpoint, "https://api.minimaxi.com/anthropic");
     assert.equal(credentials["agent-minimax"].apiKey, secret);
+  } finally {
+    await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
+test("local agent credential updater cleans only stale atomic-write temp files", async () => {
+  const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-m9-script-temp-cleanup-"));
+  const secret = "script-temp-cleanup-key";
+  const nowMs = Date.parse("2026-06-19T00:00:00.000Z");
+  const oldRegistryTemp = path.join(localTrustedHome, "agent-registry.local.json.1.1.old.tmp");
+  const freshRegistryTemp = path.join(localTrustedHome, "agent-registry.local.json.1.1.fresh.tmp");
+  const oldCredentialTemp = path.join(localTrustedHome, "agent-credentials.local.json.1.1.old.tmp");
+  const unrelatedTemp = path.join(localTrustedHome, "other.local.json.1.1.old.tmp");
+
+  try {
+    await writeFile(
+      path.join(localTrustedHome, "agent-registry.local.json"),
+      JSON.stringify(
+        {
+          "agent-deepseek": {
+            id: "agent-deepseek",
+            name: "DeepSeek",
+            endpoint: "https://api.deepseek.com",
+            a2aEndpoint: "https://api.deepseek.com/a2a",
+            agentCardUrl: "https://api.deepseek.com/.well-known/agent-card.json",
+            model: "deepseek-v4-flash",
+            runtimeProvider: "openai",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await writeFile(oldRegistryTemp, "old", "utf8");
+    await writeFile(freshRegistryTemp, "fresh", "utf8");
+    await writeFile(oldCredentialTemp, "old", "utf8");
+    await writeFile(unrelatedTemp, "other", "utf8");
+    await utimes(oldRegistryTemp, new Date(nowMs - 48 * 60 * 60 * 1000), new Date(nowMs - 48 * 60 * 60 * 1000));
+    await utimes(freshRegistryTemp, new Date(nowMs - 10_000), new Date(nowMs - 10_000));
+    await utimes(oldCredentialTemp, new Date(nowMs - 48 * 60 * 60 * 1000), new Date(nowMs - 48 * 60 * 60 * 1000));
+    await utimes(unrelatedTemp, new Date(nowMs - 48 * 60 * 60 * 1000), new Date(nowMs - 48 * 60 * 60 * 1000));
+
+    const result = spawnSync(process.execPath, ["scripts/update-local-agent-credential.mjs"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VIBE_OFFICE_LOCAL_TRUSTED_HOME: localTrustedHome,
+        VIBE_AGENT_ID: "agent-deepseek",
+        VIBE_AGENT_M9_TARGET: "deepseek",
+        VIBE_AGENT_API_KEY: secret,
+      },
+    });
+    const remaining = await readdir(localTrustedHome);
+
+    assert.equal(result.status, 0);
+    assert.equal(remaining.includes(path.basename(oldRegistryTemp)), false);
+    assert.equal(remaining.includes(path.basename(freshRegistryTemp)), true);
+    assert.equal(remaining.includes(path.basename(oldCredentialTemp)), false);
+    assert.equal(remaining.includes(path.basename(unrelatedTemp)), true);
   } finally {
     await rm(localTrustedHome, { recursive: true, force: true });
   }

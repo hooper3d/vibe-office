@@ -7,6 +7,7 @@ const registryPath = path.join(localTrustedHome, "agent-registry.local.json");
 const credentialPath = path.join(localTrustedHome, "agent-credentials.local.json");
 const localTrustedDirectoryMode = 0o700;
 const localTrustedPrivateFileMode = 0o600;
+const localTrustedTempFileMaxAgeMs = 24 * 60 * 60 * 1000;
 
 const agentId = readRequiredEnv("VIBE_AGENT_ID");
 const apiKey = readOptionalEnv("VIBE_AGENT_API_KEY");
@@ -167,11 +168,14 @@ async function readJsonObject(filePath) {
 }
 
 async function writeJsonAtomic(filePath, value) {
+  const directory = path.dirname(filePath);
+  const prefix = path.basename(filePath);
   const temporaryPath = path.join(
-    path.dirname(filePath),
-    `${path.basename(filePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
+    directory,
+    `${prefix}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
   );
-  await ensureLocalTrustedPrivateDirectory(path.dirname(filePath));
+  await ensureLocalTrustedPrivateDirectory(directory);
+  await cleanupStaleAtomicWriteTempFiles(directory, prefix);
   await fs.writeFile(temporaryPath, JSON.stringify(value, null, 2), {
     encoding: "utf8",
     mode: localTrustedPrivateFileMode,
@@ -179,6 +183,34 @@ async function writeJsonAtomic(filePath, value) {
   await chmodLocalTrustedPath(temporaryPath, localTrustedPrivateFileMode);
   await fs.rename(temporaryPath, filePath);
   await chmodLocalTrustedPath(filePath, localTrustedPrivateFileMode);
+}
+
+async function cleanupStaleAtomicWriteTempFiles(directory, prefix, options = {}) {
+  const maxAgeMs = options.maxAgeMs ?? localTrustedTempFileMaxAgeMs;
+  const nowMs = options.nowMs ?? Date.now();
+  let entries;
+
+  try {
+    entries = await fs.readdir(directory);
+  } catch {
+    return;
+  }
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      if (!entry.startsWith(`${prefix}.`) || !entry.endsWith(".tmp")) return;
+
+      const filePath = path.join(directory, entry);
+      try {
+        const stat = await fs.stat(filePath);
+        if (!stat.isFile()) return;
+        if (nowMs - stat.mtimeMs < maxAgeMs) return;
+        await fs.rm(filePath, { force: true });
+      } catch {
+        // Best effort: failed temp cleanup must not block credential repair.
+      }
+    }),
+  );
 }
 
 async function ensureLocalTrustedPrivateDirectory(directory) {
