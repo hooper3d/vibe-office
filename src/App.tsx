@@ -47,12 +47,9 @@ import {
   type DirectRequestState,
 } from "./services/directRequestOrchestrator";
 import { useProjectDialogState } from "./services/projectDialogState";
+import { useProjectSetupController } from "./services/projectSetupController";
 import {
   applyMissingProjectSelection,
-  applyProjectDelete,
-  applyProjectDeleteSelection,
-  applyProjectSave,
-  canDeleteProject,
   normalizeConversationModeForScope,
 } from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
@@ -219,6 +216,24 @@ export function App() {
       }),
     [artifacts, projects, runs, selectedProjectId, tasks],
   );
+  const projectSetupController = useProjectSetupController({
+    applyRequestWorkspaceState,
+    artifacts,
+    chatScope,
+    conversations,
+    conversationMode,
+    freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+    messages,
+    projectDialog,
+    projects,
+    runs,
+    selectedProjectId,
+    setChatScope,
+    setConversationMode,
+    setProjects,
+    setSelectedProjectId,
+    tasks,
+  });
   const agentSetupIssues = useMemo(
     () => deriveAgentReadinessIssues({ agents, localTrustedIssues: localTrustedAgentIssues }),
     [agents, localTrustedAgentIssues],
@@ -456,68 +471,11 @@ export function App() {
     projectDialog.requestDeleteAgent(agentId);
   }
 
-  function saveProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const result = applyProjectSave({
-      projects,
-      editingProjectId: projectDialog.editingProjectId,
-      draft: {
-        name: String(form.get("name") || "").trim(),
-        description: String(form.get("description") || "").trim(),
-        directory: String(form.get("directory") || "").trim(),
-      },
-      createProjectId: () => crypto.randomUUID(),
-    });
-
-    if (result.kind === "error") {
-      projectDialog.setProjectFormError(result.error);
-      return;
-    }
-
-    setProjects(result.projects);
-    if (result.kind === "created") {
-      setSelectedProjectId(result.project.id);
-      setChatScope("project");
-    }
-    projectDialog.closeProjectDialog();
-  }
-
-  function requestDeleteProject(projectId: string) {
-    projectDialog.requestDeleteProject(projects, projectId);
-  }
-
-  function deleteProject(projectId: string) {
-    if (!canDeleteProject(projects, projectId, FREE_CHAT_ENTRY_PROJECT_ID)) return;
-    const nextState = applyProjectDelete({
-      state: {
-        projects,
-        conversations,
-        messages,
-        runs,
-        tasks,
-        artifacts,
-      },
-      projectId,
-    });
-    setProjects(nextState.projects);
-    applyRequestWorkspaceState(nextState);
-    const nextSelection = applyProjectDeleteSelection({
-      deletedProjectId: projectId,
-      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
-      selection: { selectedProjectId, chatScope, conversationMode },
-    });
-    setSelectedProjectId(nextSelection.selectedProjectId);
-    setChatScope(nextSelection.chatScope);
-    setConversationMode(nextSelection.conversationMode);
-    projectDialog.clearConfirmAction();
-  }
-
   function confirmPendingAction() {
     const action = projectDialog.confirmAction;
     if (!action) return;
     if (action.kind === "delete-project") {
-      deleteProject(action.projectId);
+      projectSetupController.deleteProject(action.projectId);
     } else {
       agentSetupController.deleteAgent(action.agentId);
     }
@@ -982,7 +940,7 @@ export function App() {
         themeMode={themeMode}
         onAddAgent={agentSetup.openAddAgentDialog}
         onCreateProject={projectDialog.openProjectDialog}
-        onDeleteProject={requestDeleteProject}
+        onDeleteProject={projectSetupController.requestDeleteProject}
         onEditAgent={agentSetup.openAgentEditor}
         onEditProject={projectDialog.openProjectEditor}
         onSelectAgent={(agentId) => {
@@ -1102,7 +1060,7 @@ export function App() {
           error={projectDialog.projectFormError}
           project={projectDialog.editingProjectId ? projects.find((project) => project.id === projectDialog.editingProjectId) : undefined}
           onClose={projectDialog.closeProjectDialog}
-          onSaveProject={saveProject}
+          onSaveProject={projectSetupController.saveProject}
         />
       ) : null}
       {projectDialog.confirmAction ? (
