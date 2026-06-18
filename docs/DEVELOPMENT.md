@@ -393,8 +393,10 @@ Completed:
 - Direct Chat retry and pending-recovery preparation now synchronizes the active request snapshot before async completion, avoiding stale ref/state divergence after retry, reload, or fast provider responses.
 - Workspace context prompt construction is centralized so Free/Project/Task Room requests use one explicit local-file boundary text.
 - Task Room request orchestration now runs through a dedicated task-room orchestrator service that owns Chief planning, participant execution, Chief aggregation, failure conversion, progressive state steps, and suggested Output Area updates.
+- Active request tracking and the latest conversation/run/task/artifact snapshot now live in a dedicated request runtime store instead of separate component refs.
 - A service-level stability regression harness now covers pending request recovery, direct/task-room retry routing, retry state reducers, request attempt lifecycle fields, Task Room state reducers, UI state restoration, and workspace localStorage migration/fallback behavior.
 - Service-level stability tests now cover Direct request orchestration, Task Room orchestration, workspace-context recovery, and Task Room chief-planning failure conversion.
+- Service-level stability tests now cover the request runtime store that coordinates active request ids with the latest workspace snapshot.
 - Browser-visible refresh restore and timeout failure smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Direct Chat and Task Room retry click-flow smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
 - Browser-visible Direct Chat and Task Room pending-reload recovery smokes passed and are recorded in `docs/STABILITY_SMOKE.md`.
@@ -402,7 +404,6 @@ Completed:
 
 Still open:
 
-- Move in-flight request tracking and attempt reconciliation out of the React component into a dedicated request store.
 - Move provider request execution from browser-owned adapters toward the local trusted layer when native packaging/storage is introduced.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 

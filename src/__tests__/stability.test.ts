@@ -31,6 +31,7 @@ import {
   executeTaskRoomRequestState,
   type TaskRoomRequestState,
 } from "../services/taskRoomOrchestrator";
+import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
 
@@ -307,6 +308,28 @@ test("conversation lifecycle retry attempt preserves request identity and clears
   assert.equal(sendingAgain.requestAttempt, 2);
   assert.equal(sendingAgain.errorText, undefined);
   assert.equal(sendingAgain.errorKind, undefined);
+});
+
+test("request runtime store keeps active request ids with the latest workspace snapshot", () => {
+  const store = createRequestRuntimeStore(directRequestState());
+
+  assert.deepEqual([...store.activeRequestIds()], []);
+  const requestId = store.begin(userMessage());
+  assert.equal(requestId, "request-1");
+  assert.equal(store.activeRequestIds().has("request-1"), true);
+
+  const nextMessages = [userMessage({ id: "message-2", requestId: "request-2" })];
+  store.sync({ messages: nextMessages });
+  assert.equal(store.snapshot().messages[0].id, "message-2");
+
+  store.replace({
+    ...store.snapshot(),
+    runs: [run({ id: "run-2" })],
+  });
+  assert.equal(store.snapshot().runs[0].id, "run-2");
+
+  store.end(requestId);
+  assert.equal(store.activeRequestIds().has("request-1"), false);
 });
 
 test("retry state helpers prepare direct and task-room messages without stale retry artifacts", () => {

@@ -95,7 +95,7 @@ import {
   prepareDirectMessageRetry,
   prepareTaskRoomMessageRetry,
 } from "./services/requestRetryState";
-import { createRequestTracker } from "./services/requestTracker";
+import { createRequestRuntimeStore } from "./services/requestRuntimeStore";
 import {
   executeTaskRoomRequestState,
   type TaskRoomRequestState,
@@ -212,12 +212,7 @@ export function App() {
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
   const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
-  const requestTrackerRef = useRef(createRequestTracker());
-  const conversationsRef = useRef(conversations);
-  const messagesRef = useRef(messages);
-  const runsRef = useRef(runs);
-  const tasksRef = useRef(tasks);
-  const artifactsRef = useRef(artifacts);
+  const requestStoreRef = useRef(createRequestRuntimeStore({ conversations, messages, runs, tasks, artifacts }));
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
@@ -368,23 +363,23 @@ export function App() {
   }, [activeFreeChatConversationIds, chatScope, currentConversation, selectedAgent]);
 
   useEffect(() => {
-    conversationsRef.current = conversations;
+    requestStoreRef.current.sync({ conversations });
   }, [conversations]);
 
   useEffect(() => {
-    messagesRef.current = messages;
+    requestStoreRef.current.sync({ messages });
   }, [messages]);
 
   useEffect(() => {
-    runsRef.current = runs;
+    requestStoreRef.current.sync({ runs });
   }, [runs]);
 
   useEffect(() => {
-    tasksRef.current = tasks;
+    requestStoreRef.current.sync({ tasks });
   }, [tasks]);
 
   useEffect(() => {
-    artifactsRef.current = artifacts;
+    requestStoreRef.current.sync({ artifacts });
   }, [artifacts]);
 
   useEffect(() => {
@@ -414,7 +409,7 @@ export function App() {
   }, [artifacts, conversations, messages, projects, runs, tasks]);
 
   useEffect(() => {
-    const pendingMessages = getPendingRequestMessages(messages, requestTrackerRef.current.snapshot());
+    const pendingMessages = getPendingRequestMessages(messages, requestStoreRef.current.activeRequestIds());
     if (pendingMessages.length === 0) return;
 
     pendingMessages.forEach((message) => {
@@ -435,9 +430,9 @@ export function App() {
         return;
       }
 
-      const trackedRequestId = requestTrackerRef.current.begin(message);
-      const preparedMessages = markConversationMessageSending(messagesRef.current, message.id);
-      messagesRef.current = preparedMessages;
+      const trackedRequestId = requestStoreRef.current.begin(message);
+      const preparedMessages = markConversationMessageSending(requestStoreRef.current.snapshot().messages, message.id);
+      requestStoreRef.current.sync({ messages: preparedMessages });
       setMessages(preparedMessages);
 
       if (recovery.kind === "free-chat") {
@@ -447,7 +442,7 @@ export function App() {
           userMessageId: message.id,
           text: recovery.text,
         }).finally(() => {
-          requestTrackerRef.current.end(trackedRequestId);
+          requestStoreRef.current.end(trackedRequestId);
         });
         return;
       }
@@ -459,7 +454,7 @@ export function App() {
         targetAgent: recovery.targetAgent,
         text: recovery.text,
       }).finally(() => {
-        requestTrackerRef.current.end(trackedRequestId);
+        requestStoreRef.current.end(trackedRequestId);
       });
     });
   }, [agents, conversations, messages, projects]);
@@ -1105,8 +1100,8 @@ export function App() {
   }
 
   function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
-    const failedMessages = markConversationMessageFailed(messagesRef.current, message.id, reason);
-    messagesRef.current = failedMessages;
+    const failedMessages = markConversationMessageFailed(requestStoreRef.current.snapshot().messages, message.id, reason);
+    requestStoreRef.current.sync({ messages: failedMessages });
     setMessages(failedMessages);
   }
 
@@ -1114,30 +1109,20 @@ export function App() {
     const failedAt = new Date().toISOString();
     markInterruptedMessageFailed(message, reason);
 
-    const failedTasks = failTaskRoomTaskForMessage(tasksRef.current, message, reason, failedAt);
-    const failedRuns = failRunForMessage(runsRef.current, message, failedAt, reason);
-    tasksRef.current = failedTasks;
-    runsRef.current = failedRuns;
+    const snapshot = requestStoreRef.current.snapshot();
+    const failedTasks = failTaskRoomTaskForMessage(snapshot.tasks, message, reason, failedAt);
+    const failedRuns = failRunForMessage(snapshot.runs, message, failedAt, reason);
+    requestStoreRef.current.sync({ tasks: failedTasks, runs: failedRuns });
     setTasks(failedTasks);
     setRuns(failedRuns);
   }
 
   function getDirectRequestState(): DirectRequestState {
-    return {
-      conversations: conversationsRef.current,
-      messages: messagesRef.current,
-      runs: runsRef.current,
-      tasks: tasksRef.current,
-      artifacts: artifactsRef.current,
-    };
+    return requestStoreRef.current.snapshot();
   }
 
   function applyDirectRequestResult(result: DirectRequestResult) {
-    conversationsRef.current = result.state.conversations;
-    messagesRef.current = result.state.messages;
-    runsRef.current = result.state.runs;
-    tasksRef.current = result.state.tasks;
-    artifactsRef.current = result.state.artifacts;
+    requestStoreRef.current.replace(result.state);
 
     setConversations(result.state.conversations);
     setMessages(result.state.messages);
@@ -1148,21 +1133,11 @@ export function App() {
   }
 
   function getTaskRoomRequestState(): TaskRoomRequestState {
-    return {
-      conversations: conversationsRef.current,
-      messages: messagesRef.current,
-      runs: runsRef.current,
-      tasks: tasksRef.current,
-      artifacts: artifactsRef.current,
-    };
+    return requestStoreRef.current.snapshot();
   }
 
   function applyTaskRoomRequestStep(step: TaskRoomRequestStep) {
-    conversationsRef.current = step.state.conversations;
-    messagesRef.current = step.state.messages;
-    runsRef.current = step.state.runs;
-    tasksRef.current = step.state.tasks;
-    artifactsRef.current = step.state.artifacts;
+    requestStoreRef.current.replace(step.state);
 
     setConversations(step.state.conversations);
     setMessages(step.state.messages);
@@ -1233,17 +1208,17 @@ export function App() {
     };
 
     if (!existingConversation) {
-      const nextConversations = [conversation, ...conversationsRef.current];
-      conversationsRef.current = nextConversations;
+      const nextConversations = [conversation, ...requestStoreRef.current.snapshot().conversations];
+      requestStoreRef.current.sync({ conversations: nextConversations });
       setConversations(nextConversations);
     }
     setActiveFreeChatConversationIds((current) => ({
       ...current,
       [targetAgent.id]: conversation.id,
     }));
-    requestTrackerRef.current.begin(requestId);
-    const nextMessages = [...messagesRef.current, userMessage];
-    messagesRef.current = nextMessages;
+    requestStoreRef.current.begin(requestId);
+    const nextMessages = [...requestStoreRef.current.snapshot().messages, userMessage];
+    requestStoreRef.current.sync({ messages: nextMessages });
     setMessages(nextMessages);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
@@ -1251,7 +1226,7 @@ export function App() {
     try {
       await completeFreeChatRequest({ conversation, targetAgent, userMessageId, text });
     } finally {
-      requestTrackerRef.current.end(requestId);
+      requestStoreRef.current.end(requestId);
     }
   }
 
@@ -1270,13 +1245,13 @@ export function App() {
       return;
     }
 
-    const trackedRequestId = requestTrackerRef.current.begin(retry.message);
+    const trackedRequestId = requestStoreRef.current.begin(retry.message);
     const preparedMessages = prepareDirectMessageRetry({
-      messages: messagesRef.current,
+      messages: requestStoreRef.current.snapshot().messages,
       message: retry.message,
       targetAgentId: retry.targetAgent.id,
     });
-    messagesRef.current = preparedMessages;
+    requestStoreRef.current.sync({ messages: preparedMessages });
     setMessages(preparedMessages);
 
     try {
@@ -1298,7 +1273,7 @@ export function App() {
         text: retry.text,
       });
     } finally {
-      requestTrackerRef.current.end(trackedRequestId);
+      requestStoreRef.current.end(trackedRequestId);
     }
   }
 
@@ -1310,22 +1285,22 @@ export function App() {
     });
     if (retry.kind === "ignore") return;
 
-    const trackedRequestId = requestTrackerRef.current.begin(retry.message);
-    const preparedMessages = prepareTaskRoomMessageRetry({ messages: messagesRef.current, messageId: retry.message.id });
-    messagesRef.current = preparedMessages;
+    const trackedRequestId = requestStoreRef.current.begin(retry.message);
+    const preparedMessages = prepareTaskRoomMessageRetry({ messages: requestStoreRef.current.snapshot().messages, messageId: retry.message.id });
+    requestStoreRef.current.sync({ messages: preparedMessages });
     setMessages(preparedMessages);
 
     try {
       const succeeded = await retryTaskLifecycle(retry.taskId);
       const completedMessages = completeTaskRoomMessageRetry({
-        messages: messagesRef.current,
+        messages: requestStoreRef.current.snapshot().messages,
         messageId: retry.message.id,
         succeeded,
       });
-      messagesRef.current = completedMessages;
+      requestStoreRef.current.sync({ messages: completedMessages });
       setMessages(completedMessages);
     } finally {
-      requestTrackerRef.current.end(trackedRequestId);
+      requestStoreRef.current.end(trackedRequestId);
     }
   }
 
@@ -1484,15 +1459,15 @@ export function App() {
       };
 
       if (!existingConversation) {
-        const nextConversations = [conversation, ...conversationsRef.current];
-        conversationsRef.current = nextConversations;
+        const nextConversations = [conversation, ...requestStoreRef.current.snapshot().conversations];
+        requestStoreRef.current.sync({ conversations: nextConversations });
         setConversations(nextConversations);
       }
-      requestTrackerRef.current.begin(requestId);
-      const nextMessages = [...messagesRef.current, userMessage];
-      const nextRuns = [optimisticRun, ...runsRef.current];
-      messagesRef.current = nextMessages;
-      runsRef.current = nextRuns;
+      requestStoreRef.current.begin(requestId);
+      const projectDirectSnapshot = requestStoreRef.current.snapshot();
+      const nextMessages = [...projectDirectSnapshot.messages, userMessage];
+      const nextRuns = [optimisticRun, ...projectDirectSnapshot.runs];
+      requestStoreRef.current.sync({ messages: nextMessages, runs: nextRuns });
       setMessages(nextMessages);
       setRuns(nextRuns);
       setMessageText("");
@@ -1510,7 +1485,7 @@ export function App() {
           agentRequestText,
         });
       } finally {
-        requestTrackerRef.current.end(requestId);
+        requestStoreRef.current.end(requestId);
       }
     } finally {
       composerSubmittingRef.current = false;
@@ -1608,17 +1583,16 @@ export function App() {
     };
 
     if (!existingConversation) {
-      const nextConversations = [conversation, ...conversationsRef.current];
-      conversationsRef.current = nextConversations;
+      const nextConversations = [conversation, ...requestStoreRef.current.snapshot().conversations];
+      requestStoreRef.current.sync({ conversations: nextConversations });
       setConversations(nextConversations);
     }
-    requestTrackerRef.current.begin(requestId);
-    const nextMessages = [...messagesRef.current, userMessage];
-    const nextTasks = [projectTask, ...tasksRef.current.filter((task) => task.id !== taskId)];
-    const nextRuns = [projectRun, ...runsRef.current];
-    messagesRef.current = nextMessages;
-    tasksRef.current = nextTasks;
-    runsRef.current = nextRuns;
+    requestStoreRef.current.begin(requestId);
+    const taskRoomSnapshot = requestStoreRef.current.snapshot();
+    const nextMessages = [...taskRoomSnapshot.messages, userMessage];
+    const nextTasks = [projectTask, ...taskRoomSnapshot.tasks.filter((task) => task.id !== taskId)];
+    const nextRuns = [projectRun, ...taskRoomSnapshot.runs];
+    requestStoreRef.current.sync({ messages: nextMessages, tasks: nextTasks, runs: nextRuns });
     setMessages(nextMessages);
     setTasks(nextTasks);
     setRuns(nextRuns);
@@ -1641,7 +1615,7 @@ export function App() {
         onStep: applyTaskRoomRequestStep,
       });
     } finally {
-      requestTrackerRef.current.end(requestId);
+      requestStoreRef.current.end(requestId);
     }
   }
 
