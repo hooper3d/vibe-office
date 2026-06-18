@@ -21,13 +21,14 @@ import type {
   ProjectTask,
 } from "./domain/projectScope";
 import type { AgentInstance, Project } from "./domain/types";
-import { loadConfiguredAgents, syncConfiguredAgents } from "./services/agentStorage";
+import { loadConfiguredAgents } from "./services/agentStorage";
 import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { useLocalTrustedAgentReadiness } from "./services/agentReadinessController";
 import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
+import { useAppSyncController } from "./services/appSyncController";
 import { useComposerController } from "./services/composerController";
 import {
   buildFreeChatHistory,
@@ -48,7 +49,6 @@ import { getRespondingAgentIds } from "./services/requestRecovery";
 import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
 import {
   createRequestRuntimeStore,
-  syncRequestRuntimeWorkspaceState,
   type RequestWorkspaceState,
 } from "./services/requestRuntimeStore";
 import { useTaskLifecycleController } from "./services/taskLifecycleController";
@@ -65,12 +65,12 @@ import {
   getSelectedTaskParticipants,
   toggleTaskParticipantSelection,
 } from "./services/taskParticipantSelectionState";
-import { loadThemeMode, saveThemeMode, type ThemeMode } from "./services/themeStorage";
+import { loadThemeMode, type ThemeMode } from "./services/themeStorage";
 import { useWorkspaceChromeController } from "./services/workspaceChromeController";
-import { loadUiState, saveUiState } from "./services/uiStateStorage";
+import { loadUiState } from "./services/uiStateStorage";
 import { attachWorkspaceFileState, detachWorkspaceFileState } from "./services/workspaceAttachmentState";
 import { deriveWorkspaceSelection } from "./services/workspaceSelectionState";
-import { applyWorkspaceStateDefaults, loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
+import { applyWorkspaceStateDefaults, loadWorkspaceState } from "./services/workspaceStorage";
 import {
   type WorkspaceFileAttachment,
   type WorkspaceFileReadResult,
@@ -335,10 +335,26 @@ export function App() {
     setPreviewUrl,
     setSplitPercent,
   });
-
-  useEffect(() => {
-    setAttachedWorkspaceFiles([]);
-  }, [chatScope, selectedWorkspaceProject?.id]);
+  useAppSyncController({
+    activeFreeChatConversationIds,
+    agents,
+    artifacts,
+    chatScope,
+    conversationMode,
+    conversations,
+    messages,
+    outputMode,
+    projects,
+    refreshLocalTrustedAgentIssues,
+    requestStore: requestStoreRef.current,
+    runs,
+    selectedAgentId,
+    selectedProjectId,
+    selectedWorkspaceProjectId: selectedWorkspaceProject?.id,
+    setAttachedWorkspaceFiles,
+    tasks,
+    themeMode,
+  });
 
   useEffect(() => {
     const nextSelection = normalizeConversationModeForScope({ selectedProjectId, chatScope, conversationMode });
@@ -365,62 +381,6 @@ export function App() {
     if (nextSelection.chatScope !== chatScope) setChatScope(nextSelection.chatScope);
     if (nextSelection.conversationMode !== conversationMode) setConversationMode(nextSelection.conversationMode);
   }, [chatScope, conversationMode, projects, selectedProjectId]);
-
-  useEffect(() => {
-    syncRequestRuntimeWorkspaceState(requestStoreRef.current, {
-      conversations,
-      messages,
-      runs,
-      tasks,
-      artifacts,
-    });
-  }, [artifacts, conversations, messages, runs, tasks]);
-
-  useEffect(() => {
-    syncConfiguredAgents({ agents });
-  }, [agents]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const agentIds = agents.map((agent) => agent.id);
-    if (agentIds.length === 0) {
-      void refreshLocalTrustedAgentIssues([]);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    void refreshLocalTrustedAgentIssues(agentIds, {
-      replace: true,
-      isCancelled: () => cancelled,
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agents]);
-
-  useEffect(() => {
-    saveUiState({
-      selectedAgentId,
-      selectedProjectId,
-      chatScope,
-      conversationMode,
-      outputMode,
-      activeFreeChatConversationIds,
-    });
-  }, [activeFreeChatConversationIds, chatScope, conversationMode, outputMode, selectedAgentId, selectedProjectId]);
-
-  useEffect(() => {
-    saveWorkspaceState({
-      projects,
-      conversations,
-      messages,
-      runs,
-      tasks,
-      artifacts,
-    });
-  }, [artifacts, conversations, messages, projects, runs, tasks]);
 
   useEffect(() => {
     const submission = getNextPendingRecoverySubmission({
@@ -467,11 +427,6 @@ export function App() {
     const backfilled = applyMediaArtifactBackfillState(requestStoreRef.current.snapshot());
     if (backfilled.changed) applyRequestWorkspaceState(backfilled.state);
   }, [artifacts, messages, runs, tasks]);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
-    saveThemeMode(themeMode);
-  }, [themeMode]);
 
   useEffect(() => {
     if (!selectedWorkspaceProject) return;
