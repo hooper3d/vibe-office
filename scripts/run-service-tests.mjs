@@ -5,10 +5,11 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const outdir = join(root, ".tmp", "service-tests");
+const tmpdir = join(root, ".tmp");
+const outdir = join(tmpdir, "service-tests");
 const outfile = join(outdir, "stability.test.mjs");
 
-await rm(outdir, { recursive: true, force: true });
+await rm(tmpdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 
 await build({
@@ -27,5 +28,7 @@ const result = spawnSync(process.execPath, ["--test", outfile], {
   cwd: root,
   stdio: "inherit",
 });
+
+await rm(tmpdir, { recursive: true, force: true });
 
 process.exit(result.status ?? 1);
