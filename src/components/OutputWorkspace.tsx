@@ -6,17 +6,14 @@ import {
   MessageSquare,
   RefreshCw,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import type { ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance } from "../domain/types";
 import { ProjectArtifacts } from "./ProjectArtifacts";
 import { ProjectTasks } from "./ProjectTasks";
 import {
-  countTrackableTaskOutputs,
-  filterArtifactsByAgent,
-  filterRunsByAgent,
-  filterTasksByAgent,
-  getVisibleOutputAgentIds,
+  getOutputAgentGroups,
+  type OutputAgentGroup,
 } from "../services/outputSelectors";
 
 export function BrowserPreview({
@@ -82,6 +79,14 @@ export function BrowserPreview({
 }
 
 type OutputTypeFilter = "all" | "tasks" | "artifacts" | "preview";
+type OutputSelection =
+  | {
+      kind: "agent";
+      agentId: string;
+    }
+  | {
+      kind: "preview";
+    };
 
 export function ProjectOutputs({
   agents,
@@ -106,26 +111,37 @@ export function ProjectOutputs({
   onRetryTask: (taskId: string) => void;
   onShowBrowser: () => void;
 }) {
-  const [selectedAgentId, setSelectedAgentId] = useState("all");
   const [typeFilter, setTypeFilter] = useState<OutputTypeFilter>("all");
-  const visibleAgentIds = getVisibleOutputAgentIds({ agents, runs, tasks, artifacts });
-  const selectedAgent = selectedAgentId === "all" ? undefined : agents.find((agent) => agent.id === selectedAgentId);
-  const filteredRuns = filterRunsByAgent(runs, selectedAgentId);
-  const filteredTasks = filterTasksByAgent(tasks, selectedAgentId);
-  const filteredArtifacts = filterArtifactsByAgent(artifacts, selectedAgentId);
-  const taskCount = countTrackableTaskOutputs(filteredRuns, filteredTasks);
-  const artifactCount = filteredArtifacts.length;
+  const outputGroups = useMemo(
+    () => getOutputAgentGroups({ agents, runs, tasks, artifacts }),
+    [agents, runs, tasks, artifacts],
+  );
   const hasPreview = previewUrl.trim().length > 0;
-  const hasAnyOutput = taskCount > 0 || artifactCount > 0 || hasPreview;
-  const showTasks = typeFilter === "all" || typeFilter === "tasks";
-  const showArtifacts = typeFilter === "all" || typeFilter === "artifacts";
-  const showPreview = typeFilter === "all" || typeFilter === "preview";
+  const [selection, setSelection] = useState<OutputSelection>(() =>
+    outputGroups[0] ? { kind: "agent", agentId: outputGroups[0].agent.id } : { kind: "preview" },
+  );
+  const selectedGroup =
+    selection.kind === "agent" ? outputGroups.find((group) => group.agent.id === selection.agentId) : undefined;
+  const hasAgentOutputs = outputGroups.length > 0;
+  const hasAnyOutput = hasAgentOutputs || hasPreview;
+  const showTasks = selection.kind === "agent" && (typeFilter === "all" || typeFilter === "tasks");
+  const showArtifacts = selection.kind === "agent" && (typeFilter === "all" || typeFilter === "artifacts");
+  const showPreview = selection.kind === "preview";
 
   useEffect(() => {
-    if (selectedAgentId === "all") return;
-    if (visibleAgentIds.includes(selectedAgentId)) return;
-    setSelectedAgentId("all");
-  }, [selectedAgentId, visibleAgentIds]);
+    if (selection.kind === "preview") {
+      if (!hasPreview && outputGroups[0]) setSelection({ kind: "agent", agentId: outputGroups[0].agent.id });
+      return;
+    }
+
+    if (outputGroups.some((group) => group.agent.id === selection.agentId)) return;
+    setSelection(outputGroups[0] ? { kind: "agent", agentId: outputGroups[0].agent.id } : { kind: "preview" });
+  }, [hasPreview, outputGroups, selection]);
+
+  useEffect(() => {
+    if (selection.kind === "preview" && typeFilter !== "preview") setTypeFilter("preview");
+    if (selection.kind === "agent" && typeFilter === "preview") setTypeFilter("all");
+  }, [selection, typeFilter]);
 
   if (!hasAnyOutput) {
     return (
@@ -140,53 +156,54 @@ export function ProjectOutputs({
   return (
     <div className="project-outputs">
       <div className="output-agent-index" aria-label="Output agents">
-        <OutputAgentButton
-          active={selectedAgentId === "all"}
-          label="All agents"
-          meta={`${countTrackableTaskOutputs(runs, tasks)} tasks / ${artifacts.length} artifacts`}
-          onClick={() => setSelectedAgentId("all")}
-        />
-        {visibleAgentIds.map((agentId) => {
-          const agent = agents.find((item) => item.id === agentId);
-          const agentRuns = filterRunsByAgent(runs, agentId);
-          const agentTasks = filterTasksByAgent(tasks, agentId);
-          const agentArtifacts = filterArtifactsByAgent(artifacts, agentId);
-          return (
-            <OutputAgentButton
-              active={selectedAgentId === agentId}
-              key={agentId}
-              label={agent?.name ?? "Agent"}
-              meta={`${countTrackableTaskOutputs(agentRuns, agentTasks)} tasks / ${agentArtifacts.length} artifacts`}
-              onClick={() => setSelectedAgentId(agentId)}
-            />
-          );
-        })}
+        {hasPreview ? (
+          <OutputIndexButton
+            active={selection.kind === "preview"}
+            label="Browser preview"
+            meta="Project preview"
+            onClick={() => setSelection({ kind: "preview" })}
+          />
+        ) : null}
+        {outputGroups.map((group) => (
+          <OutputIndexButton
+            active={selection.kind === "agent" && selection.agentId === group.agent.id}
+            key={group.agent.id}
+            label={group.agent.name}
+            meta={`${group.taskCount} tasks / ${group.artifactCount} artifacts`}
+            onClick={() => setSelection({ kind: "agent", agentId: group.agent.id })}
+          />
+        ))}
       </div>
 
       <div className="output-type-workspace">
         <div className="output-workspace-header">
           <div>
             <div className="eyebrow">Outputs</div>
-            <h3>{selectedAgent?.name ?? "All agents"}</h3>
-            <span>{taskCount} tasks / {artifactCount} artifacts{hasPreview ? " / 1 preview" : ""}</span>
+            <h3>{selection.kind === "preview" ? "Browser preview" : selectedGroup?.agent.name ?? "Agent outputs"}</h3>
+            <span>{getSelectionMeta(selection, selectedGroup, hasPreview)}</span>
           </div>
           <div className="output-type-filter" role="tablist" aria-label="Output types">
-            <OutputTypeButton active={typeFilter === "all"} label="All" onClick={() => setTypeFilter("all")} />
-            <OutputTypeButton active={typeFilter === "tasks"} label="Tasks" onClick={() => setTypeFilter("tasks")} />
-            <OutputTypeButton active={typeFilter === "artifacts"} label="Artifacts" onClick={() => setTypeFilter("artifacts")} />
-            <OutputTypeButton active={typeFilter === "preview"} label="Preview" onClick={() => setTypeFilter("preview")} />
+            {selection.kind === "preview" ? (
+              <OutputTypeButton active label="Preview" onClick={() => setTypeFilter("preview")} />
+            ) : (
+              <>
+                <OutputTypeButton active={typeFilter === "all"} label="All" onClick={() => setTypeFilter("all")} />
+                <OutputTypeButton active={typeFilter === "tasks"} label="Tasks" onClick={() => setTypeFilter("tasks")} />
+                <OutputTypeButton active={typeFilter === "artifacts"} label="Artifacts" onClick={() => setTypeFilter("artifacts")} />
+              </>
+            )}
           </div>
         </div>
 
         <div className="output-section-stack">
           {showPreview ? <PreviewOutputSection hasPreview={hasPreview} previewUrl={previewUrl} onShowBrowser={onShowBrowser} /> : null}
-          {showTasks ? (
-            <OutputSection title="Tasks" count={taskCount}>
+          {showTasks && selectedGroup ? (
+            <OutputSection title="Tasks" count={selectedGroup.taskCount}>
               <ProjectTasks
                 agents={agents}
-                runs={filteredRuns}
-                tasks={filteredTasks}
-                artifacts={filteredArtifacts}
+                runs={selectedGroup.runs}
+                tasks={selectedGroup.tasks}
+                artifacts={selectedGroup.artifacts}
                 busyActionId={busyActionId}
                 onCancelTask={onCancelTask}
                 onRefreshTask={onRefreshTask}
@@ -194,9 +211,9 @@ export function ProjectOutputs({
               />
             </OutputSection>
           ) : null}
-          {showArtifacts ? (
-            <OutputSection title="Artifacts" count={artifactCount}>
-              <ProjectArtifacts agents={agents} artifacts={filteredArtifacts} />
+          {showArtifacts && selectedGroup ? (
+            <OutputSection title="Artifacts" count={selectedGroup.artifactCount}>
+              <ProjectArtifacts agents={agents} artifacts={selectedGroup.artifacts} />
             </OutputSection>
           ) : null}
         </div>
@@ -205,7 +222,7 @@ export function ProjectOutputs({
   );
 }
 
-function OutputAgentButton({
+function OutputIndexButton({
   active,
   label,
   meta,
@@ -222,6 +239,12 @@ function OutputAgentButton({
       <span>{meta}</span>
     </button>
   );
+}
+
+function getSelectionMeta(selection: OutputSelection, group: OutputAgentGroup | undefined, hasPreview: boolean) {
+  if (selection.kind === "preview") return hasPreview ? "1 project preview" : "No preview opened";
+  if (!group) return "No outputs";
+  return `${group.taskCount} tasks / ${group.artifactCount} artifacts`;
 }
 
 function OutputTypeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {

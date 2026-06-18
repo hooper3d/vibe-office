@@ -92,6 +92,7 @@ import {
   filterArtifactsByAgent,
   filterRunsByAgent,
   filterTasksByAgent,
+  getOutputAgentGroups,
   getStandaloneOutputTasks,
   getVisibleOutputAgentIds,
   getVisibleOutputRuns,
@@ -1278,6 +1279,19 @@ test("output selectors keep chat records separate from trackable project outputs
   assert.deepEqual(filterRunsByAgent(runs, participant.id).map((item) => item.id), ["run-direct-task", "run-chief"]);
   assert.deepEqual(filterTasksByAgent(tasks, participant.id).map((item) => item.id), ["task-chief", "task-direct", "task-standalone"]);
   assert.deepEqual(filterArtifactsByAgent([artifact], participant.id).map((item) => item.id), ["artifact-1"]);
+
+  const groups = getOutputAgentGroups({ agents: [agent, participant], runs, tasks, artifacts: [artifact] });
+  assert.deepEqual(
+    groups.map((group) => ({
+      agentId: group.agent.id,
+      taskCount: group.taskCount,
+      artifactCount: group.artifactCount,
+    })),
+    [
+      { agentId: agent.id, taskCount: 2, artifactCount: 0 },
+      { agentId: participant.id, taskCount: 3, artifactCount: 1 },
+    ],
+  );
 });
 
 test("artifact backfill state materializes generated media links into task and run outputs", () => {

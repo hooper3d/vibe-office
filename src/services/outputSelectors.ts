@@ -1,6 +1,15 @@
 import type { ProjectArtifact, ProjectRun, ProjectTask } from "../domain/projectScope";
 import type { AgentInstance } from "../domain/types";
 
+export type OutputAgentGroup = {
+  agent: AgentInstance;
+  runs: ProjectRun[];
+  tasks: ProjectTask[];
+  artifacts: ProjectArtifact[];
+  taskCount: number;
+  artifactCount: number;
+};
+
 export function getVisibleOutputRuns(runs: ProjectRun[]) {
   return runs.filter(
     (run) => run.type !== "direct_message" || run.state !== "completed" || run.artifactIds.length > 0 || Boolean(run.taskId),
@@ -38,6 +47,38 @@ export function getVisibleOutputAgentIds({
   });
   artifacts.forEach((artifact) => ids.add(artifact.agentId));
   return agents.map((agent) => agent.id).filter((agentId) => ids.has(agentId));
+}
+
+export function getOutputAgentGroups({
+  agents,
+  runs,
+  tasks,
+  artifacts,
+}: {
+  agents: AgentInstance[];
+  runs: ProjectRun[];
+  tasks: ProjectTask[];
+  artifacts: ProjectArtifact[];
+}): OutputAgentGroup[] {
+  return getVisibleOutputAgentIds({ agents, runs, tasks, artifacts })
+    .map((agentId) => {
+      const agent = agents.find((item) => item.id === agentId);
+      if (!agent) return undefined;
+
+      const agentRuns = filterRunsByAgent(runs, agentId);
+      const agentTasks = filterTasksByAgent(tasks, agentId);
+      const agentArtifacts = filterArtifactsByAgent(artifacts, agentId);
+
+      return {
+        agent,
+        runs: agentRuns,
+        tasks: agentTasks,
+        artifacts: agentArtifacts,
+        taskCount: countTrackableTaskOutputs(agentRuns, agentTasks),
+        artifactCount: agentArtifacts.length,
+      };
+    })
+    .filter((group): group is OutputAgentGroup => Boolean(group));
 }
 
 export function filterRunsByAgent(runs: ProjectRun[], agentId: string) {

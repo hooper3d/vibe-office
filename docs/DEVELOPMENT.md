@@ -705,9 +705,10 @@ Implementation progress:
 - `HermesA2AAdapter` remains a thin unified provider entry plus A2A compatibility metadata mapper.
 - Provider split tests cover OpenAI-compatible free chat, Anthropic-compatible project chat, and Hermes native fallback to chat compatibility.
 - Browser smoke tests now exercise provider retry/recovery through the local trusted provider endpoint.
-- M7-3 Output Area organization started.
+- M7-3 Output Area organization continued.
 - Project Workspace now uses top-level `Workspace`, `Browser`, and `Outputs` tabs.
-- `Outputs` groups project work by agent first, then filters by `All`, `Tasks`, `Artifacts`, or `Preview`.
+- `Outputs` now uses an output index instead of a mixed all-agents stream: Browser preview is a project-level entry, and each agent with project work gets its own entry.
+- Agent output entries are backed by `getOutputAgentGroups`, then filtered inside the selected agent by `All`, `Tasks`, or `Artifacts`.
 - Task and artifact request flows now target the unified `outputs` mode instead of separate `runs` or `artifacts` UI modes.
 - UI state storage migrates legacy `runs` and `artifacts` output tabs to `outputs`.
 - M8 local trusted layer work started.
@@ -779,7 +780,7 @@ Acceptance:
 - Free Chat history and current direct-conversation selection now live in `src/services/conversationSelectionState.ts`, keeping per-agent history sorting, title derivation, active conversation maps, and empty-chat reuse out of `App.tsx`.
 - Task lifecycle state now lives in `src/services/taskLifecycleState.ts`, covering remote task refresh/cancel/retry state merges, unsupported lifecycle events, task/run/artifact synchronization, task lifecycle address resolution, and active/terminal state helpers.
 - Task lifecycle request resolution now lives in `src/services/taskLifecycleRequestState.ts`, covering refresh/cancel readiness, retry context lookup, pollable task checks, and workspace update application.
-- Output Area selection rules now live in `src/services/outputSelectors.ts`, keeping run/task/artifact visibility, agent filtering, and output counts out of the rendering components.
+- Output Area selection rules now live in `src/services/outputSelectors.ts`, keeping run/task/artifact visibility, agent grouping, agent filtering, and output counts out of the rendering components.
 - Request submission state now lives in `src/services/requestSubmissionState.ts`, covering optimistic Free Chat, Project Direct Chat, and Task Room conversation/message/run/task creation before remote provider execution.
 - Composer submission routing now lives in `src/services/composerSubmissionState.ts`, keeping Free Chat, Project Chat, Task Room, busy, empty, and missing-target entry decisions out of `App.tsx`.
 - Retry submission state now lives in `src/services/requestRetrySubmissionState.ts`, covering Direct Chat and Task Room retry preparation, stale retry-message cleanup, and Task Room retry completion state.
