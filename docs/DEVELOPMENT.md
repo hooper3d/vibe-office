@@ -324,6 +324,10 @@ Validated in browser:
 - Tasks tab shows A2A protocol, transport, selected interface, remote link, and cancel capability metadata.
 - Local Chief-led orchestration tasks are marked as local when they do not have a remote A2A lifecycle link.
 - Unsupported lifecycle and cancel capabilities are marked without granting remote agents local file access.
+- Temporary local mock A2A server verification on `127.0.0.1:8765` confirmed:
+  - `message/send` creates a submitted remote task.
+  - automatic `tasks/get` polling advances the task to working and completed.
+  - `tasks/cancel` updates an active remote task to canceled.
 - Switching Project hides conversation and output records from other Projects.
 - Refresh restores configured agents, projects, conversations, runs, tasks, and artifacts.
 - Agent profile management supports avatar upload, role selection, capability tags, notes, host/IP, runtime settings, delete, and edit-from-sidebar.

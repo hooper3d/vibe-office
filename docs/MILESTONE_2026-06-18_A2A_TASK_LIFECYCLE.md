@@ -69,7 +69,16 @@ Validated on 2026-06-18:
 - Browser Tasks tab shows compact lifecycle metadata.
 - Existing Chief-led local orchestration tasks are marked as local and do not expose remote refresh/cancel actions.
 - Existing project-scoped tasks, runs, and artifacts remain visible under the selected Project.
-- Port `8642` was already occupied by the user's local service, so a temporary fake A2A server was not started for live polling verification.
+- Port `8642` was already occupied by the user's local service, so live mock verification used a separate temporary A2A server on `127.0.0.1:8765`.
+- Mock A2A lifecycle verification:
+  - `message/send` returned `submitted`.
+  - automatic polling through `tasks/get` updated the task to `working`.
+  - the next automatic poll updated the task to `completed`.
+  - task metadata showed `A2A 1.0`, `json-rpc/http`, `message/send + tasks/get`, and `remote task linked`.
+- Mock cancel verification:
+  - a second mock task returned `submitted`.
+  - clicking Cancel called `tasks/cancel`.
+  - the task updated to `canceled`.
 
 ## Boundaries
 
