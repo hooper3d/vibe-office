@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent } from "react";
 import { AppSidebar } from "./components/AppSidebar";
 import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
-import { ConfirmDialog, ProjectDialog, type ConfirmAction } from "./components/ProjectDialogs";
+import { ConfirmDialog, ProjectDialog } from "./components/ProjectDialogs";
 import { SetupWizard } from "./components/SetupWizard";
 import type { A2ATask } from "./domain/a2a";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
@@ -55,6 +55,7 @@ import {
   stripAgentCredential,
   upsertLocalTrustedAgent,
 } from "./services/localTrustedAgentRegistry";
+import { useProjectDialogState } from "./services/projectDialogState";
 import { applyProjectDelete, applyProjectSave, canDeleteProject } from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
 import { getNextPendingRecoverySubmission } from "./services/requestRecoverySubmissionState";
@@ -164,10 +165,7 @@ export function App() {
   const composerSubmittingRef = useRef(false);
   const requestStoreRef = useRef(createRequestRuntimeStore({ conversations, messages, runs, tasks, artifacts }));
   const agentSetup = useAgentSetupDialogState();
-  const [showProjectDialog, setShowProjectDialog] = useState(false);
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-  const [projectFormError, setProjectFormError] = useState("");
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const projectDialog = useProjectDialogState({ freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID });
   const [localTrustedAgentIssues, setLocalTrustedAgentIssues] = useState<Record<string, string[]>>({});
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
@@ -644,7 +642,7 @@ export function App() {
   }
 
   function requestDeleteAgent(agentId: string) {
-    setConfirmAction({ kind: "delete-agent", agentId });
+    projectDialog.requestDeleteAgent(agentId);
   }
 
   function deleteAgent(agentId: string) {
@@ -658,7 +656,7 @@ export function App() {
     if (selectedAgentId === agentId) {
       setSelectedAgentId(fallbackAgent?.id ?? "");
     }
-    setConfirmAction(null);
+    projectDialog.clearConfirmAction();
   }
 
   function updateAgentAvatar(agentId: string, avatarUrl?: string) {
@@ -674,31 +672,12 @@ export function App() {
     updateAgentAvatar(agentId, result.dataUrl);
   }
 
-  function openProjectDialog() {
-    setEditingProjectId(null);
-    setProjectFormError("");
-    setShowProjectDialog(true);
-  }
-
-  function openProjectEditor(projectId: string) {
-    if (projectId === FREE_CHAT_ENTRY_PROJECT_ID) return;
-    setEditingProjectId(projectId);
-    setProjectFormError("");
-    setShowProjectDialog(true);
-  }
-
-  function closeProjectDialog() {
-    setProjectFormError("");
-    setEditingProjectId(null);
-    setShowProjectDialog(false);
-  }
-
   function saveProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const result = applyProjectSave({
       projects,
-      editingProjectId,
+      editingProjectId: projectDialog.editingProjectId,
       draft: {
         name: String(form.get("name") || "").trim(),
         description: String(form.get("description") || "").trim(),
@@ -708,7 +687,7 @@ export function App() {
     });
 
     if (result.kind === "error") {
-      setProjectFormError(result.error);
+      projectDialog.setProjectFormError(result.error);
       return;
     }
 
@@ -717,12 +696,11 @@ export function App() {
       setSelectedProjectId(result.project.id);
       setChatScope("project");
     }
-    closeProjectDialog();
+    projectDialog.closeProjectDialog();
   }
 
   function requestDeleteProject(projectId: string) {
-    if (!canDeleteProject(projects, projectId, FREE_CHAT_ENTRY_PROJECT_ID)) return;
-    setConfirmAction({ kind: "delete-project", projectId });
+    projectDialog.requestDeleteProject(projects, projectId);
   }
 
   function deleteProject(projectId: string) {
@@ -745,7 +723,17 @@ export function App() {
       setChatScope("free");
       setConversationMode("single");
     }
-    setConfirmAction(null);
+    projectDialog.clearConfirmAction();
+  }
+
+  function confirmPendingAction() {
+    const action = projectDialog.confirmAction;
+    if (!action) return;
+    if (action.kind === "delete-project") {
+      deleteProject(action.projectId);
+    } else {
+      deleteAgent(action.agentId);
+    }
   }
 
   function attachWorkspaceFile(file: WorkspaceFileReadResult) {
@@ -1217,10 +1205,10 @@ export function App() {
         respondingAgentIds={respondingAgentIds}
         themeMode={themeMode}
         onAddAgent={agentSetup.openAddAgentDialog}
-        onCreateProject={openProjectDialog}
+        onCreateProject={projectDialog.openProjectDialog}
         onDeleteProject={requestDeleteProject}
         onEditAgent={agentSetup.openAgentEditor}
-        onEditProject={openProjectEditor}
+        onEditProject={projectDialog.openProjectEditor}
         onSelectAgent={(agentId) => {
           setSelectedAgentId(agentId);
           setConversationMode("single");
@@ -1305,9 +1293,9 @@ export function App() {
             onAttachFile={attachWorkspaceFile}
             onBrowserUrlChange={setBrowserUrl}
             onCancelTask={cancelTaskLifecycle}
-            onCreateProject={openProjectDialog}
+            onCreateProject={projectDialog.openProjectDialog}
             onDetachFile={detachWorkspaceFile}
-            onEditProject={openProjectEditor}
+            onEditProject={projectDialog.openProjectEditor}
             onNewFreeChat={startNewFreeChat}
             onOpenPreview={openPreview}
             onOutputModeChange={setOutputMode}
@@ -1332,27 +1320,21 @@ export function App() {
           onAgentAvatarFile={handleExistingAgentAvatar}
         />
       ) : null}
-      {showProjectDialog ? (
+      {projectDialog.showProjectDialog ? (
         <ProjectDialog
-          error={projectFormError}
-          project={editingProjectId ? projects.find((project) => project.id === editingProjectId) : undefined}
-          onClose={closeProjectDialog}
+          error={projectDialog.projectFormError}
+          project={projectDialog.editingProjectId ? projects.find((project) => project.id === projectDialog.editingProjectId) : undefined}
+          onClose={projectDialog.closeProjectDialog}
           onSaveProject={saveProject}
         />
       ) : null}
-      {confirmAction ? (
+      {projectDialog.confirmAction ? (
         <ConfirmDialog
-          action={confirmAction}
+          action={projectDialog.confirmAction}
           agents={agents}
           projects={projects}
-          onCancel={() => setConfirmAction(null)}
-          onConfirm={() => {
-            if (confirmAction.kind === "delete-project") {
-              deleteProject(confirmAction.projectId);
-            } else {
-              deleteAgent(confirmAction.agentId);
-            }
-          }}
+          onCancel={projectDialog.clearConfirmAction}
+          onConfirm={confirmPendingAction}
         />
       ) : null}
     </div>

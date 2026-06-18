@@ -1,17 +1,8 @@
 import { Folder, XCircle } from "lucide-react";
 import { FormEvent, useState } from "react";
 import type { AgentInstance, Project } from "../domain/types";
+import type { ConfirmAction } from "../services/projectDialogState";
 import { deriveProjectNameFromDirectory } from "../services/projectNaming";
-
-export type ConfirmAction =
-  | {
-      kind: "delete-project";
-      projectId: string;
-    }
-  | {
-      kind: "delete-agent";
-      agentId: string;
-    };
 
 export function ProjectDialog({
   error,

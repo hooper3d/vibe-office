@@ -76,6 +76,16 @@ import {
 } from "../services/conversationSelectionState";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import { applyProjectDelete, applyProjectSave, canDeleteProject } from "../services/projectSetupState";
+import {
+  clearConfirmActionState,
+  closeProjectDialogState,
+  createProjectDialogViewState,
+  openCreateProjectDialogState,
+  openEditProjectDialogState,
+  requestDeleteAgentConfirmState,
+  requestDeleteProjectConfirmState,
+  setProjectFormErrorState,
+} from "../services/projectDialogState";
 import { createRequestRuntimeStore } from "../services/requestRuntimeStore";
 import {
   countTrackableTaskOutputs,
@@ -911,6 +921,57 @@ test("project delete clears scoped records and protects free chat entry", () => 
   assert.deepEqual(nextState.runs.map((item) => item.projectId), [otherProject.id]);
   assert.deepEqual(nextState.tasks.map((item) => item.projectId), [otherProject.id]);
   assert.deepEqual(nextState.artifacts.map((item) => item.projectId), [otherProject.id]);
+});
+
+test("project dialog state opens, resets errors, and protects free chat entry", () => {
+  const initial = createProjectDialogViewState();
+  const creating = openCreateProjectDialogState(setProjectFormErrorState(initial, "Old error"));
+  assert.equal(creating.showProjectDialog, true);
+  assert.equal(creating.editingProjectId, null);
+  assert.equal(creating.projectFormError, "");
+
+  const editing = openEditProjectDialogState({
+    freeChatEntryProjectId: "default",
+    projectId: "project-vibe",
+    state: creating,
+  });
+  assert.equal(editing.showProjectDialog, true);
+  assert.equal(editing.editingProjectId, "project-vibe");
+
+  const protectedFreeChat = openEditProjectDialogState({
+    freeChatEntryProjectId: "default",
+    projectId: "default",
+    state: editing,
+  });
+  assert.equal(protectedFreeChat, editing);
+
+  const closed = closeProjectDialogState(setProjectFormErrorState(editing, "Required."));
+  assert.equal(closed.showProjectDialog, false);
+  assert.equal(closed.editingProjectId, null);
+  assert.equal(closed.projectFormError, "");
+});
+
+test("project dialog state prepares confirm actions for deletable items", () => {
+  const initial = createProjectDialogViewState();
+  const protectedProject = requestDeleteProjectConfirmState({
+    freeChatEntryProjectId: "default",
+    projectId: "default",
+    projects: [project],
+    state: initial,
+  });
+  assert.equal(protectedProject.confirmAction, null);
+
+  const deletableProject = requestDeleteProjectConfirmState({
+    freeChatEntryProjectId: "default",
+    projectId: project.id,
+    projects: [project, { ...project, id: "default" }],
+    state: initial,
+  });
+  assert.deepEqual(deletableProject.confirmAction, { kind: "delete-project", projectId: project.id });
+
+  const agentConfirm = requestDeleteAgentConfirmState(deletableProject, agent.id);
+  assert.deepEqual(agentConfirm.confirmAction, { kind: "delete-agent", agentId: agent.id });
+  assert.equal(clearConfirmActionState(agentConfirm).confirmAction, null);
 });
 
 test("free chat selection derives history and current conversation", () => {
