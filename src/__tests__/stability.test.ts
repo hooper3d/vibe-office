@@ -2461,6 +2461,16 @@ test("local trusted middleware exposes command-only provider and workspace route
   assert.doesNotMatch(source, /workspace-local\/search/);
 });
 
+test("M9 provider regression script keeps Chinese context probes readable", async () => {
+  const source = await readFile(path.join(process.cwd(), "scripts", "run-provider-regression.mjs"), "utf8");
+
+  assert.match(source, /用一句中文回复：M9 free chat ok/);
+  assert.match(source, /用一句中文说明你正在进行 Vibe Office M9 project regression。/);
+  assert.match(source, /请记住暗号：海盐柠檬。只回复：记住了。/);
+  assert.match(source, /刚才暗号是什么？请只回答暗号。/);
+  assert.doesNotMatch(source, /鐢|璇|娴|鏌|銆\?/);
+});
+
 test("provider setup detects obvious runtime endpoint mismatches", () => {
   assert.match(
     getProviderSetupIssue({

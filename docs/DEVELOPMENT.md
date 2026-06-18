@@ -776,6 +776,7 @@ Implementation progress:
 - Task lifecycle busy-action ids now live in `src/services/taskLifecycleState.ts`, keeping refresh/retry/cancel status keys shared by App and ProjectTasks.
 - Workspace initialization defaults now live in `src/services/workspaceStorage.ts`, keeping persisted-vs-seed collection fallback out of `App.tsx`.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
+- M9 provider regression script now has a service-test guard that verifies the Chinese context-continuity probes remain readable UTF-8 text instead of mojibake.
 
 Acceptance:
 
