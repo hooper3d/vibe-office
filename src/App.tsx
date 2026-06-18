@@ -26,9 +26,7 @@ import { markConversationMessageFailed } from "./domain/requestLifecycle";
 import type { AgentInstance, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { getUserFacingAgentError } from "./services/agentErrorText";
-import {
-  createBackfilledMediaArtifacts,
-} from "./services/artifactState";
+import { applyMediaArtifactBackfillState } from "./services/artifactBackfillState";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
 import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
 import {
@@ -383,52 +381,8 @@ export function App() {
   }, [agents, conversations, messages, projects]);
 
   useEffect(() => {
-    const mediaLinks = createBackfilledMediaArtifacts(messages);
-    if (mediaLinks.length === 0) return;
-
-    const existingArtifactIds = new Set(artifacts.map((artifact) => artifact.id));
-    const missingArtifacts = mediaLinks
-      .map((link) => link.artifact)
-      .filter((artifact) => !existingArtifactIds.has(artifact.id));
-    const hasMissingTaskLinks = tasks.some((task) =>
-      mediaLinks.some((link) => link.artifact.taskId === task.id && !task.artifactIds.includes(link.artifact.id)),
-    );
-    const hasMissingRunLinks = runs.some((run) =>
-      mediaLinks.some((link) => link.runId === run.id && !run.artifactIds.includes(link.artifact.id)),
-    );
-
-    if (missingArtifacts.length === 0 && !hasMissingTaskLinks && !hasMissingRunLinks) return;
-
-    if (missingArtifacts.length > 0) {
-      setArtifacts((current) => [
-        ...missingArtifacts.filter((artifact) => !current.some((item) => item.id === artifact.id)),
-        ...current,
-      ]);
-    }
-
-    if (hasMissingTaskLinks) {
-      setTasks((current) =>
-        current.map((task) => {
-          const artifactIds = mediaLinks
-            .filter((link) => link.artifact.taskId === task.id)
-            .map((link) => link.artifact.id)
-            .filter((artifactId) => !task.artifactIds.includes(artifactId));
-          return artifactIds.length > 0 ? { ...task, artifactIds: [...task.artifactIds, ...artifactIds] } : task;
-        }),
-      );
-    }
-
-    if (hasMissingRunLinks) {
-      setRuns((current) =>
-        current.map((run) => {
-          const artifactIds = mediaLinks
-            .filter((link) => link.runId === run.id)
-            .map((link) => link.artifact.id)
-            .filter((artifactId) => !run.artifactIds.includes(artifactId));
-          return artifactIds.length > 0 ? { ...run, artifactIds: [...run.artifactIds, ...artifactIds] } : run;
-        }),
-      );
-    }
+    const backfilled = applyMediaArtifactBackfillState(requestStoreRef.current.snapshot());
+    if (backfilled.changed) applyRequestWorkspaceState(backfilled.state);
   }, [artifacts, messages, runs, tasks]);
 
   useEffect(() => {

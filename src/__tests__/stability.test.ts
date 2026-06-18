@@ -8,6 +8,7 @@ import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, Pr
 import type { AgentInstance, Project } from "../domain/types";
 import { markConversationMessageFailed, markConversationMessageSending } from "../domain/requestLifecycle";
 import { getProviderSetupIssue } from "../domain/hermesSetup";
+import { applyMediaArtifactBackfillState } from "../services/artifactBackfillState";
 import { resolveComposerSubmissionIntent } from "../services/composerSubmissionState";
 import {
   getPendingRequestMessages,
@@ -1100,6 +1101,39 @@ test("output selectors keep chat records separate from trackable project outputs
   assert.deepEqual(filterRunsByAgent(runs, participant.id).map((item) => item.id), ["run-direct-task", "run-chief"]);
   assert.deepEqual(filterTasksByAgent(tasks, participant.id).map((item) => item.id), ["task-chief", "task-direct", "task-standalone"]);
   assert.deepEqual(filterArtifactsByAgent([artifact], participant.id).map((item) => item.id), ["artifact-1"]);
+});
+
+test("artifact backfill state materializes generated media links into task and run outputs", () => {
+  const mediaMessage: ConversationMessage = {
+    id: "agent-media-message",
+    conversationId: "conversation-1",
+    projectId: project.id,
+    role: "agent",
+    agentId: participant.id,
+    taskId: "task-1",
+    runId: "run-1",
+    contentParts: [{ kind: "text", text: "Generated image\nMEDIA:/tmp/mmx-gen/image_001.jpg" }],
+    status: "sent",
+    createdAt: at,
+  };
+  const result = applyMediaArtifactBackfillState(
+    taskRoomRequestState({
+      messages: [mediaMessage],
+      runs: [run({ artifactIds: [] })],
+      tasks: [task({ artifactIds: [] })],
+      artifacts: [],
+    }),
+  );
+
+  assert.equal(result.changed, true);
+  assert.equal(result.state.artifacts.length, 1);
+  assert.equal(result.state.artifacts[0].name, "Generated media");
+  assert.equal(result.state.artifacts[0].kind, "file");
+  assert.deepEqual(result.state.tasks[0].artifactIds, ["agent-media-message-media-0"]);
+  assert.deepEqual(result.state.runs[0].artifactIds, ["agent-media-message-media-0"]);
+
+  const stable = applyMediaArtifactBackfillState(result.state);
+  assert.equal(stable.changed, false);
 });
 
 test("composer submission intent routes free, project, and task room requests", () => {
