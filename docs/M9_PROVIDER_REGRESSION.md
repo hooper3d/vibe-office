@@ -70,8 +70,8 @@ VIBE_M9_HERMES_API_KEY=
 DeepSeek OpenAI-compatible:
 
 ```bash
-VIBE_M9_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-VIBE_M9_DEEPSEEK_MODEL=deepseek-chat
+VIBE_M9_DEEPSEEK_BASE_URL=https://api.deepseek.com
+VIBE_M9_DEEPSEEK_MODEL=deepseek-v4-flash
 VIBE_M9_DEEPSEEK_API_KEY=...
 ```
 

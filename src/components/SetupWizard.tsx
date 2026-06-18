@@ -400,7 +400,7 @@ function getGeneratedAgentCardUrl(endpoint: string) {
 
 function getProviderHint(provider: AgentRuntimeProvider) {
   if (provider === "openai") {
-    return "Use an OpenAI-compatible chat/completions endpoint, usually ending at /v1.";
+    return "Use the provider's OpenAI-compatible base URL; some use /v1, while others expose /chat/completions from the root.";
   }
   if (provider === "anthropic") {
     return "Use an Anthropic-compatible messages endpoint. /v1/messages is generated when the base ends at /v1.";
