@@ -371,7 +371,7 @@ export function App() {
       }
 
       if (conversation.mode !== "direct") {
-        markInterruptedMessageFailed(message, "This interrupted task-room request cannot be restored yet. Please resend it.");
+        markTaskRoomMessageFailed(message, "Task Room was interrupted before the agent returned. You can retry this request.");
         return;
       }
 
@@ -552,14 +552,14 @@ export function App() {
 
   async function retryTaskLifecycle(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
-    if (!task) return;
+    if (!task) return false;
     const taskProject = projects.find((project) => project.id === task.projectId);
-    if (!taskProject) return;
+    if (!taskProject) return false;
 
     const owner = agents.find((agent) => agent.id === task.ownerAgentId);
     if (!owner) {
       recordLifecycleUnsupported(task, "Task owner is no longer connected.");
-      return;
+      return false;
     }
 
     const retryAt = new Date().toISOString();
@@ -594,6 +594,7 @@ export function App() {
         ["Retry this failed project task.", "", `Task title: ${task.title}`, "", "Previous failure:", task.summary].join("\n"),
       );
       applyLifecycleTaskUpdate(task, remoteTask, owner.id, "Retry returned a task update.");
+      return mapA2AState(remoteTask.status.state) !== "failed";
     } catch (error) {
       const failedAt = new Date().toISOString();
       setTasks((current) =>
@@ -619,6 +620,7 @@ export function App() {
             : item,
         ),
       );
+      return false;
     } finally {
       setTaskLifecycleBusyId("");
     }
@@ -1027,6 +1029,52 @@ export function App() {
     );
   }
 
+  function markTaskRoomMessageFailed(message: ConversationMessage, reason: string) {
+    const failedAt = new Date().toISOString();
+    markInterruptedMessageFailed(message, reason);
+
+    if (message.taskId) {
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === message.taskId
+            ? {
+                ...task,
+                state: "failed",
+                summary: reason,
+                events: [
+                  ...task.events,
+                  {
+                    id: `${message.taskId}-message-failed-${failedAt}`,
+                    taskId: message.taskId ?? task.id,
+                    agentId: task.ownerAgentId,
+                    label: "Task Room request failed.",
+                    state: "failed",
+                    timestamp: failedAt,
+                  },
+                ],
+                updatedAt: failedAt,
+              }
+            : task,
+        ),
+      );
+    }
+
+    if (message.runId) {
+      setRuns((current) =>
+        current.map((run) =>
+          run.id === message.runId
+            ? {
+                ...run,
+                state: "failed",
+                eventIds: mergeIds(run.eventIds, [`${message.runId}-failed`]),
+                updatedAt: failedAt,
+              }
+            : run,
+        ),
+      );
+    }
+  }
+
   async function completeFreeChatRequest({
     conversation,
     targetAgent,
@@ -1209,6 +1257,44 @@ export function App() {
         targetAgent,
         text,
       });
+    } finally {
+      activeRequestMessageIdsRef.current.delete(message.id);
+    }
+  }
+
+  async function retryTaskRoomMessage(messageId: string) {
+    const message = messages.find((item) => item.id === messageId);
+    if (!message || message.role !== "user" || message.status !== "failed" || !message.taskId) return;
+
+    const conversation = conversations.find((item) => item.id === message.conversationId);
+    if (!conversation || conversation.mode !== "task_room") return;
+
+    activeRequestMessageIdsRef.current.add(message.id);
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === message.id
+          ? {
+              ...item,
+              status: "sending",
+              errorText: undefined,
+            }
+          : item,
+      ),
+    );
+
+    try {
+      const succeeded = await retryTaskLifecycle(message.taskId);
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id
+            ? {
+                ...item,
+                status: succeeded ? "sent" : "failed",
+                errorText: succeeded ? undefined : "Retry failed. Check the task activity for details.",
+              }
+            : item,
+        ),
+      );
     } finally {
       activeRequestMessageIdsRef.current.delete(message.id);
     }
@@ -1681,6 +1767,7 @@ export function App() {
             ? {
                 ...message,
                 status: "sent",
+                errorText: undefined,
               }
             : message,
         ),
@@ -1867,23 +1954,19 @@ export function App() {
         setMessages((current) => [...current, aggregateMessage]);
       } catch (error) {
         finalState = "failed";
-        finalSummary = error instanceof Error ? error.message : "Chief aggregation failed.";
+        finalSummary = getUserFacingAgentError(error);
         finalAt = new Date().toISOString();
-        setMessages((current) => [
-          ...current,
-          {
-            id: crypto.randomUUID(),
-            conversationId: conversation.id,
-            projectId: selectedWorkspaceProject.id,
-            role: "system",
-            agentId: targetAgent.id,
-            contentParts: createTextParts(finalSummary),
-            taskId,
-            runId,
-            status: "sent",
-            createdAt: finalAt,
-          },
-        ]);
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === userMessageId
+              ? {
+                  ...message,
+                  status: "failed",
+                  errorText: finalSummary,
+                }
+              : message,
+          ),
+        );
       }
 
       const finalArtifact = createTextArtifact({
@@ -1947,13 +2030,14 @@ export function App() {
       setOutputMode(finalArtifactIds.length > 0 ? "artifacts" : "runs");
     } catch (error) {
       const failedAt = new Date().toISOString();
-      const errorMessage = error instanceof Error ? error.message : "Chief task request failed.";
+      const errorMessage = getUserFacingAgentError(error);
       setMessages((current) =>
         current.map((message) =>
           message.id === userMessageId
             ? {
                 ...message,
                 status: "failed",
+                errorText: errorMessage,
               }
             : message,
         ),
@@ -1993,21 +2077,6 @@ export function App() {
             : run,
         ),
       );
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          conversationId: conversation.id,
-          projectId: selectedWorkspaceProject.id,
-          role: "system",
-          agentId: targetAgent.id,
-          contentParts: createTextParts(errorMessage),
-          taskId,
-          runId,
-          status: "sent",
-          createdAt: failedAt,
-        },
-      ]);
       setOutputMode("runs");
     }
   }
@@ -2232,6 +2301,7 @@ export function App() {
                 projectTask={latestChiefTask}
                 isResponding={isComposerSubmitting || taskRoomHasPendingRequest}
                 onToggleParticipant={toggleTaskParticipant}
+                onRetryMessage={retryTaskRoomMessage}
               />
             ) : (
               <NoProjectState onSelectProject={() => setChatScope("free")} />
@@ -3261,6 +3331,7 @@ function TaskRoom({
   projectTask,
   isResponding,
   onToggleParticipant,
+  onRetryMessage,
 }: {
   agents: AgentInstance[];
   chief?: AgentInstance;
@@ -3269,6 +3340,7 @@ function TaskRoom({
   projectTask?: ProjectTask;
   isResponding: boolean;
   onToggleParticipant: (agentId: string, checked: boolean) => void;
+  onRetryMessage: (messageId: string) => void;
 }) {
   const participants = agents.filter((agent) => agent.id !== chief?.id && agent.status === "online");
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -3324,7 +3396,7 @@ function TaskRoom({
       <div className="task-room-transcript">
         {messages.length > 0 || isResponding ? (
           <>
-            <MessageRows messages={messages} />
+            <MessageRows messages={messages} onRetryMessage={onRetryMessage} />
             {isResponding ? <TypingIndicator /> : null}
           </>
         ) : (
