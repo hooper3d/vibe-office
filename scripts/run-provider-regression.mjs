@@ -1,10 +1,11 @@
 const appUrl = normalizeBaseUrl(process.env.VIBE_OFFICE_URL || "http://127.0.0.1:5180");
 const defaultTimeoutMs = readNumber(process.env.VIBE_M9_REQUEST_TIMEOUT_MS, 45_000);
 const forcedTimeoutMs = readNumber(process.env.VIBE_M9_FORCED_TIMEOUT_MS, 1);
-const cliArgs = new Set(process.argv.slice(2));
+const cliOptions = parseCliOptions(process.argv.slice(2));
 const createdProviderIds = new Set();
 const m9Targets = [
   {
+    key: "hermes",
     label: "Hermes",
     envName: "VIBE_M9_HERMES_AGENT_ID",
     runtimeProvider: "hermes",
@@ -13,6 +14,7 @@ const m9Targets = [
     hints: ["hermes", "8642", "hooper.ink"],
   },
   {
+    key: "deepseek",
     label: "DeepSeek OpenAI-compatible",
     envName: "VIBE_M9_DEEPSEEK_AGENT_ID",
     runtimeProvider: "openai",
@@ -21,6 +23,7 @@ const m9Targets = [
     hints: ["deepseek"],
   },
   {
+    key: "minimax",
     label: "MiniMax Anthropic-compatible",
     envName: "VIBE_M9_MINIMAX_AGENT_ID",
     runtimeProvider: "anthropic",
@@ -29,19 +32,33 @@ const m9Targets = [
     hints: ["minimax", "minimaxi"],
   },
 ];
+const unknownTargets = getUnknownTargetFilters(m9Targets, cliOptions.targets);
+const selectedM9Targets = getSelectedM9Targets(m9Targets, cliOptions.targets);
 
-if (cliArgs.has("--list")) {
-  await printRegisteredAgents();
+if (cliOptions.help) {
+  printHelp();
+  process.exit(0);
+}
+
+if (unknownTargets.length > 0) {
+  console.error(`Unknown M9 target: ${unknownTargets.join(", ")}`);
+  console.error(`Known targets: ${m9Targets.map((target) => target.key).join(", ")}`);
+  process.exit(2);
+}
+
+if (cliOptions.list) {
+  await printRegisteredAgents(selectedM9Targets);
   process.exit(0);
 }
 
 const registeredAgents = await readLocalTrustedRegistry();
-const providers = m9Targets
+const providers = selectedM9Targets
   .map((target) => createProviderConfigForTarget(target, registeredAgents))
   .filter(Boolean);
 
 if (providers.length === 0) {
-  console.log("No M9 provider configs found. Set existing VIBE_M9_*_AGENT_ID vars or endpoint/model VIBE_M9_* vars.");
+  const targetLabel = selectedM9Targets.map((target) => target.key).join(", ");
+  console.log(`No M9 provider configs found for target(s): ${targetLabel}. Set existing VIBE_M9_*_AGENT_ID vars or endpoint/model VIBE_M9_* vars.`);
   process.exit(2);
 }
 
@@ -363,6 +380,81 @@ function readNumber(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseCliOptions(args) {
+  const options = {
+    help: false,
+    list: false,
+    targets: [],
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--help" || arg === "-h") {
+      options.help = true;
+      continue;
+    }
+    if (arg === "--list") {
+      options.list = true;
+      continue;
+    }
+    if (arg === "--target" || arg === "--only" || arg === "--provider") {
+      const value = args[index + 1] || "";
+      options.targets.push(...splitTargetFilter(value));
+      index += 1;
+      continue;
+    }
+    const targetMatch = arg.match(/^--(?:target|only|provider)=(.+)$/);
+    if (targetMatch) {
+      options.targets.push(...splitTargetFilter(targetMatch[1]));
+      continue;
+    }
+    if (!arg.startsWith("-")) {
+      options.targets.push(...splitTargetFilter(arg));
+    }
+  }
+
+  return options;
+}
+
+function splitTargetFilter(value) {
+  return value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getUnknownTargetFilters(targets, filters) {
+  if (filters.length === 0) return [];
+  const known = new Set(targets.flatMap((target) => getTargetAliases(target)));
+  return Array.from(new Set(filters.filter((filter) => !known.has(filter))));
+}
+
+function getSelectedM9Targets(targets, filters) {
+  if (filters.length === 0) return targets;
+  const filterSet = new Set(filters);
+  return targets.filter((target) => getTargetAliases(target).some((alias) => filterSet.has(alias)));
+}
+
+function getTargetAliases(target) {
+  return [
+    target.key,
+    target.runtimeProvider,
+    target.envName.toLowerCase().replace(/^vibe_m9_/, "").replace(/_agent_id$/, ""),
+  ];
+}
+
+function printHelp() {
+  console.log(`Usage: npm run regression:providers -- [options]
+
+Options:
+  --list                         Show registered local trusted agents and M9 readiness.
+  --target <name>                Run one or more targets: hermes, deepseek, minimax.
+  --target=hermes,deepseek       Comma-separated target filter.
+  --only <name>                  Alias for --target.
+  --provider <name>              Alias for --target.
+  --help                         Show this help.`);
+}
+
 function sanitizeError(error) {
   const text = error instanceof Error ? error.message : formatProviderErrorPayload(error, String(error));
   return text
@@ -399,7 +491,7 @@ function truncate(value) {
   return value.replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
-async function printRegisteredAgents() {
+async function printRegisteredAgents(targets = m9Targets) {
   const registry = await readLocalTrustedRegistry();
   const agents = Object.entries(registry)
     .map(([id, agent]) => ({
@@ -425,7 +517,7 @@ async function printRegisteredAgents() {
     );
   }
   console.log("\nM9 readiness:");
-  for (const target of m9Targets) {
+  for (const target of targets) {
     const readiness = getTargetReadiness(target, agents);
     console.log(`- ${target.label}: ${readiness}`);
   }
