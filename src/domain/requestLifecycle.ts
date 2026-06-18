@@ -6,24 +6,33 @@ export function markConversationMessageFailed(
   errorText: string,
   updates: Partial<Pick<ConversationMessage, "runId" | "taskId" | "errorKind">> = {},
 ) {
+  const completedAt = new Date().toISOString();
   return messages.map((message) =>
     message.id === messageId
       ? {
           ...message,
           ...updates,
+          requestId: message.requestId ?? message.id,
+          requestAttempt: message.requestAttempt ?? 1,
           status: "failed" as const,
           errorKind: updates.errorKind ?? inferConversationFailureKind(errorText),
           errorText,
+          requestCompletedAt: completedAt,
         }
       : message,
   );
 }
 
 export function markConversationMessageSending(messages: ConversationMessage[], messageId: string) {
+  const startedAt = new Date().toISOString();
   return messages.map((message) =>
     message.id === messageId
       ? {
           ...message,
+          requestId: message.requestId ?? message.id,
+          requestAttempt: (message.requestAttempt ?? 0) + 1,
+          requestStartedAt: startedAt,
+          requestCompletedAt: undefined,
           status: "sending" as const,
           errorKind: undefined,
           errorText: undefined,
@@ -37,14 +46,18 @@ export function markConversationMessageSent(
   messageId: string,
   updates: Partial<Pick<ConversationMessage, "runId" | "taskId">> = {},
 ) {
+  const completedAt = new Date().toISOString();
   return messages.map((message) =>
     message.id === messageId
       ? {
           ...message,
           ...updates,
+          requestId: message.requestId ?? message.id,
+          requestAttempt: message.requestAttempt ?? 1,
           status: "sent" as const,
           errorKind: undefined,
           errorText: undefined,
+          requestCompletedAt: completedAt,
         }
       : message,
   );

@@ -189,6 +189,10 @@ ConversationMessage:
 - a2aMessageId
 - taskId
 - runId
+- requestId stable request identity for retry and recovery
+- requestAttempt incremented when a failed/interrupted message is retried or recovered
+- requestStartedAt
+- requestCompletedAt
 - workspaceContext lightweight attached file references
 - status: sending | sent | failed
 - errorKind: timeout | network | auth | not_found | context | interrupted | unknown
@@ -376,11 +380,12 @@ Completed:
 - Workspace file list/read/search errors are normalized before reaching the Workspace panel.
 - Chat history for OpenAI-compatible, Anthropic-compatible, and Hermes-compatible chat requests is built from the latest message snapshot instead of a stale render closure.
 - Local storage reads and writes for UI state, agents, workspace state, content parts, and theme preference are guarded.
+- User messages now carry durable `requestId`, `requestAttempt`, `requestStartedAt`, and `requestCompletedAt` fields so retry/reload recovery has a stable request identity separate from the visible message id.
 
 Still open:
 
 - Move key request execution orchestration from React component state into a local trusted layer or dedicated request store.
-- Add durable request ids / attempt ids so retry, reload recovery, and in-flight provider calls can be tracked independently from message ids.
+- Move in-flight request tracking and attempt reconciliation out of the React component once the local trusted layer owns provider calls.
 - Add browser-visible regression checks for refresh recovery, provider timeout, and retry flows.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 

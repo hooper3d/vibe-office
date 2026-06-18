@@ -75,6 +75,7 @@ import { buildChatCompletionHistory, getTextPartContent } from "./services/messa
 import {
   getPendingRequestMessages,
   getRespondingAgentIds,
+  getMessageRequestKey,
   resolveDirectMessageRetry,
   resolvePendingRequestRecovery,
   resolveTaskRoomMessageRetry,
@@ -198,7 +199,7 @@ export function App() {
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
   const [taskLifecycleBusyId, setTaskLifecycleBusyId] = useState("");
   const composerSubmittingRef = useRef(false);
-  const activeRequestMessageIdsRef = useRef(new Set<string>());
+  const activeRequestIdsRef = useRef(new Set<string>());
   const messagesRef = useRef(messages);
   const [showSetup, setShowSetup] = useState(false);
   const [setupAgentId, setSetupAgentId] = useState<string | null>(null);
@@ -380,7 +381,7 @@ export function App() {
   }, [artifacts, conversations, messages, projects, runs, tasks]);
 
   useEffect(() => {
-    const pendingMessages = getPendingRequestMessages(messages, activeRequestMessageIdsRef.current);
+    const pendingMessages = getPendingRequestMessages(messages, activeRequestIdsRef.current);
     if (pendingMessages.length === 0) return;
 
     pendingMessages.forEach((message) => {
@@ -401,7 +402,9 @@ export function App() {
         return;
       }
 
-      activeRequestMessageIdsRef.current.add(message.id);
+      const requestKey = getMessageRequestKey(message);
+      activeRequestIdsRef.current.add(requestKey);
+      setMessages((current) => markConversationMessageSending(current, message.id));
 
       if (recovery.kind === "free-chat") {
         void completeFreeChatRequest({
@@ -410,7 +413,7 @@ export function App() {
           userMessageId: message.id,
           text: recovery.text,
         }).finally(() => {
-          activeRequestMessageIdsRef.current.delete(message.id);
+          activeRequestIdsRef.current.delete(requestKey);
         });
         return;
       }
@@ -422,7 +425,7 @@ export function App() {
         targetAgent: recovery.targetAgent,
         text: recovery.text,
       }).finally(() => {
-        activeRequestMessageIdsRef.current.delete(message.id);
+        activeRequestIdsRef.current.delete(requestKey);
       });
     });
   }, [agents, conversations, messages, projects]);
@@ -1153,12 +1156,16 @@ export function App() {
         createdAt: now,
       });
     const userMessageId = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
     const userMessage: ConversationMessage = {
       id: userMessageId,
       conversationId: conversation.id,
       projectId: FREE_CHAT_PROJECT_ID,
       role: "user",
       contentParts: createTextParts(text),
+      requestId,
+      requestAttempt: 1,
+      requestStartedAt: now,
       status: "sending",
       createdAt: now,
     };
@@ -1170,7 +1177,7 @@ export function App() {
       ...current,
       [targetAgent.id]: conversation.id,
     }));
-    activeRequestMessageIdsRef.current.add(userMessageId);
+    activeRequestIdsRef.current.add(requestId);
     setMessages((current) => [...current, userMessage]);
     setMessageText("");
     setAttachedWorkspaceFiles([]);
@@ -1178,7 +1185,7 @@ export function App() {
     try {
       await completeFreeChatRequest({ conversation, targetAgent, userMessageId, text });
     } finally {
-      activeRequestMessageIdsRef.current.delete(userMessageId);
+      activeRequestIdsRef.current.delete(requestId);
     }
   }
 
@@ -1197,7 +1204,8 @@ export function App() {
       return;
     }
 
-    activeRequestMessageIdsRef.current.add(retry.message.id);
+    const requestKey = getMessageRequestKey(retry.message);
+    activeRequestIdsRef.current.add(requestKey);
     setMessages((current) =>
       markConversationMessageSending(
         current.filter(
@@ -1232,7 +1240,7 @@ export function App() {
         text: retry.text,
       });
     } finally {
-      activeRequestMessageIdsRef.current.delete(retry.message.id);
+      activeRequestIdsRef.current.delete(requestKey);
     }
   }
 
@@ -1244,7 +1252,8 @@ export function App() {
     });
     if (retry.kind === "ignore") return;
 
-    activeRequestMessageIdsRef.current.add(retry.message.id);
+    const requestKey = getMessageRequestKey(retry.message);
+    activeRequestIdsRef.current.add(requestKey);
     setMessages((current) => markConversationMessageSending(current, retry.message.id));
 
     try {
@@ -1255,7 +1264,7 @@ export function App() {
           : markConversationMessageFailed(current, retry.message.id, "Retry failed. Check the task activity for details."),
       );
     } finally {
-      activeRequestMessageIdsRef.current.delete(retry.message.id);
+      activeRequestIdsRef.current.delete(requestKey);
     }
   }
 
@@ -1520,6 +1529,7 @@ export function App() {
         });
       const runId = crypto.randomUUID();
       const userMessageId = crypto.randomUUID();
+      const requestId = crypto.randomUUID();
       const participantAgentIds = [targetAgent.id];
       const workspaceContext = attachedWorkspaceFiles.map((file) => ({
         path: file.path,
@@ -1536,6 +1546,9 @@ export function App() {
         contentParts: createTextParts(text),
         workspaceContext,
         runId,
+        requestId,
+        requestAttempt: 1,
+        requestStartedAt: now,
         status: "sending",
         createdAt: now,
       };
@@ -1557,7 +1570,7 @@ export function App() {
       if (!existingConversation) {
         setConversations((current) => [conversation, ...current]);
       }
-      activeRequestMessageIdsRef.current.add(userMessageId);
+      activeRequestIdsRef.current.add(requestId);
       setMessages((current) => [...current, userMessage]);
       setRuns((current) => [optimisticRun, ...current]);
       setMessageText("");
@@ -1575,7 +1588,7 @@ export function App() {
           agentRequestText,
         });
       } finally {
-        activeRequestMessageIdsRef.current.delete(userMessageId);
+        activeRequestIdsRef.current.delete(requestId);
       }
     } finally {
       composerSubmittingRef.current = false;
@@ -1610,6 +1623,7 @@ export function App() {
     const taskId = crypto.randomUUID();
     const runId = crypto.randomUUID();
     const userMessageId = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
     const taskFiles = [...attachedWorkspaceFiles];
     const workspaceContext = taskFiles.map((file) => ({
       path: file.path,
@@ -1628,6 +1642,9 @@ export function App() {
       workspaceContext,
       taskId,
       runId,
+      requestId,
+      requestAttempt: 1,
+      requestStartedAt: now,
       status: "sending",
       createdAt: now,
     };
@@ -1672,7 +1689,7 @@ export function App() {
     if (!existingConversation) {
       setConversations((current) => [conversation, ...current]);
     }
-    activeRequestMessageIdsRef.current.add(userMessageId);
+    activeRequestIdsRef.current.add(requestId);
     setMessages((current) => [...current, userMessage]);
     setTasks((current) => [projectTask, ...current.filter((task) => task.id !== taskId)]);
     setRuns((current) => [projectRun, ...current]);
@@ -1974,7 +1991,7 @@ export function App() {
       setRuns((current) => failRunById(current, runId, failedAt, errorMessage));
       setOutputMode("runs");
     } finally {
-      activeRequestMessageIdsRef.current.delete(userMessageId);
+      activeRequestIdsRef.current.delete(requestId);
     }
   }
 

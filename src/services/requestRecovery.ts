@@ -59,14 +59,18 @@ export type TaskRoomMessageRetry =
 
 export function getPendingRequestMessages(
   messages: ConversationMessage[],
-  activeMessageIds: ReadonlySet<string>,
+  activeRequestIds: ReadonlySet<string>,
 ) {
   return messages.filter(
     (message) =>
       message.role === "user" &&
       message.status === "sending" &&
-      !activeMessageIds.has(message.id),
+      !activeRequestIds.has(getMessageRequestKey(message)),
   );
+}
+
+export function getMessageRequestKey(message: ConversationMessage) {
+  return message.requestId ?? message.id;
 }
 
 export function getRespondingAgentIds(conversations: Conversation[], messages: ConversationMessage[]) {
