@@ -2369,6 +2369,7 @@ function ProjectTasks({
               <span className={`status-badge ${run.state}`}>{run.state}</span>
             </div>
             <p>{linkedTask?.summary ?? "Project-scoped run record."}</p>
+            {linkedTask ? <TaskEventList agents={agents} events={linkedTask.events} /> : null}
             <div className="artifact-strip">
               {runArtifacts.length > 0 ? (
                 runArtifacts.map((artifact) => (
@@ -2396,18 +2397,7 @@ function ProjectTasks({
               <span className={`status-badge ${task.state}`}>{task.state}</span>
             </div>
             <p>{task.summary}</p>
-            <div className="task-event-list">
-              {task.events.map((event) => {
-                const agent = agents.find((item) => item.id === event.agentId);
-                return (
-                  <div className="task-event" key={event.id}>
-                    <span className={`status-dot ${event.state === "completed" ? "online" : "checking"}`} />
-                    <span>{agent?.name ?? "Agent"}</span>
-                    <strong>{event.label}</strong>
-                  </div>
-                );
-              })}
-            </div>
+            <TaskEventList agents={agents} events={task.events} />
             <div className="artifact-strip">
               {taskArtifacts.map((artifact) => (
                 <span className="artifact-chip" key={artifact.id}>
@@ -2416,6 +2406,23 @@ function ProjectTasks({
               ))}
             </div>
           </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaskEventList({ agents, events }: { agents: AgentInstance[]; events: ProjectTask["events"] }) {
+  return (
+    <div className="task-event-list">
+      {events.map((event) => {
+        const agent = agents.find((item) => item.id === event.agentId);
+        return (
+          <div className="task-event" key={event.id}>
+            <span className={`status-dot ${event.state === "completed" ? "online" : event.state === "failed" ? "offline" : "checking"}`} />
+            <span>{agent?.name ?? "Agent"}</span>
+            <strong>{event.label}</strong>
+          </div>
         );
       })}
     </div>
