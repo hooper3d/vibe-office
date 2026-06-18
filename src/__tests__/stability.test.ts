@@ -2889,6 +2889,52 @@ test("local trusted safe error messages redact secrets before returning to the U
   assert.match(getSafeErrorMessage(new Error(raw)), /\[redacted\]/);
 });
 
+test("local trusted provider forwarding redacts failed provider response bodies only", async () => {
+  const { forwardProviderRequest } = await import("../../localTrusted/http");
+  const originalFetch = globalThis.fetch;
+  const forwardedBodies: string[] = [];
+  const response = {
+    statusCode: 0,
+    setHeader() {},
+    end(body: string) {
+      forwardedBodies.push(body);
+    },
+  };
+
+  try {
+    globalThis.fetch = async () =>
+      new Response('{"error":"Authorization: Bearer failed-secret api_key=failed-key"}', {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    await forwardProviderRequest(response, {
+      body: "{}",
+      headers: {},
+      method: "POST",
+      url: "https://provider.example/v1/chat/completions",
+    });
+
+    globalThis.fetch = async () =>
+      new Response('{"content":"Bearer success-token should remain in successful model output"}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    await forwardProviderRequest(response, {
+      body: "{}",
+      headers: {},
+      method: "POST",
+      url: "https://provider.example/v1/chat/completions",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(forwardedBodies[0].includes("failed-secret"), false);
+  assert.equal(forwardedBodies[0].includes("failed-key"), false);
+  assert.match(forwardedBodies[0], /\[redacted\]/);
+  assert.equal(forwardedBodies[1].includes("success-token"), true);
+});
+
 test("output workspace keeps browser preview and project outputs in focused components", async () => {
   const outputWorkspace = await readFile(path.join(process.cwd(), "src", "components", "OutputWorkspace.tsx"), "utf8");
   const browserPreview = await readFile(path.join(process.cwd(), "src", "components", "BrowserPreview.tsx"), "utf8");

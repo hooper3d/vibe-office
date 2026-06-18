@@ -736,6 +736,7 @@ Implementation progress:
 - Controlled generated-media serving for local temp images and WSL media roots now lives in `localTrusted/generatedMedia.ts`.
 - Shared local trusted JSON parsing, JSON/binary responses, safe error text, and provider HTTP forwarding now live in `localTrusted/http.ts`, keeping `localTrusted/vitePlugin.ts` focused on route registration.
 - Local trusted error responses now redact Authorization, Bearer tokens, API-key fields, token query params, and URL credentials before returning safe error text to the browser UI.
+- Local trusted provider forwarding now redacts failed provider response bodies before they reach the browser, while preserving successful model output bodies unchanged.
 - Local trusted agent registry upsert/delete/status now uses only the command-shaped `/agent-local/registry-command` route; legacy route-specific registry endpoints have been removed.
 - Local trusted agent registry updates are now serialized and written through a temporary file before replacement, preventing concurrent upsert/delete requests from corrupting the local provider registry during browser smoke cleanup or rapid agent edits.
 - Local trusted agent registry now preserves non-sensitive display names so provider diagnostics can identify registered agents without exposing credentials.

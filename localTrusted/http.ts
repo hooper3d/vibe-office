@@ -75,11 +75,12 @@ export async function forwardProviderRequest(
   });
   const contentType = response.headers.get("content-type") || "application/json";
   const responseBody = await response.text();
+  const safeResponseBody = response.ok ? responseBody : redactSensitiveText(responseBody);
 
   res.statusCode = response.status;
   res.setHeader("Content-Type", contentType);
   res.setHeader("Cache-Control", "no-store");
-  res.end(responseBody);
+  res.end(safeResponseBody);
 }
 
 export function getSafeErrorMessage(error: unknown, fallback = "Workspace file request failed.") {
