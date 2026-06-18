@@ -2,13 +2,10 @@ import type { A2ATask } from "../domain/a2a";
 import type { AgentInstance, Project } from "../domain/types";
 import { createBrowserAgentHttpTransport, type AgentHttpTransport } from "./agentHttpTransport";
 import { ProviderRouter } from "./providerRouter";
-import {
-  type ChatHistoryMessage,
-  type ProviderConnectionMode,
-  type ProviderConnectionTestResult,
-} from "./providerTypes";
+import { type ChatHistoryMessage, type ProviderConnectionTestResult } from "./providerTypes";
 
-export type { ChatHistoryMessage } from "./providerTypes";
+export { createA2ACompatibilityMetadata } from "./providerTypes";
+export type { A2ACompatibilityMetadata, ChatHistoryMessage } from "./providerTypes";
 
 export type HermesA2AAdapterOptions = {
   agent: AgentInstance;
@@ -16,17 +13,6 @@ export type HermesA2AAdapterOptions = {
 };
 
 export type HermesConnectionTestResult = ProviderConnectionTestResult;
-
-export type A2ACompatibilityMetadata = Pick<
-  AgentInstance,
-  | "a2aLastCompatibilityCheckAt"
-  | "a2aProtocolVersion"
-  | "a2aSelectedInterface"
-  | "a2aSupportedInterfaces"
-  | "a2aTransportBinding"
-  | "supportsCancel"
-  | "supportsTaskLifecycle"
->;
 
 export class HermesA2AAdapter {
   private providerRouter: ProviderRouter;
@@ -65,36 +51,4 @@ export class HermesA2AAdapter {
   async cancelProjectTask(taskId: string, contextId: string): Promise<A2ATask> {
     return this.providerRouter.cancelProjectTask(taskId, contextId);
   }
-}
-
-export function createA2ACompatibilityMetadata(result: HermesConnectionTestResult): A2ACompatibilityMetadata {
-  const nativeA2A = result.mode === "native-a2a";
-  const providerInterfaces: Record<ProviderConnectionMode, string[]> = {
-    "native-a2a": ["message/send", "tasks/get", "tasks/cancel"],
-    "hermes-adapter": ["chat/completions"],
-    "openai-compatible": ["chat/completions"],
-    "anthropic-compatible": ["messages"],
-  };
-  const providerTransport: Record<ProviderConnectionMode, string> = {
-    "native-a2a": "json-rpc/http",
-    "hermes-adapter": "hermes-compatible-http",
-    "openai-compatible": "openai-compatible-http",
-    "anthropic-compatible": "anthropic-compatible-http",
-  };
-  const providerSelectedInterface: Record<ProviderConnectionMode, string> = {
-    "native-a2a": "message/send + tasks/get",
-    "hermes-adapter": "Hermes compatibility",
-    "openai-compatible": "OpenAI chat completions",
-    "anthropic-compatible": "Anthropic messages",
-  };
-
-  return {
-    a2aProtocolVersion: result.card.protocolVersion ?? (nativeA2A ? "unknown" : "compatibility"),
-    a2aTransportBinding: providerTransport[result.mode],
-    a2aSupportedInterfaces: providerInterfaces[result.mode],
-    a2aSelectedInterface: providerSelectedInterface[result.mode],
-    a2aLastCompatibilityCheckAt: new Date().toISOString(),
-    supportsTaskLifecycle: nativeA2A,
-    supportsCancel: nativeA2A ? undefined : false,
-  };
 }

@@ -702,7 +702,7 @@ Implementation progress:
 - Native A2A execution lives in `src/services/nativeA2AProvider.ts`.
 - Shared provider result and task helpers live in `src/services/providerTypes.ts`.
 - Runtime-provider selection and Hermes native fallback coordination now live in `src/services/providerRouter.ts`.
-- `HermesA2AAdapter` remains a thin unified provider entry plus A2A compatibility metadata mapper.
+- Provider compatibility metadata mapping now lives in `src/services/providerTypes.ts`; `HermesA2AAdapter` remains a thin unified provider entry.
 - Provider split tests cover OpenAI-compatible free chat, Anthropic-compatible project chat, and Hermes native fallback to chat compatibility.
 - Browser smoke tests now exercise provider retry/recovery through the local trusted provider endpoint.
 - M7-3 Output Area organization continued.
