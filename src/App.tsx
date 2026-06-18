@@ -68,6 +68,7 @@ import {
   getRespondingAgentIds,
   resolveDirectMessageRetry,
   resolvePendingRequestRecovery,
+  resolveTaskRoomMessageRetry,
 } from "./services/requestRecovery";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
@@ -1217,24 +1218,25 @@ export function App() {
   }
 
   async function retryTaskRoomMessage(messageId: string) {
-    const message = messages.find((item) => item.id === messageId);
-    if (!message || message.role !== "user" || message.status !== "failed" || !message.taskId) return;
+    const retry = resolveTaskRoomMessageRetry({
+      messageId,
+      messages,
+      conversations,
+    });
+    if (retry.kind === "ignore") return;
 
-    const conversation = conversations.find((item) => item.id === message.conversationId);
-    if (!conversation || conversation.mode !== "task_room") return;
-
-    activeRequestMessageIdsRef.current.add(message.id);
-    setMessages((current) => markConversationMessageSending(current, message.id));
+    activeRequestMessageIdsRef.current.add(retry.message.id);
+    setMessages((current) => markConversationMessageSending(current, retry.message.id));
 
     try {
-      const succeeded = await retryTaskLifecycle(message.taskId);
+      const succeeded = await retryTaskLifecycle(retry.taskId);
       setMessages((current) =>
         succeeded
-          ? markConversationMessageSent(current, message.id)
-          : markConversationMessageFailed(current, message.id, "Retry failed. Check the task activity for details."),
+          ? markConversationMessageSent(current, retry.message.id)
+          : markConversationMessageFailed(current, retry.message.id, "Retry failed. Check the task activity for details."),
       );
     } finally {
-      activeRequestMessageIdsRef.current.delete(message.id);
+      activeRequestMessageIdsRef.current.delete(retry.message.id);
     }
   }
 

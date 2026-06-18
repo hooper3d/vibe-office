@@ -46,6 +46,16 @@ export type DirectMessageRetry =
       text: string;
     };
 
+export type TaskRoomMessageRetry =
+  | {
+      kind: "ignore";
+    }
+  | {
+      kind: "retry";
+      message: ConversationMessage;
+      taskId: string;
+    };
+
 export function getPendingRequestMessages(
   messages: ConversationMessage[],
   activeMessageIds: ReadonlySet<string>,
@@ -223,6 +233,32 @@ export function resolveDirectMessageRetry({
     project,
     targetAgent,
     text,
+  };
+}
+
+export function resolveTaskRoomMessageRetry({
+  messageId,
+  messages,
+  conversations,
+}: {
+  messageId: string;
+  messages: ConversationMessage[];
+  conversations: Conversation[];
+}): TaskRoomMessageRetry {
+  const message = messages.find((item) => item.id === messageId);
+  if (!message || message.role !== "user" || message.status !== "failed" || !message.taskId) {
+    return { kind: "ignore" };
+  }
+
+  const conversation = conversations.find((item) => item.id === message.conversationId);
+  if (!conversation || conversation.mode !== "task_room") {
+    return { kind: "ignore" };
+  }
+
+  return {
+    kind: "retry",
+    message,
+    taskId: message.taskId,
   };
 }
 
