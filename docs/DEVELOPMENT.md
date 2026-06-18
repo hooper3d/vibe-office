@@ -768,6 +768,7 @@ Implementation progress:
 - Conversation message, pending-request, and Task Room conversation selectors now live in `src/services/conversationSelectionState.ts`, keeping more chat derivation out of `App.tsx`.
 - Selected-agent and selected-project recovery rules now live in `src/services/agentSetupState.ts` and `src/services/projectSetupState.ts`, leaving `App.tsx` to apply recovered state.
 - Agent avatar update state now lives in `src/services/agentSetupState.ts`, keeping agent profile mutations out of `App.tsx`.
+- Pollable task selection now lives in `src/services/taskLifecycleRequestState.ts`, keeping lifecycle polling eligibility out of `App.tsx`.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:
@@ -810,6 +811,7 @@ Acceptance:
 - Conversation selection state now also covers conversation message filtering, pending user request detection, and Task Room conversation lookup.
 - Selection recovery now covers agent fallback, missing project fallback, and Free Chat conversation-mode normalization in tested service helpers.
 - Agent setup state now also covers avatar updates for existing agents.
+- Task lifecycle request state now also covers pollable task list derivation for the App polling effect.
 - Generated media artifact backfill now lives in `src/services/artifactBackfillState.ts`, keeping artifacts plus task/run artifact links aligned in both React state and `requestRuntimeStore`.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
 

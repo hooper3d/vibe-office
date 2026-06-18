@@ -123,6 +123,7 @@ import {
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import {
   applyTaskLifecycleWorkspaceUpdate,
+  getPollableTasks,
   isTaskLifecyclePollable,
   resolveTaskLifecycleRequest,
   resolveTaskRetryRequest,
@@ -1489,6 +1490,13 @@ test("task lifecycle request state resolves ready, unsupported, and retry contex
   assert.equal(isTaskLifecyclePollable({ runs: [run({ type: "direct_message", taskId: localTask.id })], task: localTask }), true);
   assert.equal(isTaskLifecyclePollable({ runs: [], task: localTask }), false);
   assert.equal(isTaskLifecyclePollable({ runs: [run({ type: "direct_message" })], task: task({ state: "completed" }) }), false);
+  assert.deepEqual(
+    getPollableTasks({
+      runs: [run({ type: "direct_message", taskId: localTask.id })],
+      tasks: [localTask, task({ id: "done-task", state: "completed" })],
+    }).map((item) => item.id),
+    [localTask.id],
+  );
 });
 
 test("task lifecycle helpers preserve unsupported and retry states", () => {

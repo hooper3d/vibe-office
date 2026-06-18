@@ -114,6 +114,10 @@ export function isTaskLifecyclePollable({ runs, task }: { runs: ProjectRun[]; ta
   return isTaskActive(task.state) && Boolean(getTaskLifecycleAddress(task, runs)) && !hasLifecycleUnsupportedEvent(task);
 }
 
+export function getPollableTasks({ runs, tasks }: { runs: ProjectRun[]; tasks: ProjectTask[] }) {
+  return tasks.filter((task) => isTaskLifecyclePollable({ runs, task }));
+}
+
 export function applyTaskLifecycleWorkspaceUpdate({
   agentId,
   label,

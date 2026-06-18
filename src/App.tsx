@@ -99,7 +99,7 @@ import {
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import {
   applyTaskLifecycleWorkspaceUpdate,
-  isTaskLifecyclePollable,
+  getPollableTasks,
   resolveTaskLifecycleRequest,
   resolveTaskRetryRequest,
 } from "./services/taskLifecycleRequestState";
@@ -455,9 +455,7 @@ export function App() {
 
   useEffect(() => {
     if (!selectedWorkspaceProject) return;
-    const pollableTasks = scopedTasks.filter(
-      (task) => isTaskLifecyclePollable({ runs: scopedRuns, task }),
-    );
+    const pollableTasks = getPollableTasks({ runs: scopedRuns, tasks: scopedTasks });
     if (pollableTasks.length === 0) return;
 
     const interval = window.setInterval(() => {
