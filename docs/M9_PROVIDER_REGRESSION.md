@@ -18,6 +18,12 @@ Then run the provider matrix from another terminal:
 npm run regression:providers
 ```
 
+To inspect safe local trusted agent IDs without printing keys:
+
+```bash
+npm run regression:providers:list
+```
+
 ## Providers
 
 The script runs any provider whose existing agent ID or endpoint/model variables are present.

@@ -1,6 +1,12 @@
 const appUrl = normalizeBaseUrl(process.env.VIBE_OFFICE_URL || "http://127.0.0.1:5180");
 const defaultTimeoutMs = readNumber(process.env.VIBE_M9_REQUEST_TIMEOUT_MS, 45_000);
 const forcedTimeoutMs = readNumber(process.env.VIBE_M9_FORCED_TIMEOUT_MS, 1);
+const cliArgs = new Set(process.argv.slice(2));
+
+if (cliArgs.has("--list")) {
+  await printRegisteredAgents();
+  process.exit(0);
+}
 
 const providers = [
   createExistingProviderConfig({
@@ -294,4 +300,47 @@ function sanitizeError(error) {
 
 function truncate(value) {
   return value.replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+async function printRegisteredAgents() {
+  const registry = await readLocalTrustedRegistry();
+  const agents = Object.entries(registry)
+    .map(([id, agent]) => ({
+      id,
+      name: typeof agent.name === "string" ? agent.name : "",
+      runtimeProvider: agent.runtimeProvider || "hermes",
+      model: typeof agent.model === "string" ? agent.model : "",
+      endpoint: typeof agent.endpoint === "string" ? agent.endpoint : "",
+      hasKey: typeof agent.apiKey === "string" && agent.apiKey.length > 0,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  if (agents.length === 0) {
+    console.log("No registered local trusted agents found.");
+    return;
+  }
+
+  console.log("Registered local trusted agents:");
+  for (const agent of agents) {
+    console.log(
+      `- ${agent.id} | ${agent.name || "Unnamed"} | provider=${agent.runtimeProvider} | model=${agent.model || "unknown"} | hasKey=${agent.hasKey} | endpoint=${agent.endpoint || "unknown"}`,
+    );
+  }
+  console.log("\nUse VIBE_M9_HERMES_AGENT_ID, VIBE_M9_DEEPSEEK_AGENT_ID, or VIBE_M9_MINIMAX_AGENT_ID with one of these ids.");
+}
+
+async function readLocalTrustedRegistry() {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const registryPath = path.join(os.homedir(), ".vibe-office", "agent-registry.local.json");
+
+  try {
+    const raw = await fs.readFile(registryPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
 }

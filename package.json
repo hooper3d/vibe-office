@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node scripts/run-service-tests.mjs",
     "smoke:browser": "node scripts/run-browser-smoke.mjs",
-    "regression:providers": "node scripts/run-provider-regression.mjs"
+    "regression:providers": "node scripts/run-provider-regression.mjs",
+    "regression:providers:list": "node scripts/run-provider-regression.mjs --list"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
