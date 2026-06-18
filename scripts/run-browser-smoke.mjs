@@ -845,13 +845,16 @@ async function cleanupSmokeAgents() {
 
   await Promise.all(
     ids.map(async (agentId) => {
-      const response = await fetch(new URL("/agent-local/agents/delete", appUrl), {
+      const response = await fetch(new URL("/agent-local/registry-command", appUrl), {
         method: "POST",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ agentId }),
+        body: JSON.stringify({
+          command: "agent.delete",
+          payload: { agentId },
+        }),
       });
       if (!response.ok) {
         throw new Error(`delete ${agentId} failed with ${response.status}`);

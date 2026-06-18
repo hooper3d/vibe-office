@@ -19,42 +19,6 @@ export function localTrustedLayerPlugin(): Plugin {
   return {
     name: "vibe-office-local-workspace-file-layer",
     configureServer(server: ViteDevServer) {
-      server.middlewares.use("/agent-local/agents/upsert", async (req, res) => {
-        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent registry requests." });
-
-        try {
-          const body = await readJsonBody(req);
-          const result = await executeAgentRegistryCommand({ command: "agent.upsert", payload: body });
-          sendJson(res, result.status, result.body);
-        } catch (error) {
-          sendSafeError(res, 400, error, "Local agent registry request failed.");
-        }
-      });
-
-      server.middlewares.use("/agent-local/agents/delete", async (req, res) => {
-        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent registry requests." });
-
-        try {
-          const body = await readJsonBody(req);
-          const result = await executeAgentRegistryCommand({ command: "agent.delete", payload: body });
-          sendJson(res, result.status, result.body);
-        } catch (error) {
-          sendSafeError(res, 400, error, "Local agent registry request failed.");
-        }
-      });
-
-      server.middlewares.use("/agent-local/agents/status", async (req, res) => {
-        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent status requests." });
-
-        try {
-          const body = await readJsonBody(req);
-          const result = await executeAgentRegistryCommand({ command: "agent.status", payload: body });
-          sendJson(res, result.status, result.body);
-        } catch (error) {
-          sendSafeError(res, 400, error, "Local agent status request failed.");
-        }
-      });
-
       server.middlewares.use("/agent-local/registry-command", async (req, res) => {
         if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for local agent registry commands." });
 

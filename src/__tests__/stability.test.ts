@@ -2846,6 +2846,9 @@ test("local trusted middleware exposes command-only provider and workspace route
 
   assert.match(source, /agent-local\/command/);
   assert.match(source, /agent-local\/registry-command/);
+  assert.doesNotMatch(source, /agent-local\/agents\/upsert/);
+  assert.doesNotMatch(source, /agent-local\/agents\/delete/);
+  assert.doesNotMatch(source, /agent-local\/agents\/status/);
   assert.doesNotMatch(source, /agent-local\/request/);
   assert.match(source, /workspace-local\/command/);
   assert.match(source, /sendSafeError/);
@@ -2901,6 +2904,14 @@ test("M9 provider regression uses command-shaped local trusted registry requests
   assert.match(source, /command:\s*"agent\.upsert"/);
   assert.match(source, /command:\s*"agent\.delete"/);
   assert.doesNotMatch(source, /agent-local\/agents\/upsert/);
+  assert.doesNotMatch(source, /agent-local\/agents\/delete/);
+});
+
+test("browser smoke cleanup uses command-shaped local trusted registry requests", async () => {
+  const source = await readFile(path.join(process.cwd(), "scripts", "run-browser-smoke.mjs"), "utf8");
+
+  assert.match(source, /agent-local\/registry-command/);
+  assert.match(source, /command:\s*"agent\.delete"/);
   assert.doesNotMatch(source, /agent-local\/agents\/delete/);
 });
 

@@ -735,6 +735,7 @@ Implementation progress:
 - Local trusted workspace command validation and dispatch now live in `localTrusted/workspaceFiles.ts`; the browser workspace client sends semantic commands instead of route-specific request bodies.
 - Controlled generated-media serving for local temp images and WSL media roots now lives in `localTrusted/generatedMedia.ts`.
 - Shared local trusted JSON parsing, JSON/binary responses, safe error text, and provider HTTP forwarding now live in `localTrusted/http.ts`, keeping `localTrusted/vitePlugin.ts` focused on route registration.
+- Local trusted agent registry upsert/delete/status now uses only the command-shaped `/agent-local/registry-command` route; legacy route-specific registry endpoints have been removed.
 - Local trusted agent registry updates are now serialized and written through a temporary file before replacement, preventing concurrent upsert/delete requests from corrupting the local provider registry during browser smoke cleanup or rapid agent edits.
 - Local trusted agent registry now preserves non-sensitive display names so provider diagnostics can identify registered agents without exposing credentials.
 - Local trusted credential storage has been split out of the agent registry into `localTrusted/credentialStore.ts`; the registry file now stores provider metadata only, while credentials are read separately and hydrated inside the trusted layer.
