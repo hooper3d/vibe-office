@@ -72,7 +72,7 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 2054 lines.
+- `src/App.tsx` is still about 1978 lines.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
 
 Impact:

@@ -1,15 +1,8 @@
-import { ArrowUp, Paperclip, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
 import { AppSidebar } from "./components/AppSidebar";
-import {
-  DirectChat,
-  FreeChatHistoryPanel,
-  NoAgentState,
-  NoProjectState,
-  ProjectSelectionPanel,
-  TaskRoom,
-} from "./components/ConversationViews";
+import { FreeChatHistoryPanel, ProjectSelectionPanel } from "./components/ConversationViews";
+import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { BrowserPreview, ProjectOutputs } from "./components/OutputWorkspace";
 import { TabButton } from "./components/OutputTabs";
 import { ConfirmDialog, ProjectDialog, type ConfirmAction } from "./components/ProjectDialogs";
@@ -1668,102 +1661,33 @@ export function App() {
             "--output-fr": `${100 - splitPercent}fr`,
           } as CSSProperties}
         >
-          <section className="conversation-panel" aria-label="Conversation">
-            <div className="panel-header">
-              <div>
-                <h2>{conversationMode === "task-room" ? "Coordinate agents" : selectedAgent?.name ?? "No agent connected"}</h2>
-              </div>
-            </div>
-
-            {conversationMode === "single" && selectedAgent ? (
-              <DirectChat
-                messages={currentMessages}
-                scope={chatScope}
-                isResponding={isComposerSubmitting || currentConversationHasPendingRequest}
-                onRetryMessage={retryDirectMessage}
-              />
-            ) : conversationMode === "single" ? (
-              <NoAgentState onAddAgent={() => setShowSetup(true)} />
-            ) : selectedWorkspaceProject ? (
-              <TaskRoom
-                agents={agents}
-                chief={chiefAgent}
-                messages={taskRoomMessages}
-                participantIds={taskParticipantIds}
-                projectTask={latestChiefTask}
-                isResponding={isComposerSubmitting || taskRoomHasPendingRequest}
-                onToggleParticipant={toggleTaskParticipant}
-                onRetryMessage={retryTaskRoomMessage}
-              />
-            ) : (
-              <NoProjectState onSelectProject={() => setChatScope("free")} />
-            )}
-
-            <form className="composer" onSubmit={submitMessage}>
-              <label className="sr-only" htmlFor="message">
-                Message
-              </label>
-              {attachedWorkspaceFiles.length > 0 ? (
-                <div className="attached-context-row" aria-label="Attached workspace context">
-                  {attachedWorkspaceFiles.map((file) => (
-                    <span className="attached-context-chip" key={file.path}>
-                      <Paperclip size={13} />
-                      <span>{file.path}</span>
-                      <button type="button" onClick={() => detachWorkspaceFile(file.path)} aria-label={`Remove ${file.path}`}>
-                        <X size={13} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="composer-row">
-                <textarea
-                  id="message"
-                  value={messageText}
-                  onChange={(event) => setMessageText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      event.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  placeholder={
-                    conversationMode === "single"
-                      ? selectedAgent
-                        ? chatScope === "free"
-                          ? `Chat with ${selectedAgent.name}`
-                          : selectedWorkspaceProject
-                            ? `Ask ${selectedAgent.name} in ${selectedWorkspaceProject.name}`
-                            : "Select a project first"
-                        : "Add an agent provider first"
-                      : !selectedWorkspaceProject
-                        ? "Select a project first"
-                        : !chiefAgent
-                        ? "Assign one connected agent as Chief first"
-                        : selectedTaskParticipants.length === 0
-                          ? "Select at least one participant first"
-                          : `Start a Chief-led task in ${selectedWorkspaceProject.name}`
-                  }
-                  disabled={isComposerSubmitting || activeComposerHasPendingRequest}
-                />
-                <button
-                  className="primary-icon-button composer-send-button"
-                  type="submit"
-                  aria-label="Send message"
-                  disabled={
-                    isComposerSubmitting ||
-                    activeComposerHasPendingRequest ||
-                    (conversationMode === "single"
-                      ? !selectedAgent || (chatScope === "project" && !selectedWorkspaceProject)
-                      : !selectedWorkspaceProject || !chiefAgent || selectedTaskParticipants.length === 0) ||
-                    messageText.trim().length === 0
-                  }
-                >
-                  <ArrowUp size={18} />
-                </button>
-              </div>
-            </form>
-          </section>
+          <ConversationWorkspace
+            activeComposerHasPendingRequest={activeComposerHasPendingRequest}
+            agents={agents}
+            attachedWorkspaceFiles={attachedWorkspaceFiles}
+            chatScope={chatScope}
+            chiefAgent={chiefAgent}
+            conversationMode={conversationMode}
+            currentConversationHasPendingRequest={currentConversationHasPendingRequest}
+            currentMessages={currentMessages}
+            isComposerSubmitting={isComposerSubmitting}
+            latestChiefTask={latestChiefTask}
+            messageText={messageText}
+            selectedAgent={selectedAgent}
+            selectedTaskParticipantCount={selectedTaskParticipants.length}
+            selectedWorkspaceProject={selectedWorkspaceProject}
+            taskParticipantIds={taskParticipantIds}
+            taskRoomHasPendingRequest={taskRoomHasPendingRequest}
+            taskRoomMessages={taskRoomMessages}
+            onAddAgent={() => setShowSetup(true)}
+            onDetachWorkspaceFile={detachWorkspaceFile}
+            onMessageTextChange={setMessageText}
+            onRetryDirectMessage={retryDirectMessage}
+            onRetryTaskRoomMessage={retryTaskRoomMessage}
+            onSelectFreeChat={() => setChatScope("free")}
+            onSubmitMessage={submitMessage}
+            onToggleTaskParticipant={toggleTaskParticipant}
+          />
 
           <div
             className="splitter"

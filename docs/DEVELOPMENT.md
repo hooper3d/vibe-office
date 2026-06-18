@@ -768,6 +768,7 @@ Acceptance:
 - Output tab rendering now lives in `src/components/OutputTabs.tsx`.
 - Project name derivation and namespace slug helpers now live in `src/services/projectNaming.ts`.
 - Agent/project navigation, theme toggle, and sidebar list rendering now live in `src/components/AppSidebar.tsx`.
+- Conversation panel, direct/task-room body selection, workspace attachment chips, and composer rendering now live in `src/components/ConversationWorkspace.tsx`.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
 
 ## A2A Version / State Mapping
