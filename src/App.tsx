@@ -63,6 +63,7 @@ import { getUserFacingAgentError, sanitizeAgentErrorText } from "./services/agen
 import { executeFreeChatRequest, executeProjectAgentRequest } from "./services/agentRequestExecutor";
 import { createAgentMessageFromTask, extractA2ATaskText, isDirectMessageResponse } from "./services/agentTaskResult";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
+import { getPendingRequestMessages, getRespondingAgentIds } from "./services/requestRecovery";
 import { cancelRemoteTaskLifecycle, refreshRemoteTaskLifecycle, retryRemoteProjectTask } from "./services/taskLifecycleExecutor";
 import { loadUiState, saveUiState } from "./services/uiStateStorage";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
@@ -291,26 +292,7 @@ export function App() {
     () => taskRoomMessages.some((message) => message.role === "user" && message.status === "sending"),
     [taskRoomMessages],
   );
-  const respondingAgentIds = useMemo(() => {
-    const ids = new Set<string>();
-    const conversationById = new Map(conversations.map((conversation) => [conversation.id, conversation]));
-
-    messages.forEach((message) => {
-      if (message.role !== "user" || message.status !== "sending") return;
-
-      const conversation = conversationById.get(message.conversationId);
-      if (!conversation) return;
-
-      if (conversation.mode === "task_room") {
-        if (conversation.chiefAgentId) ids.add(conversation.chiefAgentId);
-        return;
-      }
-
-      if (conversation.primaryAgentId) ids.add(conversation.primaryAgentId);
-    });
-
-    return ids;
-  }, [conversations, messages]);
+  const respondingAgentIds = useMemo(() => getRespondingAgentIds(conversations, messages), [conversations, messages]);
 
   useEffect(() => {
     setAttachedWorkspaceFiles([]);
@@ -378,12 +360,7 @@ export function App() {
   }, [artifacts, conversations, messages, projects, runs, tasks]);
 
   useEffect(() => {
-    const pendingMessages = messages.filter(
-      (message) =>
-        message.role === "user" &&
-        message.status === "sending" &&
-        !activeRequestMessageIdsRef.current.has(message.id),
-    );
+    const pendingMessages = getPendingRequestMessages(messages, activeRequestMessageIdsRef.current);
     if (pendingMessages.length === 0) return;
 
     pendingMessages.forEach((message) => {
