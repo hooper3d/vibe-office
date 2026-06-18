@@ -98,10 +98,8 @@ function isForwardableProviderHeader(key: string) {
   return [
     "accept",
     "a2a-version",
-    "authorization",
     "anthropic-version",
     "content-type",
-    "x-api-key",
   ].includes(key);
 }
 

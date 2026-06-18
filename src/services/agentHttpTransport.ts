@@ -146,6 +146,7 @@ function normalizeRequestHeaders(headers: RequestInit["headers"]) {
 
   if (headers instanceof Headers) {
     headers.forEach((value, key) => {
+      if (isCredentialHeader(key)) return;
       normalized[key] = value;
     });
     return normalized;
@@ -153,15 +154,22 @@ function normalizeRequestHeaders(headers: RequestInit["headers"]) {
 
   if (Array.isArray(headers)) {
     headers.forEach(([key, value]) => {
+      if (isCredentialHeader(key)) return;
       normalized[key] = value;
     });
     return normalized;
   }
 
   Object.entries(headers).forEach(([key, value]) => {
+    if (isCredentialHeader(key)) return;
     normalized[key] = String(value);
   });
   return normalized;
+}
+
+function isCredentialHeader(key: string) {
+  const normalized = key.toLowerCase();
+  return normalized === "authorization" || normalized === "x-api-key";
 }
 
 export async function readErrorSuffix(response: Response) {

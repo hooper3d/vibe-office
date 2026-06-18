@@ -584,7 +584,6 @@ test("agent http transport delegates provider requests to the local trusted laye
       url: "https://api.example.com/v1/chat/completions",
       method: "POST",
       headers: {
-        Authorization: "Bearer test-key",
         "Content-Type": "application/json",
       },
       body: "{\"model\":\"test\"}",
@@ -592,6 +591,21 @@ test("agent http transport delegates provider requests to the local trusted laye
     },
   );
   assert.equal(JSON.parse(String(createLocalTrustedProviderRequest("https://api.example.com/v1", {}, { agentId: "agent-lucy" }).body)).agentId, "agent-lucy");
+  const { getVerifiedProviderRequest } = await import("../../localTrusted/providerRequests");
+  assert.deepEqual(
+    getVerifiedProviderRequest({
+      url: "https://api.example.com/v1/chat/completions",
+      method: "POST",
+      headers: {
+        Authorization: "Bearer browser-key",
+        "Content-Type": "application/json",
+        "x-api-key": "browser-key",
+      },
+    }).headers,
+    {
+      "Content-Type": "application/json",
+    },
+  );
 
   const previousFetch = globalThis.fetch;
   const requestedUrls: string[] = [];
