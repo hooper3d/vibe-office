@@ -12,6 +12,42 @@ export type LocalTrustedJsonResult = {
   body: unknown;
 };
 
+export type LocalTrustedWorkspaceCommand =
+  | {
+      command: "workspace.list";
+      payload?: {
+        root?: unknown;
+        path?: unknown;
+      };
+    }
+  | {
+      command: "workspace.read";
+      payload?: {
+        root?: unknown;
+        path?: unknown;
+      };
+    }
+  | {
+      command: "workspace.search";
+      payload?: {
+        root?: unknown;
+        query?: unknown;
+      };
+    };
+
+export async function executeWorkspaceCommand(body: unknown): Promise<LocalTrustedJsonResult> {
+  const command = getVerifiedWorkspaceCommand(body);
+  if (command.command === "workspace.list") {
+    return listWorkspaceDirectory(command.payload.root, command.payload.path);
+  }
+
+  if (command.command === "workspace.read") {
+    return readWorkspaceTextFile(command.payload.root, command.payload.path);
+  }
+
+  return searchWorkspaceFiles(command.payload.root, command.payload.query);
+}
+
 export async function listWorkspaceDirectory(rootInput: string, pathInput: string): Promise<LocalTrustedJsonResult> {
   const root = await getVerifiedRoot(rootInput);
   const target = resolveInsideRoot(root, pathInput);
@@ -187,4 +223,59 @@ function sortWorkspaceEntries(
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   return `${Math.round(bytes / 1024)} KB`;
+}
+
+function getVerifiedWorkspaceCommand(body: unknown):
+  | {
+      command: "workspace.list";
+      payload: { root: string; path: string };
+    }
+  | {
+      command: "workspace.read";
+      payload: { root: string; path: string };
+    }
+  | {
+      command: "workspace.search";
+      payload: { root: string; query: string };
+    } {
+  if (!body || typeof body !== "object") {
+    throw new Error("Workspace command payload is required.");
+  }
+
+  const commandBody = body as LocalTrustedWorkspaceCommand;
+
+  if (commandBody.command === "workspace.list") {
+    const payload = commandBody.payload ?? {};
+    return {
+      command: commandBody.command,
+      payload: {
+        root: String(payload.root || ""),
+        path: String(payload.path || ""),
+      },
+    };
+  }
+
+  if (commandBody.command === "workspace.read") {
+    const payload = commandBody.payload ?? {};
+    return {
+      command: commandBody.command,
+      payload: {
+        root: String(payload.root || ""),
+        path: String(payload.path || ""),
+      },
+    };
+  }
+
+  if (commandBody.command === "workspace.search") {
+    const payload = commandBody.payload ?? {};
+    return {
+      command: commandBody.command,
+      payload: {
+        root: String(payload.root || ""),
+        query: String(payload.query || ""),
+      },
+    };
+  }
+
+  throw new Error("Unsupported workspace command.");
 }

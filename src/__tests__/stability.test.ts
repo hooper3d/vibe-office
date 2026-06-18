@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { A2ATask } from "../domain/a2a";
@@ -96,6 +96,7 @@ import {
   recordLifecycleUnsupportedState,
 } from "../services/taskLifecycleState";
 import { emptyWorkspaceState, loadWorkspaceState, saveWorkspaceState } from "../services/workspaceStorage";
+import { createLocalTrustedWorkspaceCommandRequest } from "../services/workspaceFileClient";
 
 const at = "2026-06-18T10:00:00.000Z";
 const freeChatProjectId = "default";
@@ -1378,6 +1379,77 @@ test("local trusted registry preserves credentials when metadata is rewritten wi
       process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME = previousHome;
     }
     await rm(localTrustedHome, { recursive: true, force: true });
+  }
+});
+
+test("workspace file client sends command-shaped local trusted requests", () => {
+  const request = createLocalTrustedWorkspaceCommandRequest({
+    command: "workspace.read",
+    payload: {
+      root: "C:/workspace/project",
+      path: "src/App.tsx",
+    },
+  });
+  const body = JSON.parse(String(request.body));
+
+  assert.equal(request.method, "POST");
+  assert.equal(body.command, "workspace.read");
+  assert.deepEqual(body.payload, {
+    root: "C:/workspace/project",
+    path: "src/App.tsx",
+  });
+});
+
+test("local trusted workspace commands list, read, search, and reject path escape", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "vibe-office-workspace-command-"));
+  await mkdir(path.join(workspaceRoot, "docs"));
+  await writeFile(path.join(workspaceRoot, "docs", "README.md"), "hello workspace needle\nsecond line", "utf8");
+
+  try {
+    const { executeWorkspaceCommand } = await import("../../localTrusted/workspaceFiles");
+
+    const listed = await executeWorkspaceCommand({
+      command: "workspace.list",
+      payload: {
+        root: workspaceRoot,
+        path: "",
+      },
+    });
+    assert.equal(listed.status, 200);
+    assert.equal((listed.body as { entries: Array<{ name: string }> }).entries[0]?.name, "docs");
+
+    const read = await executeWorkspaceCommand({
+      command: "workspace.read",
+      payload: {
+        root: workspaceRoot,
+        path: "docs/README.md",
+      },
+    });
+    assert.equal(read.status, 200);
+    assert.equal((read.body as { content: string }).content.includes("needle"), true);
+
+    const searched = await executeWorkspaceCommand({
+      command: "workspace.search",
+      payload: {
+        root: workspaceRoot,
+        query: "needle",
+      },
+    });
+    assert.equal(searched.status, 200);
+    assert.equal((searched.body as { matches: Array<{ path: string; lineNumber: number }> }).matches[0]?.path, "docs/README.md");
+
+    await assert.rejects(
+      executeWorkspaceCommand({
+        command: "workspace.read",
+        payload: {
+          root: workspaceRoot,
+          path: "../outside.md",
+        },
+      }),
+      /limited to the selected project directory/,
+    );
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
   }
 });
 

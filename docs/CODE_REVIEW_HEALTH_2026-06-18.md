@@ -23,7 +23,7 @@ npm run regression:providers:list
 
 Current service test coverage:
 
-- 39 service-level tests pass.
+- 41 service-level tests pass.
 - Browser smoke passes.
 - Build passes after including `localTrusted` in TypeScript checking.
 
@@ -88,6 +88,7 @@ Evidence:
 - The new `src/services/artifactBackfillState.ts` centralizes generated media artifact backfill and keeps task/run artifact links in sync with the request runtime store.
 - `App.tsx` now applies request workspace snapshots through one local `applyRequestWorkspaceState` path, including project delete cleanup, reducing drift between React state and the request runtime store.
 - `src/services/providerRouter.ts` now owns runtime-provider selection and Hermes native fallback, leaving `HermesA2AAdapter` as a thin unified entry plus compatibility metadata mapper.
+- Workspace list/read/search now use a command-shaped local trusted boundary through `POST /workspace-local/command`, while generated media stays on a controlled media route.
 
 Impact:
 
@@ -196,7 +197,7 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 39 tests pass. |
+| Service tests | Good | 41 tests pass. |
 | Browser smoke | Good | Smoke passes. |
 | Credential safety | Improved | P0 fixed and committed; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |

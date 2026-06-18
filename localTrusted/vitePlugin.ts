@@ -19,6 +19,7 @@ import {
   sendJson,
 } from "./http";
 import {
+  executeWorkspaceCommand,
   listWorkspaceDirectory,
   readWorkspaceTextFile,
   searchWorkspaceFiles,
@@ -101,6 +102,18 @@ export function localTrustedLayerPlugin(): Plugin {
         try {
           const body = await readJsonBody(req);
           const result = await listWorkspaceDirectory(String(body.root || ""), String(body.path || ""));
+          sendJson(res, result.status, result.body);
+        } catch (error) {
+          sendJson(res, 400, { error: getSafeErrorMessage(error) });
+        }
+      });
+
+      server.middlewares.use("/workspace-local/command", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "Use POST for workspace file commands." });
+
+        try {
+          const body = await readJsonBody(req);
+          const result = await executeWorkspaceCommand(body);
           sendJson(res, result.status, result.body);
         } catch (error) {
           sendJson(res, 400, { error: getSafeErrorMessage(error) });

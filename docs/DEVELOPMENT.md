@@ -724,11 +724,12 @@ Implementation progress:
 - The local trusted command endpoint owns provider URL construction, model selection, JSON body assembly, and credential injection for OpenAI-compatible and Anthropic-compatible chat.
 - Native A2A capability and task lifecycle calls now use the same local trusted command boundary for `getAgentCard`, `message/send`, `tasks/get`, and `tasks/cancel`.
 - The local trusted command endpoint now owns A2A JSON-RPC envelope construction and A2A version header injection.
-- Workspace list/read/search/media remains on `/workspace-local/*`.
+- Workspace list/read/search now use the same command-shaped local trusted boundary through `POST /workspace-local/command`; generated media remains a controlled `GET /workspace-local/media` route.
 - Local trusted provider, credential registry, workspace-file, and generated-media dev middleware now lives in `localTrusted/vitePlugin.ts` instead of `vite.config.ts`, making Vite configuration a thin mount point and preparing the trusted layer for a later native/local service move.
 - Local trusted agent registry validation and prototype credential-file reads/writes now live in `localTrusted/agentRegistry.ts`.
 - Local trusted provider request validation, OpenAI-compatible request construction, Anthropic-compatible request construction, native A2A JSON-RPC construction, target checks, and credential injection now live in `localTrusted/providerRequests.ts`.
 - Local trusted workspace directory listing, file preview, and text search now live in `localTrusted/workspaceFiles.ts`.
+- Local trusted workspace command validation and dispatch now live in `localTrusted/workspaceFiles.ts`; the browser workspace client sends semantic commands instead of route-specific request bodies.
 - Controlled generated-media serving for local temp images and WSL media roots now lives in `localTrusted/generatedMedia.ts`.
 - Shared local trusted JSON parsing, JSON/binary responses, safe error text, and provider HTTP forwarding now live in `localTrusted/http.ts`, keeping `localTrusted/vitePlugin.ts` focused on route registration.
 - Local trusted agent registry updates are now serialized and written through a temporary file before replacement, preventing concurrent upsert/delete requests from corrupting the local provider registry during browser smoke cleanup or rapid agent edits.

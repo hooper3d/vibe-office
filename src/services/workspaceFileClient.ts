@@ -41,31 +41,67 @@ export type WorkspaceFileAttachment = {
   attachedAt: string;
 };
 
+export type LocalTrustedWorkspaceCommand =
+  | {
+      command: "workspace.list";
+      payload: {
+        root: string;
+        path?: string;
+      };
+    }
+  | {
+      command: "workspace.read";
+      payload: {
+        root: string;
+        path: string;
+      };
+    }
+  | {
+      command: "workspace.search";
+      payload: {
+        root: string;
+        query: string;
+      };
+    };
+
 export async function listWorkspaceFiles(root: string, path = "") {
-  return workspaceRequest<WorkspaceFileListResult>("/workspace-local/list", { root, path });
+  return workspaceCommand<WorkspaceFileListResult>({
+    command: "workspace.list",
+    payload: { root, path },
+  });
 }
 
 export async function readWorkspaceFile(root: string, path: string) {
-  return workspaceRequest<WorkspaceFileReadResult>("/workspace-local/read", { root, path });
+  return workspaceCommand<WorkspaceFileReadResult>({
+    command: "workspace.read",
+    payload: { root, path },
+  });
 }
 
 export async function searchWorkspaceFiles(root: string, query: string) {
-  return workspaceRequest<WorkspaceFileSearchResult>("/workspace-local/search", { root, query });
+  return workspaceCommand<WorkspaceFileSearchResult>({
+    command: "workspace.search",
+    payload: { root, query },
+  });
 }
 
 export function mediaFileUrl(path: string) {
   return `/workspace-local/media?path=${encodeURIComponent(path)}`;
 }
 
-async function workspaceRequest<T>(url: string, payload: Record<string, unknown>): Promise<T> {
-  const response = await fetch(url, {
+export function createLocalTrustedWorkspaceCommandRequest(command: LocalTrustedWorkspaceCommand): RequestInit {
+  return {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
-  });
+    body: JSON.stringify(command),
+  };
+}
+
+async function workspaceCommand<T>(command: LocalTrustedWorkspaceCommand): Promise<T> {
+  const response = await fetch("/workspace-local/command", createLocalTrustedWorkspaceCommandRequest(command));
 
   const body = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) {
