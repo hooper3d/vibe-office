@@ -72,8 +72,9 @@ Status: **known architecture debt**.
 
 Evidence:
 
-- `src/App.tsx` is still about 1978 lines.
+- `src/App.tsx` is still about 1941 lines after extracting the right Output Area shell.
 - Major components were extracted, but `App.tsx` still owns too much state coordination and request wiring.
+- The new `src/components/OutputPanel.tsx` centralizes Free Chat history, project output tabs, Browser preview, grouped Outputs, and no-project right-panel state.
 
 Impact:
 
@@ -182,7 +183,7 @@ Recommendation:
 | Area | Health | Notes |
 | --- | --- | --- |
 | Build | Good | `npm run build` passes. |
-| Service tests | Good | 22 tests pass. |
+| Service tests | Good | 23 tests pass. |
 | Browser smoke | Good | Smoke passes. |
 | Credential safety | Improved | P0 fixed in working tree; still prototype storage. |
 | Provider matrix | Medium/Weak | Readiness still mixed. |

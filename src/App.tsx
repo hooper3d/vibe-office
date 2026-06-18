@@ -1,12 +1,9 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
 import { AppSidebar } from "./components/AppSidebar";
-import { FreeChatHistoryPanel, ProjectSelectionPanel } from "./components/ConversationViews";
 import { ConversationWorkspace } from "./components/ConversationWorkspace";
-import { BrowserPreview, ProjectOutputs } from "./components/OutputWorkspace";
-import { TabButton } from "./components/OutputTabs";
+import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { ConfirmDialog, ProjectDialog, type ConfirmAction } from "./components/ProjectDialogs";
-import { WorkspaceFiles } from "./components/WorkspaceFiles";
 import { SetupWizard, type ConnectionTestState } from "./components/SetupWizard";
 import type { A2APart, A2ATask } from "./domain/a2a";
 import { createAgentFromHermesSetup, getProviderSetupIssue } from "./domain/hermesSetup";
@@ -79,7 +76,6 @@ import {
   type WorkspaceFileReadResult,
 } from "./services/workspaceFileClient";
 
-type OutputMode = "workspace" | "browser" | "outputs";
 type ConversationMode = "single" | "task-room";
 type ChatScope = "free" | "project";
 type DirectoryPickerHandle = {
@@ -1707,67 +1703,34 @@ export function App() {
             <span />
           </div>
 
-          <aside className="output-panel" aria-label="Output Workspace">
-            {chatScope === "free" ? (
-              <FreeChatHistoryPanel
-                agent={selectedAgent}
-                activeConversationId={currentConversation?.id}
-                histories={freeChatHistory}
-                onNewChat={startNewFreeChat}
-                onSelectConversation={selectFreeChatConversation}
-              />
-            ) : selectedWorkspaceProject ? (
-              <>
-                <div className="tabs" role="tablist" aria-label="Output modes">
-                  <TabButton active={outputMode === "workspace"} onClick={() => setOutputMode("workspace")}>
-                    Workspace
-                  </TabButton>
-                  <TabButton active={outputMode === "browser"} onClick={() => setOutputMode("browser")}>
-                    Browser
-                  </TabButton>
-                  <TabButton active={outputMode === "outputs"} onClick={() => setOutputMode("outputs")}>
-                    Outputs
-                  </TabButton>
-                </div>
-
-                {outputMode === "workspace" ? (
-                  <div className="workspace-mode">
-                    <WorkspaceFiles
-                      project={selectedWorkspaceProject}
-                      attachedFiles={attachedWorkspaceFiles}
-                      onAttachFile={attachWorkspaceFile}
-                      onDetachFile={detachWorkspaceFile}
-                      onEditProject={() => openProjectEditor(selectedWorkspaceProject.id)}
-                    />
-                  </div>
-                ) : null}
-                {outputMode === "browser" ? (
-                  <BrowserPreview
-                    browserUrl={browserUrl}
-                    previewUrl={previewUrl}
-                    onBrowserUrlChange={setBrowserUrl}
-                    onOpenPreview={openPreview}
-                  />
-                ) : null}
-                {outputMode === "outputs" ? (
-                  <ProjectOutputs
-                    agents={agents}
-                    runs={scopedRuns}
-                    tasks={scopedTasks}
-                    artifacts={scopedArtifacts}
-                    previewUrl={previewUrl}
-                    busyActionId={taskLifecycleBusyId}
-                    onCancelTask={cancelTaskLifecycle}
-                    onRefreshTask={refreshTaskLifecycle}
-                    onRetryTask={retryTaskLifecycle}
-                    onShowBrowser={() => setOutputMode("browser")}
-                  />
-                ) : null}
-              </>
-            ) : (
-              <ProjectSelectionPanel onCreateProject={openProjectDialog} />
-            )}
-          </aside>
+          <OutputPanel
+            agents={agents}
+            artifacts={scopedArtifacts}
+            attachedWorkspaceFiles={attachedWorkspaceFiles}
+            browserUrl={browserUrl}
+            busyActionId={taskLifecycleBusyId}
+            chatScope={chatScope}
+            freeChatActiveConversationId={currentConversation?.id}
+            freeChatAgent={selectedAgent}
+            freeChatHistories={freeChatHistory}
+            outputMode={outputMode}
+            previewUrl={previewUrl}
+            project={selectedWorkspaceProject}
+            runs={scopedRuns}
+            tasks={scopedTasks}
+            onAttachFile={attachWorkspaceFile}
+            onBrowserUrlChange={setBrowserUrl}
+            onCancelTask={cancelTaskLifecycle}
+            onCreateProject={openProjectDialog}
+            onDetachFile={detachWorkspaceFile}
+            onEditProject={openProjectEditor}
+            onNewFreeChat={startNewFreeChat}
+            onOpenPreview={openPreview}
+            onOutputModeChange={setOutputMode}
+            onRefreshTask={refreshTaskLifecycle}
+            onRetryTask={retryTaskLifecycle}
+            onSelectFreeChatConversation={selectFreeChatConversation}
+          />
         </div>
       </main>
 
