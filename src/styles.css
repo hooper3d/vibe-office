@@ -1018,12 +1018,9 @@ label > span:not(.field-label):not(.field-help),
 .free-chat-panel {
   display: grid;
   align-content: start;
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-soft);
-  padding: 16px;
+  padding: 0;
 }
 
 .free-chat-header {
@@ -1049,22 +1046,21 @@ label > span:not(.field-label):not(.field-help),
 
 .free-chat-history-list {
   display: grid;
-  gap: 8px;
+  gap: 0;
   border-top: 1px solid var(--border);
-  padding-top: 12px;
 }
 
 .free-chat-history-item {
   display: grid;
   gap: 4px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 10px 12px;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  padding: 10px 0 10px 10px;
 }
 
 .free-chat-history-item.active {
-  border-color: var(--accent-border);
+  border-left-color: var(--accent);
   background: var(--accent-soft);
 }
 
