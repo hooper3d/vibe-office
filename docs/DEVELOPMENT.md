@@ -777,6 +777,7 @@ Acceptance:
 - Output Area selection rules now live in `src/services/outputSelectors.ts`, keeping run/task/artifact visibility, agent filtering, and output counts out of the rendering components.
 - Request submission state now lives in `src/services/requestSubmissionState.ts`, covering optimistic Free Chat, Project Direct Chat, and Task Room conversation/message/run/task creation before remote provider execution.
 - Composer submission routing now lives in `src/services/composerSubmissionState.ts`, keeping Free Chat, Project Chat, Task Room, busy, empty, and missing-target entry decisions out of `App.tsx`.
+- Retry submission state now lives in `src/services/requestRetrySubmissionState.ts`, covering Direct Chat and Task Room retry preparation, stale retry-message cleanup, and Task Room retry completion state.
 - Browser smoke tests now clean up their temporary local trusted smoke agents after the run, keeping the M9 provider regression registry list focused on real configured providers.
 
 ## A2A Version / State Mapping

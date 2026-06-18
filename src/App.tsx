@@ -55,15 +55,13 @@ import { applyProjectDelete, applyProjectSave, canDeleteProject } from "./servic
 import {
   getPendingRequestMessages,
   getRespondingAgentIds,
-  resolveDirectMessageRetry,
   resolvePendingRequestRecovery,
-  resolveTaskRoomMessageRetry,
 } from "./services/requestRecovery";
 import {
-  completeTaskRoomMessageRetry,
-  prepareDirectMessageRetry,
-  prepareTaskRoomMessageRetry,
-} from "./services/requestRetryState";
+  completeTaskRoomRetrySubmission,
+  prepareDirectRetrySubmission,
+  prepareTaskRoomRetrySubmission,
+} from "./services/requestRetrySubmissionState";
 import { createRequestRuntimeStore } from "./services/requestRuntimeStore";
 import {
   executeTaskRoomRequestState,
@@ -992,10 +990,9 @@ export function App() {
   }
 
   async function retryDirectMessage(messageId: string) {
-    const retry = resolveDirectMessageRetry({
+    const retry = prepareDirectRetrySubmission({
+      state: requestStoreRef.current.snapshot(),
       messageId,
-      messages,
-      conversations,
       agents,
       projects,
       freeChatProjectId: FREE_CHAT_PROJECT_ID,
@@ -1006,32 +1003,27 @@ export function App() {
       return;
     }
 
-    const trackedRequestId = requestStoreRef.current.begin(retry.message);
-    const preparedMessages = prepareDirectMessageRetry({
-      messages: requestStoreRef.current.snapshot().messages,
-      message: retry.message,
-      targetAgentId: retry.targetAgent.id,
-    });
-    requestStoreRef.current.sync({ messages: preparedMessages });
-    setMessages(preparedMessages);
+    const trackedRequestId = requestStoreRef.current.begin(retry.retry.message);
+    requestStoreRef.current.replace(retry.state);
+    setMessages(retry.state.messages);
 
     try {
-      if (retry.kind === "free-chat") {
+      if (retry.retry.kind === "free-chat") {
         await completeFreeChatRequest({
-          conversation: retry.conversation,
-          targetAgent: retry.targetAgent,
-          userMessageId: retry.message.id,
-          text: retry.text,
+          conversation: retry.retry.conversation,
+          targetAgent: retry.retry.targetAgent,
+          userMessageId: retry.retry.message.id,
+          text: retry.retry.text,
         });
         return;
       }
 
       await resumeProjectDirectRequest({
-        message: retry.message,
-        conversation: retry.conversation,
-        project: retry.project,
-        targetAgent: retry.targetAgent,
-        text: retry.text,
+        message: retry.retry.message,
+        conversation: retry.retry.conversation,
+        project: retry.retry.project,
+        targetAgent: retry.retry.targetAgent,
+        text: retry.retry.text,
       });
     } finally {
       requestStoreRef.current.end(trackedRequestId);
@@ -1039,27 +1031,25 @@ export function App() {
   }
 
   async function retryTaskRoomMessage(messageId: string) {
-    const retry = resolveTaskRoomMessageRetry({
+    const retry = prepareTaskRoomRetrySubmission({
+      state: requestStoreRef.current.snapshot(),
       messageId,
-      messages,
-      conversations,
     });
     if (retry.kind === "ignore") return;
 
-    const trackedRequestId = requestStoreRef.current.begin(retry.message);
-    const preparedMessages = prepareTaskRoomMessageRetry({ messages: requestStoreRef.current.snapshot().messages, messageId: retry.message.id });
-    requestStoreRef.current.sync({ messages: preparedMessages });
-    setMessages(preparedMessages);
+    const trackedRequestId = requestStoreRef.current.begin(retry.retry.message);
+    requestStoreRef.current.replace(retry.state);
+    setMessages(retry.state.messages);
 
     try {
-      const succeeded = await retryTaskLifecycle(retry.taskId);
-      const completedMessages = completeTaskRoomMessageRetry({
-        messages: requestStoreRef.current.snapshot().messages,
-        messageId: retry.message.id,
+      const succeeded = await retryTaskLifecycle(retry.retry.taskId);
+      const completedState = completeTaskRoomRetrySubmission({
+        state: requestStoreRef.current.snapshot(),
+        messageId: retry.retry.message.id,
         succeeded,
       });
-      requestStoreRef.current.sync({ messages: completedMessages });
-      setMessages(completedMessages);
+      requestStoreRef.current.replace(completedState);
+      setMessages(completedState.messages);
     } finally {
       requestStoreRef.current.end(trackedRequestId);
     }

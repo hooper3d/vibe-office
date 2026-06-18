@@ -21,6 +21,11 @@ import {
   prepareTaskRoomMessageRetry,
 } from "../services/requestRetryState";
 import {
+  completeTaskRoomRetrySubmission,
+  prepareDirectRetrySubmission,
+  prepareTaskRoomRetrySubmission,
+} from "../services/requestRetrySubmissionState";
+import {
   prepareFreeChatSubmission,
   prepareProjectDirectSubmission,
   prepareTaskRoomSubmission,
@@ -341,6 +346,84 @@ test("retry resolution keeps direct chat and task room responsibilities separate
     kind: "retry",
     taskId: "task-1",
   });
+});
+
+test("retry submission helpers prepare direct and task-room retry state", () => {
+  const failedDirect = markConversationMessageFailed(
+    [userMessage({ runId: "run-1", status: "sending" })],
+    "message-1",
+    "Agent did not respond before the timeout.",
+    { runId: "run-1" },
+  )[0];
+  const retrySystemMessage: ConversationMessage = {
+    id: "system-retry-error",
+    conversationId: failedDirect.conversationId,
+    projectId: failedDirect.projectId,
+    role: "system",
+    agentId: agent.id,
+    runId: "run-1",
+    contentParts: [{ kind: "text", text: "Old retry error." }],
+    status: "sent",
+    createdAt: "2026-06-18T10:01:00.000Z",
+  };
+  const directSubmission = prepareDirectRetrySubmission({
+    state: directRequestState({
+      messages: [failedDirect, retrySystemMessage],
+      conversations: [conversation()],
+      runs: [run()],
+    }),
+    messageId: failedDirect.id,
+    agents: [agent],
+    projects: [project],
+    freeChatProjectId,
+  });
+
+  assert.equal(directSubmission.kind, "ready");
+  if (directSubmission.kind === "ready") {
+    assert.equal(directSubmission.retry.kind, "project-chat");
+    assert.equal(directSubmission.state.messages.length, 1);
+    assert.equal(directSubmission.state.messages[0].status, "sending");
+    assert.equal(directSubmission.state.messages[0].errorText, undefined);
+  }
+
+  const taskRoomConversation = conversation({
+    mode: "task_room",
+    chiefAgentId: agent.id,
+    primaryAgentId: undefined,
+  });
+  const failedTaskRoom = markConversationMessageFailed(
+    [userMessage({ taskId: "task-1", conversationId: taskRoomConversation.id })],
+    "message-1",
+    "Retry this request.",
+  )[0];
+  const taskSubmission = prepareTaskRoomRetrySubmission({
+    state: taskRoomRequestState({
+      conversations: [taskRoomConversation],
+      messages: [failedTaskRoom],
+    }),
+    messageId: failedTaskRoom.id,
+  });
+
+  assert.equal(taskSubmission.kind, "ready");
+  if (taskSubmission.kind === "ready") {
+    assert.equal(taskSubmission.retry.taskId, "task-1");
+    assert.equal(taskSubmission.state.messages[0].status, "sending");
+
+    const completed = completeTaskRoomRetrySubmission({
+      state: taskSubmission.state,
+      messageId: failedTaskRoom.id,
+      succeeded: true,
+    });
+    assert.equal(completed.messages[0].status, "sent");
+
+    const failed = completeTaskRoomRetrySubmission({
+      state: taskSubmission.state,
+      messageId: failedTaskRoom.id,
+      succeeded: false,
+    });
+    assert.equal(failed.messages[0].status, "failed");
+    assert.match(failed.messages[0].errorText ?? "", /Retry failed/);
+  }
 });
 
 test("conversation lifecycle retry attempt preserves request identity and clears prior error", () => {
