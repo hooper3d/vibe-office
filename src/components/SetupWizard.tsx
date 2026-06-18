@@ -16,6 +16,7 @@ import {
 import { CAPABILITY_TAG_OPTIONS, getOfficeRoleLabel, NON_CAPABILITY_TAGS, OFFICE_ROLE_OPTIONS } from "../domain/agentProfile";
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider } from "../domain/types";
 import type { ConnectionTestState } from "../services/agentSetupDialogState";
+import type { LocalTrustedAgentSafeStatus } from "../services/localTrustedAgentRegistry";
 import { AgentAvatar, StatusDot } from "./AgentPrimitives";
 
 export function SetupWizard({
@@ -27,6 +28,7 @@ export function SetupWizard({
   onResetTest,
   onSaveAgent,
   agent,
+  localTrustedStatus,
   onDeleteAgent,
   onAgentAvatarFile,
 }: {
@@ -38,6 +40,7 @@ export function SetupWizard({
   onResetTest: () => void;
   onSaveAgent: (event: FormEvent<HTMLFormElement>) => void;
   agent?: AgentInstance;
+  localTrustedStatus?: LocalTrustedAgentSafeStatus;
   onDeleteAgent: (agentId: string) => void;
   onAgentAvatarFile: (agentId: string, file?: File) => void;
 }) {
@@ -54,6 +57,8 @@ export function SetupWizard({
   const generatedA2AEndpoint = getGeneratedA2AEndpoint(runtimeBaseUrl);
   const generatedAgentCardUrl = getGeneratedAgentCardUrl(runtimeBaseUrl);
   const providerHint = getProviderHint(runtimeProvider);
+  const registryDiagnostic = getRegistryDiagnostic(profileAgent, localTrustedStatus);
+  const credentialDiagnostic = getCredentialDiagnostic(profileAgent, localTrustedStatus);
 
   useEffect(() => {
     setRuntimeBaseUrl(defaultRuntimeBaseUrl);
@@ -260,8 +265,8 @@ export function SetupWizard({
 
                   <div className="diagnostics">
                     <DiagnosticRow label="Provider reachable" state={testState} />
-                    <DiagnosticRow label="Model response ready" state={testState} />
-                    <DiagnosticRow label="Profile metadata ready" state={testState} />
+                    <DiagnosticRow detail={registryDiagnostic.detail} label="Local registry" state={registryDiagnostic.state} />
+                    <DiagnosticRow detail={credentialDiagnostic.detail} label="API key" state={credentialDiagnostic.state} />
                     {testMessage ? <div className={`test-message ${testState}`}>{testMessage}</div> : null}
                   </div>
                 </div>
@@ -408,7 +413,38 @@ function getProviderHint(provider: AgentRuntimeProvider) {
   return "Use a Hermes or native A2A-capable runtime. Chat compatibility is used when native A2A is unavailable.";
 }
 
-function DiagnosticRow({ label, state }: { label: string; state: ConnectionTestState }) {
+function getRegistryDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgentSafeStatus): { state: ConnectionTestState; detail: string } {
+  if (!agent) return { state: "idle", detail: "Saved when the agent is added." };
+  if (!status) return { state: "idle", detail: "Checking local trusted layer." };
+  if (!status.registered) return { state: "failed", detail: "Not saved locally." };
+
+  const runtimeProvider = agent.runtimeProvider ?? "hermes";
+  if (status.runtimeProvider !== runtimeProvider) {
+    return { state: "failed", detail: `Saved as ${getProviderLabel(status.runtimeProvider)}.` };
+  }
+  if (status.model && status.model !== agent.model) {
+    return { state: "failed", detail: "Saved model differs from this profile." };
+  }
+  return { state: "passed", detail: "Saved locally." };
+}
+
+function getCredentialDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgentSafeStatus): { state: ConnectionTestState; detail: string } {
+  const runtimeProvider = agent?.runtimeProvider ?? "hermes";
+  if (!agent) return { state: "idle", detail: "Saved after adding." };
+  if (runtimeProvider === "hermes") return { state: "passed", detail: "Not required." };
+  if (!status) return { state: "idle", detail: "Checking local trusted layer." };
+  if (!status.registered) return { state: "failed", detail: "Agent is not saved locally." };
+  if (status.hasCredential) return { state: "passed", detail: "Saved locally." };
+  return { state: "failed", detail: "Missing in local trusted layer." };
+}
+
+function getProviderLabel(provider: AgentRuntimeProvider) {
+  if (provider === "openai") return "OpenAI-compatible";
+  if (provider === "anthropic") return "Anthropic-compatible";
+  return "Hermes";
+}
+
+function DiagnosticRow({ detail, label, state }: { detail?: string; label: string; state: ConnectionTestState }) {
   const icon =
     state === "passed" ? (
       <CheckCircle2 size={16} />
@@ -423,6 +459,7 @@ function DiagnosticRow({ label, state }: { label: string; state: ConnectionTestS
     <div className={`diagnostic-row ${state}`}>
       {icon}
       <span>{label}</span>
+      {detail ? <small>{detail}</small> : null}
     </div>
   );
 }

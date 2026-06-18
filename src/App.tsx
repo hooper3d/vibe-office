@@ -30,9 +30,11 @@ import { applyMediaArtifactBackfillState } from "./services/artifactBackfillStat
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { applyAgentSetupSave, normalizeChief } from "./services/agentSetupState";
 import {
+  applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
   deriveAgentReadinessIssues,
   removeAgentReadinessIssues,
+  type LocalTrustedAgentStatusById,
 } from "./services/agentReadinessState";
 import { resolveComposerSubmissionIntent } from "./services/composerSubmissionState";
 import {
@@ -167,6 +169,7 @@ export function App() {
   const agentSetup = useAgentSetupDialogState();
   const projectDialog = useProjectDialogState({ freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID });
   const [localTrustedAgentIssues, setLocalTrustedAgentIssues] = useState<Record<string, string[]>>({});
+  const [localTrustedAgentStatuses, setLocalTrustedAgentStatuses] = useState<LocalTrustedAgentStatusById>({});
   const [splitPercent, setSplitPercent] = useState(54);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
 
@@ -334,6 +337,7 @@ export function App() {
     const agentIds = agents.map((agent) => agent.id);
     if (agentIds.length === 0) {
       setLocalTrustedAgentIssues({});
+      setLocalTrustedAgentStatuses({});
       return () => {
         cancelled = true;
       };
@@ -600,12 +604,18 @@ export function App() {
     try {
       const statuses = await getLocalTrustedAgentStatuses(agentIds);
       if (options.isCancelled?.()) return;
+      setLocalTrustedAgentStatuses((current) =>
+        applyLocalTrustedAgentStatusMap({ currentStatuses: current, replace: options.replace, statuses }),
+      );
       setLocalTrustedAgentIssues((current) =>
         applyLocalTrustedAgentStatuses({ currentIssues: current, replace: options.replace, statuses }),
       );
     } catch {
       if (options.isCancelled?.()) return;
-      if (options.replace) setLocalTrustedAgentIssues({});
+      if (options.replace) {
+        setLocalTrustedAgentIssues({});
+        setLocalTrustedAgentStatuses({});
+      }
     }
   }
 
@@ -653,6 +663,10 @@ export function App() {
     const fallbackAgent = remainingAgents.find((agent) => agent.isChief) ?? remainingAgents[0];
     setAgents(remainingAgents);
     setLocalTrustedAgentIssues((current) => removeAgentReadinessIssues(current, agentId));
+    setLocalTrustedAgentStatuses((current) => {
+      const { [agentId]: _removedStatus, ...remainingStatuses } = current;
+      return remainingStatuses;
+    });
     if (selectedAgentId === agentId) {
       setSelectedAgentId(fallbackAgent?.id ?? "");
     }
@@ -1316,6 +1330,7 @@ export function App() {
           onResetTest={agentSetup.resetConnectionTest}
           onSaveAgent={saveDemoAgent}
           agent={agentSetup.setupAgentId ? agents.find((agent) => agent.id === agentSetup.setupAgentId) : undefined}
+          localTrustedStatus={agentSetup.setupAgentId ? localTrustedAgentStatuses[agentSetup.setupAgentId] : undefined}
           onDeleteAgent={requestDeleteAgent}
           onAgentAvatarFile={handleExistingAgentAvatar}
         />

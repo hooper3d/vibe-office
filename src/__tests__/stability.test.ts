@@ -60,6 +60,7 @@ import { createA2ACompatibilityMetadata, HermesA2AAdapter } from "../services/he
 import { A2AClient } from "../services/a2aClient";
 import { applyAgentSetupSave, normalizeChief } from "../services/agentSetupState";
 import {
+  applyLocalTrustedAgentStatusMap,
   applyLocalTrustedAgentStatuses,
   deriveAgentReadinessIssues,
   removeAgentReadinessIssues,
@@ -1522,12 +1523,20 @@ test("local trusted registry exposes safe agent status without credentials", asy
     assert.ok(hermesStatus);
     assert.equal("apiKey" in deepseekStatus, false);
     assert.equal("apiKey" in minimaxStatus, false);
+    assert.equal(deepseekStatus.registered, true);
     assert.equal(deepseekStatus.hasCredential, false);
     assert.match(deepseekStatus.issues.join("\n"), /API key is not saved/);
+    assert.equal(minimaxStatus.registered, true);
     assert.equal(minimaxStatus.hasCredential, true);
     assert.match(minimaxStatus.issues.join("\n"), /MiniMax M3 should be configured as Anthropic-compatible/);
+    assert.equal(hermesStatus.registered, true);
     assert.equal(hermesStatus.hasCredential, false);
     assert.deepEqual(hermesStatus.issues, []);
+
+    const [missingStatus] = await getLocalTrustedAgentSafeStatuses(["agent-missing"]);
+    assert.equal(missingStatus.registered, false);
+    assert.equal(missingStatus.hasCredential, false);
+    assert.match(missingStatus.issues.join("\n"), /not registered/);
   } finally {
     if (previousHome === undefined) {
       delete process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME;
@@ -1536,6 +1545,35 @@ test("local trusted registry exposes safe agent status without credentials", asy
     }
     await rm(localTrustedHome, { recursive: true, force: true });
   }
+});
+
+test("agent readiness status map preserves safe local trusted diagnostics", () => {
+  const status = {
+    id: "agent-deepseek",
+    runtimeProvider: "openai" as const,
+    model: "deepseek-v4-flash",
+    hasCredential: false,
+    registered: true,
+    issues: ["API key is not saved in the local trusted layer."],
+  };
+
+  const replaced = applyLocalTrustedAgentStatusMap({
+    currentStatuses: {
+      stale: {
+        id: "stale",
+        runtimeProvider: "hermes",
+        model: "old",
+        hasCredential: false,
+        registered: false,
+        issues: ["stale"],
+      },
+    },
+    replace: true,
+    statuses: [status],
+  });
+  assert.deepEqual(Object.keys(replaced), ["agent-deepseek"]);
+  assert.equal(replaced["agent-deepseek"].hasCredential, false);
+  assert.equal(replaced["agent-deepseek"].registered, true);
 });
 
 test("workspace file client sends command-shaped local trusted requests", () => {

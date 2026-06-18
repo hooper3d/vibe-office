@@ -3,6 +3,7 @@ import type { AgentInstance } from "../domain/types";
 import type { LocalTrustedAgentSafeStatus } from "./localTrustedAgentRegistry";
 
 export type AgentReadinessIssuesById = Record<string, string[]>;
+export type LocalTrustedAgentStatusById = Record<string, LocalTrustedAgentSafeStatus>;
 
 export function deriveAgentReadinessIssues({
   agents,
@@ -19,6 +20,19 @@ export function deriveAgentReadinessIssues({
       return [agent.id, issues];
     }),
   );
+}
+
+export function applyLocalTrustedAgentStatusMap({
+  currentStatuses,
+  replace,
+  statuses,
+}: {
+  currentStatuses: LocalTrustedAgentStatusById;
+  replace?: boolean;
+  statuses: LocalTrustedAgentSafeStatus[];
+}) {
+  const nextStatuses = Object.fromEntries(statuses.map((status) => [status.id, status]));
+  return replace ? nextStatuses : { ...currentStatuses, ...nextStatuses };
 }
 
 export function applyLocalTrustedAgentStatuses({

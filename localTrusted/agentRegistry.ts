@@ -26,6 +26,7 @@ export type LocalTrustedAgentSafeStatus = {
   runtimeProvider: LocalTrustedAgentRecord["runtimeProvider"];
   model: string;
   hasCredential: boolean;
+  registered: boolean;
   issues: string[];
 };
 
@@ -101,11 +102,22 @@ export async function getLocalTrustedAgentSafeStatuses(agentIds?: string[]): Pro
   const registry = await readLocalTrustedAgentRegistry();
   const requestedIds = agentIds?.map((id) => id.trim()).filter(Boolean);
   const entries = requestedIds?.length
-    ? requestedIds.flatMap((id) => (registry[id] ? [[id, registry[id]] as const] : []))
+    ? requestedIds.map((id) => [id, registry[id]] as const)
     : Object.entries(registry);
 
   return entries.map(([id, agent]) => {
     const issues: string[] = [];
+    if (!agent) {
+      issues.push("Agent is not registered in the local trusted layer.");
+      return {
+        id,
+        runtimeProvider: "hermes",
+        model: "",
+        hasCredential: false,
+        registered: false,
+        issues,
+      };
+    }
     const setupIssue = getProviderSetupIssue(agent);
     if (setupIssue) issues.push(setupIssue);
     if (agent.runtimeProvider !== "hermes" && !agent.apiKey) {
@@ -117,6 +129,7 @@ export async function getLocalTrustedAgentSafeStatuses(agentIds?: string[]): Pro
       runtimeProvider: agent.runtimeProvider,
       model: agent.model,
       hasCredential: Boolean(agent.apiKey),
+      registered: true,
       issues,
     };
   });

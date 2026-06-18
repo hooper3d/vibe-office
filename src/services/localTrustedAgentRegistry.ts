@@ -5,6 +5,7 @@ export type LocalTrustedAgentSafeStatus = {
   runtimeProvider: "hermes" | "openai" | "anthropic";
   model: string;
   hasCredential: boolean;
+  registered: boolean;
   issues: string[];
 };
 
