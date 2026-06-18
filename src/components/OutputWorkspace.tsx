@@ -12,8 +12,15 @@ import type { AgentInstance } from "../domain/types";
 import { ProjectArtifacts } from "./ProjectArtifacts";
 import { ProjectTasks } from "./ProjectTasks";
 import {
+  getInitialOutputSelection,
   getOutputAgentGroups,
-  type OutputAgentGroup,
+  getOutputSelectionMeta,
+  getSelectedOutputAgentGroup,
+  isSameOutputSelection,
+  resolveOutputSelection,
+  resolveOutputTypeFilter,
+  type OutputSelection,
+  type OutputTypeFilter,
 } from "../services/outputSelectors";
 
 export function BrowserPreview({
@@ -78,16 +85,6 @@ export function BrowserPreview({
   );
 }
 
-type OutputTypeFilter = "all" | "tasks" | "artifacts" | "preview";
-type OutputSelection =
-  | {
-      kind: "agent";
-      agentId: string;
-    }
-  | {
-      kind: "preview";
-    };
-
 export function ProjectOutputs({
   agents,
   runs,
@@ -117,11 +114,8 @@ export function ProjectOutputs({
     [agents, runs, tasks, artifacts],
   );
   const hasPreview = previewUrl.trim().length > 0;
-  const [selection, setSelection] = useState<OutputSelection>(() =>
-    outputGroups[0] ? { kind: "agent", agentId: outputGroups[0].agent.id } : { kind: "preview" },
-  );
-  const selectedGroup =
-    selection.kind === "agent" ? outputGroups.find((group) => group.agent.id === selection.agentId) : undefined;
+  const [selection, setSelection] = useState<OutputSelection>(() => getInitialOutputSelection(outputGroups));
+  const selectedGroup = getSelectedOutputAgentGroup(outputGroups, selection);
   const hasAgentOutputs = outputGroups.length > 0;
   const hasAnyOutput = hasAgentOutputs || hasPreview;
   const showTasks = selection.kind === "agent" && (typeFilter === "all" || typeFilter === "tasks");
@@ -129,18 +123,13 @@ export function ProjectOutputs({
   const showPreview = selection.kind === "preview";
 
   useEffect(() => {
-    if (selection.kind === "preview") {
-      if (!hasPreview && outputGroups[0]) setSelection({ kind: "agent", agentId: outputGroups[0].agent.id });
-      return;
-    }
-
-    if (outputGroups.some((group) => group.agent.id === selection.agentId)) return;
-    setSelection(outputGroups[0] ? { kind: "agent", agentId: outputGroups[0].agent.id } : { kind: "preview" });
+    const nextSelection = resolveOutputSelection({ groups: outputGroups, hasPreview, selection });
+    if (!isSameOutputSelection(selection, nextSelection)) setSelection(nextSelection);
   }, [hasPreview, outputGroups, selection]);
 
   useEffect(() => {
-    if (selection.kind === "preview" && typeFilter !== "preview") setTypeFilter("preview");
-    if (selection.kind === "agent" && typeFilter === "preview") setTypeFilter("all");
+    const nextTypeFilter = resolveOutputTypeFilter(selection, typeFilter);
+    if (typeFilter !== nextTypeFilter) setTypeFilter(nextTypeFilter);
   }, [selection, typeFilter]);
 
   if (!hasAnyOutput) {
@@ -180,7 +169,7 @@ export function ProjectOutputs({
           <div>
             <div className="eyebrow">Outputs</div>
             <h3>{selection.kind === "preview" ? "Browser preview" : selectedGroup?.agent.name ?? "Agent outputs"}</h3>
-            <span>{getSelectionMeta(selection, selectedGroup, hasPreview)}</span>
+            <span>{getOutputSelectionMeta({ group: selectedGroup, hasPreview, selection })}</span>
           </div>
           <div className="output-type-filter" role="tablist" aria-label="Output types">
             {selection.kind === "preview" ? (
@@ -239,12 +228,6 @@ function OutputIndexButton({
       <span>{meta}</span>
     </button>
   );
-}
-
-function getSelectionMeta(selection: OutputSelection, group: OutputAgentGroup | undefined, hasPreview: boolean) {
-  if (selection.kind === "preview") return hasPreview ? "1 project preview" : "No preview opened";
-  if (!group) return "No outputs";
-  return `${group.taskCount} tasks / ${group.artifactCount} artifacts`;
 }
 
 function OutputTypeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {

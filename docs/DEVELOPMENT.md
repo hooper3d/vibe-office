@@ -756,6 +756,7 @@ Implementation progress:
 - Split-pane pointer and keyboard resize calculations now live in `src/services/splitPaneState.ts`, keeping App focused on event wiring instead of UI math.
 - Local trusted registry regression coverage now verifies that metadata refreshes from the UI cannot erase a previously saved provider credential.
 - Output grouping now excludes non-output direct chat runs, so the output panel only indexes agents with trackable tasks, artifacts, or preview entries.
+- Output selection recovery and type-filter normalization now live in `src/services/outputSelectors.ts`, keeping the output panel UI focused on rendering agent/type sections.
 - M9 provider regression can now auto-select ready local trusted agents by target hints; Hermes passed the full M9 matrix on 2026-06-19 through a Hermes-compatible OpenAI-style local trusted record.
 
 Acceptance:

@@ -10,6 +10,17 @@ export type OutputAgentGroup = {
   artifactCount: number;
 };
 
+export type OutputTypeFilter = "all" | "tasks" | "artifacts" | "preview";
+
+export type OutputSelection =
+  | {
+      kind: "agent";
+      agentId: string;
+    }
+  | {
+      kind: "preview";
+    };
+
 export function getVisibleOutputRuns(runs: ProjectRun[]) {
   return runs.filter(
     (run) => run.type !== "direct_message" || run.state !== "completed" || run.artifactIds.length > 0 || Boolean(run.taskId),
@@ -94,4 +105,61 @@ export function filterTasksByAgent(tasks: ProjectTask[], agentId: string) {
 export function filterArtifactsByAgent(artifacts: ProjectArtifact[], agentId: string) {
   if (agentId === "all") return artifacts;
   return artifacts.filter((artifact) => artifact.agentId === agentId);
+}
+
+export function getInitialOutputSelection(groups: OutputAgentGroup[]): OutputSelection {
+  return groups[0] ? { kind: "agent", agentId: groups[0].agent.id } : { kind: "preview" };
+}
+
+export function resolveOutputSelection({
+  groups,
+  hasPreview,
+  selection,
+}: {
+  groups: OutputAgentGroup[];
+  hasPreview: boolean;
+  selection: OutputSelection;
+}): OutputSelection {
+  if (selection.kind === "preview") {
+    if (!hasPreview && groups[0]) return { kind: "agent", agentId: groups[0].agent.id };
+    return selection;
+  }
+
+  if (groups.some((group) => group.agent.id === selection.agentId)) return selection;
+  return groups[0] ? { kind: "agent", agentId: groups[0].agent.id } : { kind: "preview" };
+}
+
+export function resolveOutputTypeFilter(selection: OutputSelection, typeFilter: OutputTypeFilter): OutputTypeFilter {
+  if (selection.kind === "preview") return "preview";
+  if (typeFilter === "preview") return "all";
+  return typeFilter;
+}
+
+export function getSelectedOutputAgentGroup(groups: OutputAgentGroup[], selection: OutputSelection) {
+  if (selection.kind !== "agent") return undefined;
+  return groups.find((group) => group.agent.id === selection.agentId);
+}
+
+export function getOutputSelectionMeta({
+  group,
+  hasPreview,
+  selection,
+}: {
+  group?: OutputAgentGroup;
+  hasPreview: boolean;
+  selection: OutputSelection;
+}) {
+  if (selection.kind === "preview") return hasPreview ? "1 project preview" : "No preview opened";
+  if (!group) return "No outputs";
+  return `${formatOutputCount(group.taskCount, "task")} / ${formatOutputCount(group.artifactCount, "artifact")}`;
+}
+
+export function isSameOutputSelection(left: OutputSelection, right: OutputSelection) {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "preview" && right.kind === "preview") return true;
+  return left.kind === "agent" && right.kind === "agent" && left.agentId === right.agentId;
+}
+
+function formatOutputCount(count: number, label: string) {
+  return `${count} ${label}${count === 1 ? "" : "s"}`;
 }

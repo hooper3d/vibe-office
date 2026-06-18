@@ -92,10 +92,16 @@ import {
   filterArtifactsByAgent,
   filterRunsByAgent,
   filterTasksByAgent,
+  getInitialOutputSelection,
   getOutputAgentGroups,
+  getOutputSelectionMeta,
+  getSelectedOutputAgentGroup,
   getStandaloneOutputTasks,
   getVisibleOutputAgentIds,
   getVisibleOutputRuns,
+  isSameOutputSelection,
+  resolveOutputSelection,
+  resolveOutputTypeFilter,
 } from "../services/outputSelectors";
 import { loadUiState, saveUiState } from "../services/uiStateStorage";
 import {
@@ -1333,6 +1339,48 @@ test("output selectors exclude agents that only have non-output direct chat runs
     }),
     [],
   );
+});
+
+test("output selection state recovers when preview or agent outputs change", () => {
+  const agentRun = run({
+    id: "run-output-agent",
+    ownerAgentId: agent.id,
+    participantAgentIds: [],
+    taskId: "task-output-agent",
+    type: "direct_message",
+    state: "completed",
+    artifactIds: [],
+  });
+  const groups = getOutputAgentGroups({
+    agents: [agent, participant],
+    runs: [agentRun],
+    tasks: [task({ id: "task-output-agent", ownerAgentId: agent.id, participantAgentIds: [] })],
+    artifacts: [],
+  });
+
+  const initialSelection = getInitialOutputSelection(groups);
+  assert.deepEqual(initialSelection, { kind: "agent", agentId: agent.id });
+  assert.equal(getSelectedOutputAgentGroup(groups, initialSelection)?.agent.id, agent.id);
+  assert.equal(getOutputSelectionMeta({ group: groups[0], hasPreview: false, selection: initialSelection }), "1 task / 0 artifacts");
+
+  assert.deepEqual(resolveOutputSelection({ groups, hasPreview: false, selection: { kind: "preview" } }), {
+    kind: "agent",
+    agentId: agent.id,
+  });
+  assert.deepEqual(
+    resolveOutputSelection({
+      groups,
+      hasPreview: true,
+      selection: { kind: "agent", agentId: "missing-agent" },
+    }),
+    { kind: "agent", agentId: agent.id },
+  );
+  assert.deepEqual(resolveOutputSelection({ groups: [], hasPreview: true, selection: initialSelection }), { kind: "preview" });
+  assert.equal(resolveOutputTypeFilter({ kind: "preview" }, "all"), "preview");
+  assert.equal(resolveOutputTypeFilter(initialSelection, "preview"), "all");
+  assert.equal(resolveOutputTypeFilter(initialSelection, "tasks"), "tasks");
+  assert.equal(isSameOutputSelection(initialSelection, { kind: "agent", agentId: agent.id }), true);
+  assert.equal(isSameOutputSelection(initialSelection, { kind: "preview" }), false);
 });
 
 test("artifact backfill state materializes generated media links into task and run outputs", () => {
