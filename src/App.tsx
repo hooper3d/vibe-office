@@ -49,6 +49,14 @@ import {
   projects as seedProjects,
 } from "./domain/seedData";
 import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "./domain/projectScope";
+import {
+  failRunById,
+  failRunForMessage,
+  failTaskRoomTaskForMessage,
+  markConversationMessageFailed,
+  markConversationMessageSending,
+  markConversationMessageSent,
+} from "./domain/requestLifecycle";
 import type { AgentInstance, AgentOfficeRole, AgentRuntimeProvider, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
 import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
@@ -1016,63 +1024,15 @@ export function App() {
   }
 
   function markInterruptedMessageFailed(message: ConversationMessage, reason: string) {
-    setMessages((current) =>
-      current.map((item) =>
-        item.id === message.id
-          ? {
-              ...item,
-              status: "failed",
-              errorText: reason,
-            }
-          : item,
-      ),
-    );
+    setMessages((current) => markConversationMessageFailed(current, message.id, reason));
   }
 
   function markTaskRoomMessageFailed(message: ConversationMessage, reason: string) {
     const failedAt = new Date().toISOString();
     markInterruptedMessageFailed(message, reason);
 
-    if (message.taskId) {
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === message.taskId
-            ? {
-                ...task,
-                state: "failed",
-                summary: reason,
-                events: [
-                  ...task.events,
-                  {
-                    id: `${message.taskId}-message-failed-${failedAt}`,
-                    taskId: message.taskId ?? task.id,
-                    agentId: task.ownerAgentId,
-                    label: "Task Room request failed.",
-                    state: "failed",
-                    timestamp: failedAt,
-                  },
-                ],
-                updatedAt: failedAt,
-              }
-            : task,
-        ),
-      );
-    }
-
-    if (message.runId) {
-      setRuns((current) =>
-        current.map((run) =>
-          run.id === message.runId
-            ? {
-                ...run,
-                state: "failed",
-                eventIds: mergeIds(run.eventIds, [`${message.runId}-failed`]),
-                updatedAt: failedAt,
-              }
-            : run,
-        ),
-      );
-    }
+    setTasks((current) => failTaskRoomTaskForMessage(current, message, reason, failedAt));
+    setRuns((current) => failRunForMessage(current, message, failedAt));
   }
 
   async function completeFreeChatRequest({
@@ -1092,17 +1052,7 @@ export function App() {
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
       const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
 
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === userMessageId
-            ? {
-                ...message,
-                status: "sent",
-                errorText: undefined,
-              }
-            : message,
-        ),
-      );
+      setMessages((current) => markConversationMessageSent(current, userMessageId));
 
       setMessages((current) => [
         ...current,
@@ -1129,17 +1079,7 @@ export function App() {
         ),
       );
     } catch (error) {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === userMessageId
-            ? {
-                ...message,
-                status: "failed",
-                errorText: getUserFacingAgentError(error),
-              }
-            : message,
-        ),
-      );
+      setMessages((current) => markConversationMessageFailed(current, userMessageId, getUserFacingAgentError(error)));
     }
   }
 
@@ -1212,8 +1152,8 @@ export function App() {
 
     activeRequestMessageIdsRef.current.add(message.id);
     setMessages((current) =>
-      current
-        .filter(
+      markConversationMessageSending(
+        current.filter(
           (item) =>
             !(
               item.role === "system" &&
@@ -1221,16 +1161,9 @@ export function App() {
               item.createdAt >= message.createdAt &&
               (message.runId ? item.runId === message.runId : item.agentId === targetAgent.id)
             ),
-        )
-        .map((item) =>
-          item.id === message.id
-            ? {
-                ...item,
-                status: "sending",
-                errorText: undefined,
-              }
-            : item,
         ),
+        message.id,
+      ),
     );
 
     try {
@@ -1270,30 +1203,14 @@ export function App() {
     if (!conversation || conversation.mode !== "task_room") return;
 
     activeRequestMessageIdsRef.current.add(message.id);
-    setMessages((current) =>
-      current.map((item) =>
-        item.id === message.id
-          ? {
-              ...item,
-              status: "sending",
-              errorText: undefined,
-            }
-          : item,
-      ),
-    );
+    setMessages((current) => markConversationMessageSending(current, message.id));
 
     try {
       const succeeded = await retryTaskLifecycle(message.taskId);
       setMessages((current) =>
-        current.map((item) =>
-          item.id === message.id
-            ? {
-                ...item,
-                status: succeeded ? "sent" : "failed",
-                errorText: succeeded ? undefined : "Retry failed. Check the task activity for details.",
-              }
-            : item,
-        ),
+        succeeded
+          ? markConversationMessageSent(current, message.id)
+          : markConversationMessageFailed(current, message.id, "Retry failed. Check the task activity for details."),
       );
     } finally {
       activeRequestMessageIdsRef.current.delete(message.id);
@@ -1421,18 +1338,7 @@ export function App() {
       const taskId = shouldCreateTask ? remoteTask.id || crypto.randomUUID() : undefined;
       const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
 
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === userMessageId
-            ? {
-                ...message,
-                status: "sent",
-                runId,
-                errorText: undefined,
-              }
-            : message,
-        ),
-      );
+      setMessages((current) => markConversationMessageSent(current, userMessageId, { runId }));
 
       if (responseSummary) {
         const agentMessage: ConversationMessage = {
@@ -1512,30 +1418,8 @@ export function App() {
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorText = getUserFacingAgentError(error);
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === userMessageId
-            ? {
-                ...message,
-                status: "failed",
-                runId,
-                errorText,
-              }
-            : message,
-        ),
-      );
-      setRuns((current) =>
-        current.map((run) =>
-          run.id === runId
-            ? {
-                ...run,
-                state: "failed",
-                eventIds: mergeIds(run.eventIds, [`${runId}-failed`]),
-                updatedAt: failedAt,
-              }
-            : run,
-        ),
-      );
+      setMessages((current) => markConversationMessageFailed(current, userMessageId, errorText, { runId }));
+      setRuns((current) => failRunById(current, runId, failedAt));
       setOutputMode("runs");
     }
   }
@@ -1761,17 +1645,7 @@ export function App() {
       const chiefPlan = extractA2ATaskText(chiefPlanTask) ?? `${targetAgent.name} returned a Chief task plan.`;
       const chiefPlanAt = chiefPlanTask.status.timestamp ?? new Date().toISOString();
 
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === userMessageId
-            ? {
-                ...message,
-                status: "sent",
-                errorText: undefined,
-              }
-            : message,
-        ),
-      );
+      setMessages((current) => markConversationMessageSent(current, userMessageId));
 
       const agentMessage: ConversationMessage = {
         id: chiefPlanTask.status.message?.messageId ?? crypto.randomUUID(),
@@ -1956,17 +1830,7 @@ export function App() {
         finalState = "failed";
         finalSummary = getUserFacingAgentError(error);
         finalAt = new Date().toISOString();
-        setMessages((current) =>
-          current.map((message) =>
-            message.id === userMessageId
-              ? {
-                  ...message,
-                  status: "failed",
-                  errorText: finalSummary,
-                }
-              : message,
-          ),
-        );
+        setMessages((current) => markConversationMessageFailed(current, userMessageId, finalSummary));
       }
 
       const finalArtifact = createTextArtifact({
@@ -2031,17 +1895,7 @@ export function App() {
     } catch (error) {
       const failedAt = new Date().toISOString();
       const errorMessage = getUserFacingAgentError(error);
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === userMessageId
-            ? {
-                ...message,
-                status: "failed",
-                errorText: errorMessage,
-              }
-            : message,
-        ),
-      );
+      setMessages((current) => markConversationMessageFailed(current, userMessageId, errorMessage));
       setTasks((current) =>
         current.map((task) =>
           task.id === taskId
@@ -2065,18 +1919,7 @@ export function App() {
             : task,
         ),
       );
-      setRuns((current) =>
-        current.map((run) =>
-          run.id === runId
-            ? {
-                ...run,
-                state: "failed",
-                eventIds: [...run.eventIds, `${runId}-failed`],
-                updatedAt: failedAt,
-              }
-            : run,
-        ),
-      );
+      setRuns((current) => failRunById(current, runId, failedAt));
       setOutputMode("runs");
     }
   }

@@ -1,0 +1,101 @@
+import type { ConversationMessage, ProjectRun, ProjectTask } from "./projectScope";
+
+export function markConversationMessageFailed(
+  messages: ConversationMessage[],
+  messageId: string,
+  errorText: string,
+  updates: Partial<Pick<ConversationMessage, "runId" | "taskId">> = {},
+) {
+  return messages.map((message) =>
+    message.id === messageId
+      ? {
+          ...message,
+          ...updates,
+          status: "failed" as const,
+          errorText,
+        }
+      : message,
+  );
+}
+
+export function markConversationMessageSending(messages: ConversationMessage[], messageId: string) {
+  return messages.map((message) =>
+    message.id === messageId
+      ? {
+          ...message,
+          status: "sending" as const,
+          errorText: undefined,
+        }
+      : message,
+  );
+}
+
+export function markConversationMessageSent(
+  messages: ConversationMessage[],
+  messageId: string,
+  updates: Partial<Pick<ConversationMessage, "runId" | "taskId">> = {},
+) {
+  return messages.map((message) =>
+    message.id === messageId
+      ? {
+          ...message,
+          ...updates,
+          status: "sent" as const,
+          errorText: undefined,
+        }
+      : message,
+  );
+}
+
+export function failTaskRoomTaskForMessage(
+  tasks: ProjectTask[],
+  message: ConversationMessage,
+  reason: string,
+  failedAt: string,
+) {
+  if (!message.taskId) return tasks;
+
+  return tasks.map((task) =>
+    task.id === message.taskId
+      ? {
+          ...task,
+          state: "failed" as const,
+          summary: reason,
+          events: [
+            ...task.events,
+            {
+              id: `${message.taskId}-message-failed-${failedAt}`,
+              taskId: message.taskId ?? task.id,
+              agentId: task.ownerAgentId,
+              label: "Task Room request failed.",
+              state: "failed" as const,
+              timestamp: failedAt,
+            },
+          ],
+          updatedAt: failedAt,
+        }
+      : task,
+  );
+}
+
+export function failRunForMessage(runs: ProjectRun[], message: ConversationMessage, failedAt: string) {
+  if (!message.runId) return runs;
+  return failRunById(runs, message.runId, failedAt);
+}
+
+export function failRunById(runs: ProjectRun[], runId: string, failedAt: string) {
+  return runs.map((run) =>
+    run.id === runId
+      ? {
+          ...run,
+          state: "failed" as const,
+          eventIds: mergeIds(run.eventIds, [`${runId}-failed`]),
+          updatedAt: failedAt,
+        }
+      : run,
+  );
+}
+
+function mergeIds(first: string[], second: string[]) {
+  return Array.from(new Set([...first, ...second]));
+}
