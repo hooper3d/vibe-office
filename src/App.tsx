@@ -5,14 +5,6 @@ import { ConversationWorkspace } from "./components/ConversationWorkspace";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { ConfirmDialog, ProjectDialog } from "./components/ProjectDialogs";
 import { SetupWizard } from "./components/SetupWizard";
-import {
-  conversationMessages,
-  conversations as seedConversations,
-  projectArtifacts,
-  projectRuns,
-  projectTasks,
-  projects as seedProjects,
-} from "./domain/seedData";
 import type {
   Conversation,
   ConversationMessage,
@@ -28,6 +20,14 @@ import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
 import { normalizeChief, resolveSelectedAgent } from "./services/agentSetupState";
 import { deriveAgentReadinessIssues } from "./services/agentReadinessState";
 import { useAppActionController } from "./services/appActionController";
+import {
+  deriveInitialChatScope,
+  FREE_CHAT_ENTRY_PROJECT_ID,
+  FREE_CHAT_NAMESPACE,
+  FREE_CHAT_PROJECT_ID,
+  normalizeOutputMode,
+  seedWorkspaceDefaults,
+} from "./services/appBootstrapState";
 import { useAppMaintenanceController } from "./services/appMaintenanceController";
 import { useAppSelectionController } from "./services/appSelectionController";
 import { useAppSyncController } from "./services/appSyncController";
@@ -43,6 +43,7 @@ import { useDirectChatController } from "./services/directChatController";
 import { useProjectDialogState } from "./services/projectDialogState";
 import { useProjectSetupController } from "./services/projectSetupController";
 import { useFreeChatController } from "./services/freeChatController";
+import type { ProjectChatScope, ProjectConversationMode } from "./services/projectSetupState";
 import { getRespondingAgentIds } from "./services/requestRecovery";
 import { usePendingRecoveryController } from "./services/pendingRecoveryController";
 import {
@@ -68,29 +69,9 @@ import {
   type WorkspaceFileAttachment,
 } from "./services/workspaceFileClient";
 
-type ConversationMode = "single" | "task-room";
-type ChatScope = "free" | "project";
 type DirectoryPickerHandle = {
   name: string;
 };
-
-const FREE_CHAT_ENTRY_PROJECT_ID = "default";
-const FREE_CHAT_PROJECT_ID = "__free_chat__";
-const FREE_CHAT_NAMESPACE = "free-chat";
-const seedWorkspaceDefaults = {
-  projects: seedProjects,
-  conversations: seedConversations,
-  messages: conversationMessages,
-  runs: projectRuns,
-  tasks: projectTasks,
-  artifacts: projectArtifacts,
-};
-
-function normalizeOutputMode(mode?: string): OutputMode {
-  if (mode === "workspace" || mode === "browser" || mode === "outputs") return mode;
-  if (mode === "runs" || mode === "artifacts") return "outputs";
-  return "workspace";
-}
 
 declare global {
   interface Window {
@@ -110,10 +91,14 @@ export function App() {
   const [artifacts, setArtifacts] = useState<ProjectArtifact[]>(() => initialWorkspace.artifacts);
   const [selectedAgentId, setSelectedAgentId] = useState(initialUiState.selectedAgentId ?? "");
   const [selectedProjectId, setSelectedProjectId] = useState(initialUiState.selectedProjectId ?? FREE_CHAT_ENTRY_PROJECT_ID);
-  const [chatScope, setChatScope] = useState<ChatScope>(
-    initialUiState.chatScope ?? (initialUiState.selectedProjectId && initialUiState.selectedProjectId !== FREE_CHAT_ENTRY_PROJECT_ID ? "project" : "free"),
+  const [chatScope, setChatScope] = useState<ProjectChatScope>(
+    deriveInitialChatScope({
+      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+      selectedProjectId: initialUiState.selectedProjectId,
+      storedChatScope: initialUiState.chatScope,
+    }),
   );
-  const [conversationMode, setConversationMode] = useState<ConversationMode>(initialUiState.conversationMode ?? "single");
+  const [conversationMode, setConversationMode] = useState<ProjectConversationMode>(initialUiState.conversationMode ?? "single");
   const [outputMode, setOutputMode] = useState<OutputMode>(normalizeOutputMode(initialUiState.outputMode));
   const [activeFreeChatConversationIds, setActiveFreeChatConversationIds] = useState<Record<string, string>>(
     initialUiState.activeFreeChatConversationIds ?? {},

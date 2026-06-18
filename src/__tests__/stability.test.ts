@@ -88,6 +88,11 @@ import {
 } from "../services/conversationSelectionState";
 import { getCanonicalLocalhostRedirectUrl } from "../services/canonicalHost";
 import {
+  deriveInitialChatScope,
+  FREE_CHAT_ENTRY_PROJECT_ID,
+  normalizeOutputMode,
+} from "../services/appBootstrapState";
+import {
   applyMissingProjectSelection,
   applyProjectDelete,
   applyProjectDeleteSelection,
@@ -3111,6 +3116,38 @@ test("ui state storage restores selected chrome and tolerates corrupt or unavail
       saveUiState({ selectedAgentId: "agent-lucy" });
     }),
   );
+});
+
+test("app bootstrap state derives stable free chat and output defaults", () => {
+  assert.equal(
+    deriveInitialChatScope({
+      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+      selectedProjectId: undefined,
+      storedChatScope: undefined,
+    }),
+    "free",
+  );
+  assert.equal(
+    deriveInitialChatScope({
+      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+      selectedProjectId: "project-vibe",
+      storedChatScope: undefined,
+    }),
+    "project",
+  );
+  assert.equal(
+    deriveInitialChatScope({
+      freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
+      selectedProjectId: "project-vibe",
+      storedChatScope: "free",
+    }),
+    "free",
+  );
+  assert.equal(normalizeOutputMode("workspace"), "workspace");
+  assert.equal(normalizeOutputMode("browser"), "browser");
+  assert.equal(normalizeOutputMode("artifacts"), "outputs");
+  assert.equal(normalizeOutputMode("runs"), "outputs");
+  assert.equal(normalizeOutputMode("floating"), "workspace");
 });
 
 test("workspace storage migrates recoverable state and falls back safely", () => {
