@@ -103,6 +103,7 @@ const THEME_STORAGE_KEY = "vibe-office.theme";
 const FREE_CHAT_ENTRY_PROJECT_ID = "default";
 const FREE_CHAT_PROJECT_ID = "__free_chat__";
 const FREE_CHAT_NAMESPACE = "free-chat";
+const FREE_CHAT_CONTEXT_MESSAGE_LIMIT = 12;
 const MAX_AVATAR_BYTES = 512 * 1024;
 const NON_CAPABILITY_TAGS = ["local", "hermes", "runtime"];
 const CAPABILITY_TAG_OPTIONS = [
@@ -922,7 +923,8 @@ export function App() {
     setAttachedWorkspaceFiles([]);
 
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text);
+      const freeChatContext = buildFreeChatContext(messages, conversation.id);
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text, freeChatContext);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
       const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
 
@@ -2759,6 +2761,17 @@ function NoProjectState({ onSelectProject }: { onSelectProject: () => void }) {
 function getDisplayMessageText(message: ConversationMessage) {
   const text = getPartText(message.contentParts);
   return message.role === "system" ? sanitizeAgentErrorText(text) : text;
+}
+
+function buildFreeChatContext(messages: ConversationMessage[], conversationId: string) {
+  return messages
+    .filter((message) => message.conversationId === conversationId && message.status === "sent" && message.role !== "system")
+    .slice(-FREE_CHAT_CONTEXT_MESSAGE_LIMIT)
+    .map((message) => ({
+      role: message.role === "user" ? ("user" as const) : ("assistant" as const),
+      content: getPartText(message.contentParts),
+    }))
+    .filter((message) => message.content.trim().length > 0);
 }
 
 function getUserFacingAgentError(error: unknown) {

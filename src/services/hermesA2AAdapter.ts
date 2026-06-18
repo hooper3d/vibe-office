@@ -12,6 +12,11 @@ export type HermesConnectionTestResult = {
   mode: "native-a2a" | "hermes-adapter";
 };
 
+export type FreeChatContextMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export class HermesA2AAdapter {
   private agent: AgentInstance;
   private client: A2AClient;
@@ -82,7 +87,7 @@ export class HermesA2AAdapter {
     }
   }
 
-  async sendFreeChatMessage(text: string) {
+  async sendFreeChatMessage(text: string, history: FreeChatContextMessage[] = []) {
     const contextId = `free-chat:${this.agent.id}`;
     const message: A2AMessage = {
       messageId: crypto.randomUUID(),
@@ -98,6 +103,7 @@ export class HermesA2AAdapter {
         scope: "free-chat",
         appContext: "Vibe Office Free Chat",
         projectScope: "none",
+        history,
         routedBy: "vibe-office",
         targetAgentId: this.agent.id,
       },
@@ -110,7 +116,7 @@ export class HermesA2AAdapter {
         targetAgentId: this.agent.id,
       });
     } catch {
-      return this.sendHermesChatAsFreeChatTask(contextId, text);
+      return this.sendHermesChatAsFreeChatTask(contextId, text, history);
     }
   }
 
@@ -155,10 +161,11 @@ export class HermesA2AAdapter {
     });
   }
 
-  private async sendHermesChatAsFreeChatTask(contextId: string, text: string): Promise<A2ATask> {
+  private async sendHermesChatAsFreeChatTask(contextId: string, text: string, history: FreeChatContextMessage[]): Promise<A2ATask> {
     return this.sendHermesChatCompletionAsTask({
       contextId,
       text,
+      history,
       systemContent: "You are chatting with the user in Vibe Office Free Chat. No project scope, local files, tasks, or artifacts are attached.",
       metadata: {
         adapter: "hermes-openai-compatible",
@@ -170,11 +177,13 @@ export class HermesA2AAdapter {
   private async sendHermesChatCompletionAsTask({
     contextId,
     text,
+    history = [],
     systemContent,
     metadata,
   }: {
     contextId: string;
     text: string;
+    history?: FreeChatContextMessage[];
     systemContent?: string;
     metadata: Record<string, unknown>;
   }): Promise<A2ATask> {
@@ -187,6 +196,7 @@ export class HermesA2AAdapter {
             },
           ]
         : []),
+      ...history,
       {
         role: "user",
         content: text,
