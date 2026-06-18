@@ -38,6 +38,8 @@ Readiness lines include an `action=` hint:
 - `edit-agent-switch-to-openai-compatible-and-save`: open the agent, set Provider type to OpenAI-compatible, use an OpenAI-compatible `/v1` endpoint, save, then run the list again.
 - `add-openai-compatible-agent` / `add-anthropic-compatible-agent`: add a matching provider-backed agent before running the M9 matrix.
 
+When a matching local trusted record exists, readiness also includes a `repair=` hint with `VIBE_AGENT_ID`, `VIBE_AGENT_M9_TARGET`, and a `<key>` placeholder for `npm run local-agent:credential`.
+
 If the UI state looks correct but the local trusted readiness still reports `MISSING_KEY`, update the local trusted credential record from environment variables. The command never prints the key:
 
 ```bash

@@ -611,11 +611,18 @@ function getTargetReadiness(target, agents) {
       `expected=${getRuntimeProviderLabel(target)}`,
       `actual=${providerMismatch.runtimeProvider}`,
       `action=${getReadinessAction("provider-mismatch", target)}`,
+      `repair=${getCredentialRepairHint(target, providerMismatch.id)}`,
     ].join(" ");
   }
 
   const missingKey = candidates.find((agent) => !hasRequiredCredentials(target, agent));
-  if (missingKey) return `MISSING_KEY ${missingKey.id} action=${getReadinessAction("missing-key", target)}`;
+  if (missingKey) {
+    return [
+      `MISSING_KEY ${missingKey.id}`,
+      `action=${getReadinessAction("missing-key", target)}`,
+      `repair=${getCredentialRepairHint(target, missingKey.id)}`,
+    ].join(" ");
+  }
 
   return `NOT_FOUND action=${getReadinessAction("not-found", target)}`;
 }
@@ -648,6 +655,15 @@ function getReadinessAction(reason, target) {
   if (target.runtimeProvider === "anthropic") return "add-anthropic-compatible-agent";
   if (target.runtimeProvider === "openai") return "add-openai-compatible-agent";
   return "add-or-register-agent";
+}
+
+function getCredentialRepairHint(target, agentId) {
+  return [
+    `VIBE_AGENT_ID=${agentId}`,
+    `VIBE_AGENT_M9_TARGET=${target.key}`,
+    "VIBE_AGENT_API_KEY=<key>",
+    "npm run local-agent:credential",
+  ].join(" ");
 }
 
 function getAgentRuntimeProvider(agent, fallback) {

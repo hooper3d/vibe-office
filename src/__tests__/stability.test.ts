@@ -2820,6 +2820,7 @@ test("M9 provider regression fails selected targets that are not ready", async (
     assert.equal(mismatch.status, 1);
     assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /MiniMax Anthropic-compatible/);
     assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /PROVIDER_MISMATCH agent-minimax/);
+    assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /repair=VIBE_AGENT_ID=agent-minimax VIBE_AGENT_M9_TARGET=minimax VIBE_AGENT_API_KEY=<key> npm run local-agent:credential/);
   } finally {
     await rm(localTrustedHome, { recursive: true, force: true });
   }
