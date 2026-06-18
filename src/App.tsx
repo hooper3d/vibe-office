@@ -1267,7 +1267,14 @@ export function App() {
     try {
       restoredFiles = await restoreWorkspaceAttachments(project, message);
     } catch {
-      markInterruptedMessageFailed(message, "Workspace files from the interrupted request could not be restored. Please resend it.");
+      setMessages((current) =>
+        markConversationMessageFailed(
+          current,
+          message.id,
+          "Workspace files from the interrupted request could not be restored. Please resend it.",
+          { errorKind: "context" },
+        ),
+      );
       return;
     }
 
