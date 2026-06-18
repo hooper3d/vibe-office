@@ -51,7 +51,7 @@ import {
 import type { Conversation, ConversationMessage, ProjectArtifact, ProjectRun, ProjectTask, WorkState } from "./domain/projectScope";
 import type { AgentInstance, AgentOfficeRole, AgentStatus, Project } from "./domain/types";
 import { loadConfiguredAgents, saveConfiguredAgents } from "./services/agentStorage";
-import { HermesA2AAdapter, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
+import { HermesA2AAdapter, type ChatHistoryMessage, type HermesConnectionTestResult } from "./services/hermesA2AAdapter";
 import { loadWorkspaceState, saveWorkspaceState } from "./services/workspaceStorage";
 import {
   listWorkspaceFiles,
@@ -1050,7 +1050,8 @@ export function App() {
     text: string;
   }) {
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text);
+      const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendFreeChatMessage(text, chatHistory);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a response.`;
       const completedAt = remoteTask.status.timestamp ?? new Date().toISOString();
 
@@ -1265,7 +1266,8 @@ export function App() {
     agentRequestText: string;
   }) {
     try {
-      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(project, agentRequestText);
+      const chatHistory = buildChatCompletionHistory(messages, conversation.id, userMessageId);
+      const remoteTask = await new HermesA2AAdapter({ agent: targetAgent }).sendProjectMessage(project, agentRequestText, chatHistory);
       const responseSummary = extractA2ATaskText(remoteTask) ?? `${targetAgent.name} returned a task update.`;
       const mediaArtifact = createMediaArtifactFromText({
         projectId: project.id,
@@ -2712,6 +2714,29 @@ function getTextPartContent(parts: A2APart[]) {
     .filter((part) => part.kind === "text")
     .map((part) => part.text)
     .join("\n");
+}
+
+function buildChatCompletionHistory(
+  allMessages: ConversationMessage[],
+  conversationId: string,
+  pendingMessageId: string,
+  maxMessages = 20,
+): ChatHistoryMessage[] {
+  return allMessages
+    .filter(
+      (message) =>
+        message.conversationId === conversationId &&
+        message.id !== pendingMessageId &&
+        message.status === "sent" &&
+        (message.role === "user" || message.role === "agent"),
+    )
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .slice(-maxMessages)
+    .map((message): ChatHistoryMessage => ({
+      role: message.role === "agent" ? "assistant" : "user",
+      content: getTextPartContent(message.contentParts),
+    }))
+    .filter((message) => message.content.trim().length > 0);
 }
 
 function getDataPartContent(parts: A2APart[]) {

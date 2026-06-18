@@ -2,6 +2,11 @@ import type { A2AAgentCard, A2AMessage, A2ATask } from "../domain/a2a";
 import type { AgentInstance, Project } from "../domain/types";
 import { A2AClient } from "./a2aClient";
 
+export type ChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type HermesA2AAdapterOptions = {
   agent: AgentInstance;
   apiKey?: string;
@@ -53,7 +58,7 @@ export class HermesA2AAdapter {
     }
   }
 
-  async sendProjectMessage(project: Project, text: string) {
+  async sendProjectMessage(project: Project, text: string, history: ChatHistoryMessage[] = []) {
     const message: A2AMessage = {
       messageId: crypto.randomUUID(),
       role: "user",
@@ -78,11 +83,11 @@ export class HermesA2AAdapter {
         targetAgentId: this.agent.id,
       });
     } catch {
-      return this.sendHermesChatAsA2ATask(project, text);
+      return this.sendHermesChatAsA2ATask(project, text, history);
     }
   }
 
-  async sendFreeChatMessage(text: string) {
+  async sendFreeChatMessage(text: string, history: ChatHistoryMessage[] = []) {
     const contextId = `free-chat:${this.agent.id}`;
     const message: A2AMessage = {
       messageId: crypto.randomUUID(),
@@ -110,7 +115,7 @@ export class HermesA2AAdapter {
         targetAgentId: this.agent.id,
       });
     } catch {
-      return this.sendHermesChatAsFreeChatTask(contextId, text);
+      return this.sendHermesChatAsFreeChatTask(contextId, text, history);
     }
   }
 
@@ -142,10 +147,11 @@ export class HermesA2AAdapter {
     };
   }
 
-  private async sendHermesChatAsA2ATask(project: Project, text: string): Promise<A2ATask> {
+  private async sendHermesChatAsA2ATask(project: Project, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
     return this.sendHermesChatCompletionAsTask({
       contextId: project.namespace,
       text,
+      history,
       systemContent: `Vibe Office project namespace: ${project.namespace}. Keep this task scoped to this project.`,
       metadata: {
         adapter: "hermes-openai-compatible",
@@ -155,10 +161,11 @@ export class HermesA2AAdapter {
     });
   }
 
-  private async sendHermesChatAsFreeChatTask(contextId: string, text: string): Promise<A2ATask> {
+  private async sendHermesChatAsFreeChatTask(contextId: string, text: string, history: ChatHistoryMessage[]): Promise<A2ATask> {
     return this.sendHermesChatCompletionAsTask({
       contextId,
       text,
+      history,
       systemContent: "Context: Vibe Office Free Chat.",
       metadata: {
         adapter: "hermes-openai-compatible",
@@ -170,11 +177,13 @@ export class HermesA2AAdapter {
   private async sendHermesChatCompletionAsTask({
     contextId,
     text,
+    history,
     systemContent,
     metadata,
   }: {
     contextId: string;
     text: string;
+    history: ChatHistoryMessage[];
     systemContent?: string;
     metadata: Record<string, unknown>;
   }): Promise<A2ATask> {
@@ -187,8 +196,9 @@ export class HermesA2AAdapter {
             },
           ]
         : []),
+      ...history,
       {
-        role: "user",
+        role: "user" as const,
         content: text,
       },
     ];
