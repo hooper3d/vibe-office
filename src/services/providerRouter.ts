@@ -11,6 +11,9 @@ import {
   type ProviderConnectionTestResult,
 } from "./providerTypes";
 
+export type ProviderRuntime = NonNullable<AgentInstance["runtimeProvider"]> | "hermes";
+export type ProviderRoute = "openai" | "anthropic" | "native-with-hermes-fallback";
+
 export type ProviderRouterOptions = {
   agent: AgentInstance;
   timeoutMs: number;
@@ -74,12 +77,12 @@ export class ProviderRouter {
   }
 
   async testConnection(): Promise<ProviderConnectionTestResult> {
-    const runtimeProvider = this.runtimeProvider();
-    if (runtimeProvider === "openai") {
+    const route = resolveProviderRoute(this.agent);
+    if (route === "openai") {
       return this.openAIProvider.testConnection();
     }
 
-    if (runtimeProvider === "anthropic") {
+    if (route === "anthropic") {
       return this.anthropicProvider.testConnection();
     }
 
@@ -91,12 +94,12 @@ export class ProviderRouter {
   }
 
   async sendProjectMessage(project: Project, text: string, history: ChatHistoryMessage[] = []): Promise<A2ATask> {
-    const runtimeProvider = this.runtimeProvider();
-    if (runtimeProvider === "openai") {
+    const route = resolveProviderRoute(this.agent);
+    if (route === "openai") {
       return this.openAIProvider.sendProjectMessage(project, text, history);
     }
 
-    if (runtimeProvider === "anthropic") {
+    if (route === "anthropic") {
       return this.anthropicProvider.sendProjectMessage(project, text, history);
     }
 
@@ -108,12 +111,12 @@ export class ProviderRouter {
   }
 
   async sendFreeChatMessage(text: string, history: ChatHistoryMessage[] = []): Promise<A2ATask> {
-    const runtimeProvider = this.runtimeProvider();
-    if (runtimeProvider === "openai") {
+    const route = resolveProviderRoute(this.agent);
+    if (route === "openai") {
       return this.openAIProvider.sendFreeChatMessage(text, history);
     }
 
-    if (runtimeProvider === "anthropic") {
+    if (route === "anthropic") {
       return this.anthropicProvider.sendFreeChatMessage(text, history);
     }
 
@@ -131,8 +134,11 @@ export class ProviderRouter {
   async cancelProjectTask(taskId: string, contextId: string): Promise<A2ATask> {
     return this.nativeA2AProvider.cancelProjectTask(taskId, contextId);
   }
+}
 
-  private runtimeProvider() {
-    return this.agent.runtimeProvider ?? "hermes";
-  }
+export function resolveProviderRoute(agent: Pick<AgentInstance, "runtimeProvider">): ProviderRoute {
+  const runtimeProvider: ProviderRuntime = agent.runtimeProvider ?? "hermes";
+  if (runtimeProvider === "openai") return "openai";
+  if (runtimeProvider === "anthropic") return "anthropic";
+  return "native-with-hermes-fallback";
 }

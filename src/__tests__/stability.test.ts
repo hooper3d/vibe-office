@@ -62,7 +62,7 @@ import {
   type LocalTrustedProviderCommand,
 } from "../services/agentHttpTransport";
 import { HermesA2AAdapter } from "../services/hermesA2AAdapter";
-import { ProviderRouter } from "../services/providerRouter";
+import { ProviderRouter, resolveProviderRoute } from "../services/providerRouter";
 import {
   createA2ACompatibilityMetadata,
   createCompletedTextTask,
@@ -3049,6 +3049,11 @@ test("provider setup detects obvious runtime endpoint mismatches", () => {
 });
 
 test("provider router uses provider adapters by runtime and isolates Hermes fallback", async () => {
+  assert.equal(resolveProviderRoute({ runtimeProvider: "openai" }), "openai");
+  assert.equal(resolveProviderRoute({ runtimeProvider: "anthropic" }), "anthropic");
+  assert.equal(resolveProviderRoute({ runtimeProvider: "hermes" }), "native-with-hermes-fallback");
+  assert.equal(resolveProviderRoute({ runtimeProvider: undefined }), "native-with-hermes-fallback");
+
   const calls: string[] = [];
   const createProvider = (label: string, mode: ProviderConnectionMode, failProject = false): ProviderAdapter => ({
     async testConnection() {

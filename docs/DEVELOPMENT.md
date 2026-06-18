@@ -702,6 +702,7 @@ Implementation progress:
 - Native A2A execution lives in `src/services/nativeA2AProvider.ts`.
 - Shared provider result and task helpers live in `src/services/providerTypes.ts`.
 - Runtime-provider selection and Hermes native fallback coordination now live in `src/services/providerRouter.ts`.
+- Provider route selection now uses the explicit `resolveProviderRoute` strategy, keeping OpenAI-compatible, Anthropic-compatible, and Native-A2A-with-Hermes-fallback routing testable outside the provider implementations.
 - Provider compatibility metadata mapping now lives in `src/services/providerTypes.ts`; `HermesA2AAdapter` remains a thin unified provider entry.
 - App, setup dialog state, request helpers, and tests now import provider metadata/history types from `src/services/providerTypes.ts` instead of using `HermesA2AAdapter` as a type barrel.
 - Provider split tests cover OpenAI-compatible free chat, Anthropic-compatible project chat, and Hermes native fallback to chat compatibility.
