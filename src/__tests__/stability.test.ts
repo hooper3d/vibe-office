@@ -3084,11 +3084,25 @@ test("output workspace keeps browser preview and project outputs in focused comp
   assert.match(projectArtifacts, /ProjectArtifactBrowser/);
   assert.match(projectArtifacts, /ProjectArtifactDetail/);
   assert.match(projectArtifacts, /projectArtifactContent/);
+  assert.match(projectArtifacts, /const fileUri = filePart\?\.kind === "file" \? filePart\.file\.uri : undefined/);
+  assert.match(projectArtifacts, /isLocalTrustedMediaUrl\(fileUri\)/);
   assert.doesNotMatch(projectArtifacts, /function ArtifactPreview|function getArtifactCopyText/);
   assert.match(projectArtifactViewer, /export function ProjectArtifactBrowser/);
   assert.match(projectArtifactViewer, /export function ProjectArtifactDetail/);
   assert.match(projectArtifactContent, /export function getArtifactCopyText/);
   assert.match(projectArtifactContent, /export function getOpenableArtifactUrl/);
+  assert.match(projectArtifactContent, /export function isLocalTrustedMediaUrl/);
+});
+
+test("project artifact downloads only fetch local trusted media", async () => {
+  const projectArtifacts = await readFile(path.join(process.cwd(), "src", "components", "ProjectArtifacts.tsx"), "utf8");
+  const projectArtifactContent = await readFile(path.join(process.cwd(), "src", "services", "projectArtifactContent.ts"), "utf8");
+  const localTrustedMediaHelper = projectArtifactContent.match(/export function isLocalTrustedMediaUrl[\s\S]*?\n}/)?.[0] ?? "";
+
+  assert.match(projectArtifacts, /if \(isLocalTrustedMediaUrl\(fileUri\)\)/);
+  assert.match(localTrustedMediaHelper, /value\?\.startsWith\("\/workspace-local\/media"\)/);
+  assert.doesNotMatch(projectArtifacts, /fetch\(filePart\.file\.uri\)/);
+  assert.doesNotMatch(localTrustedMediaHelper, /https?:/);
 });
 
 test("app shell delegates main workspace rendering to a focused component", async () => {

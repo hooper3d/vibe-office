@@ -38,6 +38,10 @@ export function getDownloadableFilePart(artifact: ProjectArtifact) {
   return parts.find((part): part is Extract<A2APart, { kind: "file" }> => part.kind === "file" && Boolean(part.file.uri));
 }
 
+export function isLocalTrustedMediaUrl(value?: string): value is string {
+  return Boolean(value?.startsWith("/workspace-local/media"));
+}
+
 export function getOpenableArtifactUrl(artifact: ProjectArtifact) {
   const parts = artifact.contentParts ?? [];
   const fileUri = parts.find((part) => part.kind === "file" && isOpenableUrl(part.file.uri ?? ""));
@@ -57,5 +61,5 @@ export function safeArtifactFileName(value: string) {
 }
 
 function isOpenableUrl(value?: string) {
-  return Boolean(value && (/^https?:\/\//i.test(value) || value.startsWith("/workspace-local/media")));
+  return Boolean(value && (/^https?:\/\//i.test(value) || isLocalTrustedMediaUrl(value)));
 }

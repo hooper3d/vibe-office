@@ -6,6 +6,7 @@ import {
   getArtifactCopyText,
   getDownloadableFilePart,
   getOpenableArtifactUrl,
+  isLocalTrustedMediaUrl,
   safeArtifactFileName,
 } from "../services/projectArtifactContent";
 import {
@@ -59,8 +60,9 @@ export function ProjectArtifacts({ agents, artifacts }: { agents: AgentInstance[
 
   async function downloadArtifact(artifact: ProjectArtifact) {
     const filePart = getDownloadableFilePart(artifact);
-    if (filePart?.kind === "file" && filePart.file.uri) {
-      await downloadUri(filePart.file.uri, filePart.file.name ?? `${artifact.name}.bin`);
+    const fileUri = filePart?.kind === "file" ? filePart.file.uri : undefined;
+    if (isLocalTrustedMediaUrl(fileUri)) {
+      await downloadUri(fileUri, filePart?.file.name ?? `${artifact.name}.bin`);
       return;
     }
 
