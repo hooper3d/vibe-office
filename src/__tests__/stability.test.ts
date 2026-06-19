@@ -932,6 +932,38 @@ test("agent connection test persists credentials but tests with a stripped agent
   assert.equal(testedAgent.apiKey, undefined);
 });
 
+test("agent connection test preserves the trusted credential save step when provider verification fails", async () => {
+  const form = new FormData();
+  form.set("name", "MiniMax");
+  form.set("officeRole", "builder");
+  form.set("role", "drafts / code");
+  form.set("runtimeProvider", "anthropic");
+  form.set("endpoint", "https://api.minimaxi.com/anthropic");
+  form.set("model", "MiniMax-M3");
+  form.set("apiKey", "local-trusted-secret");
+
+  let persistedAgent: AgentInstance | undefined;
+  const result = await runAgentConnectionTest({
+    form,
+    agentId: "agent-provider-failure",
+    async persistAgent(agentToPersist) {
+      persistedAgent = agentToPersist;
+    },
+    createAdapter() {
+      return {
+        async testConnection() {
+          throw new Error("Agent authentication failed.");
+        },
+      };
+    },
+  });
+
+  assert.equal(result.status, "failed");
+  assert.ok(persistedAgent);
+  assert.equal(persistedAgent.id, "agent-provider-failure");
+  assert.equal(persistedAgent.apiKey, "local-trusted-secret");
+});
+
 test("agent setup save keeps credentials in the trusted payload and out of UI state", () => {
   const existingAgent: AgentInstance = {
     ...agent,
