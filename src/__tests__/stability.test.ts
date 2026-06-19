@@ -3128,7 +3128,9 @@ test("agent provider settings expose credential status without storing browser k
   assert.match(source, /Missing/);
   assert.match(source, /Leave blank to keep the saved local key/);
   assert.match(source, /save changes before using this provider/);
-  assert.match(source, /defaultValue=\{agent\?\.apiKey \?\? ""\}/);
+  assert.match(source, /name="apiKey"[\s\S]*defaultValue=""/);
+  assert.match(source, /autoComplete="off"/);
+  assert.doesNotMatch(source, /defaultValue=\{agent\?\.apiKey/);
 });
 
 test("M9 provider regression script keeps Chinese context probes readable", async () => {

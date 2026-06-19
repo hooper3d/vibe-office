@@ -78,7 +78,13 @@ export function AgentProviderSettings({
                 <span>API key</span>
                 <span className={`credential-pill ${credentialDiagnostic.state}`}>{credentialDiagnostic.shortLabel}</span>
               </span>
-              <input name="apiKey" type="password" defaultValue={agent?.apiKey ?? ""} placeholder="Optional API key" />
+              <input
+                name="apiKey"
+                type="password"
+                autoComplete="off"
+                defaultValue=""
+                placeholder="Enter a new key to save locally"
+              />
               <small className="field-note">{credentialDiagnostic.inputHint}</small>
             </label>
           </div>
