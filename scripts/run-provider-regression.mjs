@@ -1,3 +1,6 @@
+import os from "node:os";
+import path from "node:path";
+
 const appUrl = normalizeBaseUrl(process.env.VIBE_OFFICE_URL || "http://127.0.0.1:5180");
 const defaultTimeoutMs = readNumber(process.env.VIBE_M9_REQUEST_TIMEOUT_MS, 45_000);
 const forcedTimeoutMs = readNumber(process.env.VIBE_M9_FORCED_TIMEOUT_MS, 1);
@@ -521,6 +524,7 @@ function truncate(value) {
 async function printRegisteredAgents(targets = m9Targets) {
   const registry = await readLocalTrustedRegistry();
   const agents = getRegisteredAgentSummaries(registry);
+  console.log(`Local trusted home: ${getLocalTrustedHome()}`);
 
   if (agents.length === 0) {
     console.log("No registered local trusted agents found.");
@@ -557,9 +561,7 @@ function getRegisteredAgentSummaries(registry) {
 
 async function readLocalTrustedRegistry() {
   const fs = await import("node:fs/promises");
-  const os = await import("node:os");
-  const path = await import("node:path");
-  const localTrustedHome = process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME || path.join(os.homedir(), ".vibe-office");
+  const localTrustedHome = getLocalTrustedHome();
   const registryPath = path.join(localTrustedHome, "agent-registry.local.json");
   const credentialPath = path.join(localTrustedHome, "agent-credentials.local.json");
 
@@ -582,6 +584,10 @@ async function readLocalTrustedRegistry() {
   } catch {
     return {};
   }
+}
+
+function getLocalTrustedHome() {
+  return process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME || path.join(os.homedir(), ".vibe-office");
 }
 
 async function readJsonFile(fs, filePath) {

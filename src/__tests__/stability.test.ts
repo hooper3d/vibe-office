@@ -3229,6 +3229,7 @@ test("M9 provider regression fails selected targets that are not ready", async (
       },
     });
     assert.equal(list.status, 0);
+    assert.match(list.stdout, new RegExp(`Local trusted home: ${escapeRegExp(localTrustedHome)}`));
     assert.match(list.stdout, /MISSING_KEY agent-deepseek-a/);
     assert.match(list.stdout, /candidates=2 selected=agent-deepseek-a/);
     assert.match(list.stdout, /candidateStatus=agent-deepseek-a:openai:no-key,agent-deepseek-b:openai:no-key/);
@@ -3236,6 +3237,10 @@ test("M9 provider regression fails selected targets that are not ready", async (
     await rm(localTrustedHome, { recursive: true, force: true });
   }
 });
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 test("local agent credential updater applies M9 target presets without leaking keys", async () => {
   const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-m9-credential-"));
