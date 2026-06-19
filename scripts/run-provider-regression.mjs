@@ -608,7 +608,12 @@ function getTargetReadiness(target, agents) {
     .filter((agent) => isRuntimeProviderAllowed(target, agent.runtimeProvider))
     .filter((agent) => hasRequiredCredentials(target, agent))
     .sort((left, right) => Number(right.hasKey) - Number(left.hasKey) || left.id.localeCompare(right.id))[0];
-  if (ready) return `READY ${ready.id}`;
+  if (ready) {
+    return [
+      `READY ${ready.id}`,
+      ...getCandidateReadinessNotes(candidates, ready.id),
+    ].join(" ");
+  }
 
   const providerMismatch = candidates.find((agent) => !isRuntimeProviderAllowed(target, agent.runtimeProvider));
   if (providerMismatch) {
@@ -616,6 +621,7 @@ function getTargetReadiness(target, agents) {
       `PROVIDER_MISMATCH ${providerMismatch.id}`,
       `expected=${getRuntimeProviderLabel(target)}`,
       `actual=${providerMismatch.runtimeProvider}`,
+      ...getCandidateReadinessNotes(candidates, providerMismatch.id),
       `action=${getReadinessAction("provider-mismatch", target)}`,
       `repair=${getCredentialRepairHint(target, providerMismatch.id, "provider-mismatch")}`,
     ].join(" ");
@@ -625,12 +631,26 @@ function getTargetReadiness(target, agents) {
   if (missingKey) {
     return [
       `MISSING_KEY ${missingKey.id}`,
+      ...getCandidateReadinessNotes(candidates, missingKey.id),
       `action=${getReadinessAction("missing-key", target)}`,
       `repair=${getCredentialRepairHint(target, missingKey.id, "missing-key")}`,
     ].join(" ");
   }
 
   return `NOT_FOUND action=${getReadinessAction("not-found", target)}`;
+}
+
+function getCandidateReadinessNotes(candidates, selectedId) {
+  if (candidates.length <= 1) return [];
+  return [
+    `candidates=${candidates.length}`,
+    `selected=${selectedId}`,
+    `candidateStatus=${candidates.map(formatCandidateReadinessStatus).join(",")}`,
+  ];
+}
+
+function formatCandidateReadinessStatus(agent) {
+  return `${agent.id}:${agent.runtimeProvider}:${agent.hasKey ? "key" : "no-key"}`;
 }
 
 function isRuntimeProviderAllowed(target, runtimeProvider) {

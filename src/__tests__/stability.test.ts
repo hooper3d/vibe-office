@@ -3184,6 +3184,38 @@ test("M9 provider regression fails selected targets that are not ready", async (
     assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /MiniMax Anthropic-compatible/);
     assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /PROVIDER_MISMATCH agent-minimax/);
     assert.match(`${mismatch.stdout}\n${mismatch.stderr}`, /repair=VIBE_AGENT_ID=agent-minimax VIBE_AGENT_M9_TARGET=minimax npm run local-agent:credential optionalKey=VIBE_AGENT_API_KEY=<key>/);
+
+    await writeFile(
+      path.join(localTrustedHome, "agent-registry.local.json"),
+      JSON.stringify({
+        "agent-deepseek-a": {
+          id: "agent-deepseek-a",
+          name: "DeepSeek A",
+          runtimeProvider: "openai",
+          endpoint: "https://api.deepseek.com",
+          model: "deepseek-chat",
+        },
+        "agent-deepseek-b": {
+          id: "agent-deepseek-b",
+          name: "DeepSeek B",
+          runtimeProvider: "openai",
+          endpoint: "https://api.deepseek.com",
+          model: "deepseek-v4-flash",
+        },
+      }),
+    );
+    const list = spawnSync(process.execPath, ["scripts/run-provider-regression.mjs", "--list", "--target", "deepseek"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        VIBE_OFFICE_LOCAL_TRUSTED_HOME: localTrustedHome,
+      },
+    });
+    assert.equal(list.status, 0);
+    assert.match(list.stdout, /MISSING_KEY agent-deepseek-a/);
+    assert.match(list.stdout, /candidates=2 selected=agent-deepseek-a/);
+    assert.match(list.stdout, /candidateStatus=agent-deepseek-a:openai:no-key,agent-deepseek-b:openai:no-key/);
   } finally {
     await rm(localTrustedHome, { recursive: true, force: true });
   }
