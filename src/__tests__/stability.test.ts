@@ -3106,6 +3106,17 @@ test("app shell delegates main workspace rendering to a focused component", asyn
   assert.match(mainWorkspace, /className="main-split"/);
 });
 
+test("agent provider settings expose credential status without storing browser keys", async () => {
+  const source = await readFile(path.join(process.cwd(), "src", "components", "AgentProviderSettings.tsx"), "utf8");
+
+  assert.match(source, /credential-pill/);
+  assert.match(source, /Saved locally/);
+  assert.match(source, /Missing/);
+  assert.match(source, /Leave blank to keep the saved local key/);
+  assert.match(source, /save changes before using this provider/);
+  assert.match(source, /defaultValue=\{agent\?\.apiKey \?\? ""\}/);
+});
+
 test("M9 provider regression script keeps Chinese context probes readable", async () => {
   const source = await readFile(path.join(process.cwd(), "scripts", "run-provider-regression.mjs"), "utf8");
 

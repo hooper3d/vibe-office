@@ -74,8 +74,12 @@ export function AgentProviderSettings({
               />
             </label>
             <label>
-              API key
+              <span className="field-label-row">
+                <span>API key</span>
+                <span className={`credential-pill ${credentialDiagnostic.state}`}>{credentialDiagnostic.shortLabel}</span>
+              </span>
               <input name="apiKey" type="password" defaultValue={agent?.apiKey ?? ""} placeholder="Optional API key" />
+              <small className="field-note">{credentialDiagnostic.inputHint}</small>
             </label>
           </div>
           <p className="runtime-provider-hint">{providerHint}</p>
@@ -184,14 +188,57 @@ function getRegistryDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgent
   return { state: "passed", detail: "Saved locally." };
 }
 
-function getCredentialDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgentSafeStatus): { state: ConnectionTestState; detail: string } {
+function getCredentialDiagnostic(
+  agent?: AgentInstance,
+  status?: LocalTrustedAgentSafeStatus,
+): { state: ConnectionTestState; detail: string; inputHint: string; shortLabel: string } {
   const runtimeProvider = agent?.runtimeProvider ?? status?.runtimeProvider ?? "hermes";
-  if (!agent && !status) return { state: "idle", detail: "Saved after testing or adding." };
-  if (runtimeProvider === "hermes") return { state: "passed", detail: "Not required." };
-  if (!status) return { state: "idle", detail: "Checking local trusted layer." };
-  if (!status.registered) return { state: "failed", detail: "Agent is not saved locally." };
-  if (status.hasCredential) return { state: "passed", detail: "Saved locally." };
-  return { state: "failed", detail: "Missing in local trusted layer." };
+  if (!agent && !status) {
+    return {
+      state: "idle",
+      detail: "Saved after testing or adding.",
+      inputHint: "Enter a key, then test or add the agent to save it locally.",
+      shortLabel: "Not saved",
+    };
+  }
+  if (runtimeProvider === "hermes") {
+    return {
+      state: "passed",
+      detail: "Not required.",
+      inputHint: "Hermes agents can use the local runtime without a provider key.",
+      shortLabel: "Optional",
+    };
+  }
+  if (!status) {
+    return {
+      state: "idle",
+      detail: "Checking local trusted layer.",
+      inputHint: "Saved keys stay local and are not stored in browser history.",
+      shortLabel: "Checking",
+    };
+  }
+  if (!status.registered) {
+    return {
+      state: "failed",
+      detail: "Agent is not saved locally.",
+      inputHint: "Enter a key, then save changes to register this agent locally.",
+      shortLabel: "Not saved",
+    };
+  }
+  if (status.hasCredential) {
+    return {
+      state: "passed",
+      detail: "Saved locally.",
+      inputHint: "Leave blank to keep the saved local key, or enter a new key and save changes.",
+      shortLabel: "Saved locally",
+    };
+  }
+  return {
+    state: "failed",
+    detail: "Missing in local trusted layer.",
+    inputHint: "Enter a key, then save changes before using this provider.",
+    shortLabel: "Missing",
+  };
 }
 
 function getProviderLabel(provider: AgentRuntimeProvider) {
