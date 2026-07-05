@@ -7,6 +7,7 @@ Use this before sharing Vibe Office publicly.
 - [ ] `README.md` explains the project, local trusted storage, setup, and verification commands.
 - [ ] `LICENSE` is present and matches the intended open-source license.
 - [ ] `CONTRIBUTING.md` explains local development and contribution rules.
+- [ ] `SECURITY.md` explains credential boundaries and sensitive-report handling.
 - [ ] `.env.example` contains only placeholders.
 - [ ] `.gitignore` excludes `node_modules`, `dist`, `.tmp`, `.env*`, `*.local`, and `*.log`.
 - [ ] GitHub Actions runs the portable `npm run ci` check.
@@ -20,6 +21,7 @@ Use this before sharing Vibe Office publicly.
 - [ ] Keep public docs focused on portable commands and generic paths.
 - [ ] Confirm browser localStorage does not store provider API keys.
 - [ ] Confirm the local trusted registry stores provider metadata separately from credentials.
+- [ ] Enable private vulnerability reporting before announcing a public repository.
 
 ## Scope Control
 
@@ -27,6 +29,14 @@ Use this before sharing Vibe Office publicly.
 - [ ] Experimental milestone notes are clearly marked as development history.
 - [ ] New features do not expand `App.tsx` wiring without a matching controller/helper boundary.
 - [ ] UI copy is in English and avoids explaining implementation details in the product surface.
+
+## Public Repository Setup
+
+- [ ] Keep `package.json` private unless there is a deliberate npm publishing plan.
+- [ ] Add a short repository description: `Local-first multi-agent workspace for real provider-backed agents.`
+- [ ] Add focused topics such as `local-first`, `multi-agent`, `react`, `vite`, and `ai-agents`.
+- [ ] Confirm default branch protection runs CI before merging release changes.
+- [ ] Tag the first public baseline only after `npm run ci` and `npm run release:check` pass locally.
 
 ## Verification
 

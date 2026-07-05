@@ -7,6 +7,7 @@ const requiredFiles = [
   "README.md",
   "LICENSE",
   "CONTRIBUTING.md",
+  "SECURITY.md",
   ".env.example",
   ".github/workflows/ci.yml",
   ".gitignore",

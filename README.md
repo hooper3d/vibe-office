@@ -4,6 +4,12 @@ Vibe Office is a local-first multi-agent workspace prototype for connecting real
 
 The current app is a Vite + React desktop-style web app with a local trusted development layer. The browser UI stores non-sensitive workspace state, while provider credentials are kept outside browser localStorage.
 
+## Launch Positioning
+
+This repository is ready to share as an early open-source release candidate for local experimentation and code review. It is not yet a packaged desktop release.
+
+The release promise is intentionally narrow: local agent setup, Free Chat, project workspaces, a local trusted provider bridge, basic outputs, and verification scripts.
+
 ## What It Does
 
 - Configure local agents backed by OpenAI-compatible, Anthropic-compatible, or Hermes-style providers.
@@ -77,6 +83,10 @@ npm run release:check
 Provider repair and regression scripts use environment variables. See `.env.example` for the supported names.
 
 `npm run ci` is the portable check intended for pull requests. `npm run release:check` also runs the local browser smoke test, which needs a Chromium or Edge executable on the local machine.
+
+## Security
+
+Read `SECURITY.md` before publishing, accepting contributions, or sharing reproduction logs. Real provider keys, tokens, private endpoints, local credential files, and personal machine paths must stay out of source, docs, screenshots, public issues, and committed logs.
 
 ## Release Notes For Contributors
 

@@ -290,7 +290,7 @@ test("local agent credential updater can repair M9 metadata while preserving sav
 test("local agent credential updater cleans only stale atomic-write temp files", async () => {
   const localTrustedHome = await mkdtemp(path.join(os.tmpdir(), "vibe-office-m9-script-temp-cleanup-"));
   const secret = "script-temp-cleanup-key";
-  const nowMs = Date.parse("2026-06-19T00:00:00.000Z");
+  const nowMs = Date.now();
   const oldRegistryTemp = path.join(localTrustedHome, "agent-registry.local.json.1.1.old.tmp");
   const freshRegistryTemp = path.join(localTrustedHome, "agent-registry.local.json.1.1.fresh.tmp");
   const oldCredentialTemp = path.join(localTrustedHome, "agent-credentials.local.json.1.1.old.tmp");
