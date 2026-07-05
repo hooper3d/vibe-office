@@ -10,6 +10,12 @@ This repository is ready to share as an early open-source release candidate for 
 
 The release promise is intentionally narrow: local agent setup, Free Chat, project workspaces, a local trusted provider bridge, basic outputs, and verification scripts.
 
+Short description for sharing:
+
+```text
+Vibe Office is a local-first multi-agent workspace where real AI providers collaborate through agents, projects, shared context, and a local trusted credential boundary.
+```
+
 ## What It Does
 
 - Configure local agents backed by OpenAI-compatible, Anthropic-compatible, or Hermes-style providers.
@@ -87,6 +93,12 @@ Provider repair and regression scripts use environment variables. See `.env.exam
 ## Security
 
 Read `SECURITY.md` before publishing, accepting contributions, or sharing reproduction logs. Real provider keys, tokens, private endpoints, local credential files, and personal machine paths must stay out of source, docs, screenshots, public issues, and committed logs.
+
+## Community And Launch
+
+- Public launch kit: `docs/PUBLIC_LAUNCH_KIT.md`
+- Contributor roadmap: `docs/PUBLIC_ROADMAP.md`
+- Release checklist: `docs/RELEASE_CHECKLIST.md`
 
 ## Release Notes For Contributors
 

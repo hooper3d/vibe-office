@@ -37,6 +37,8 @@ Use this before sharing Vibe Office publicly.
 - [ ] Add focused topics such as `local-first`, `multi-agent`, `react`, `vite`, and `ai-agents`.
 - [ ] Confirm default branch protection runs CI before merging release changes.
 - [ ] Tag the first public baseline only after `npm run ci` and `npm run release:check` pass locally.
+- [ ] Link `docs/PUBLIC_LAUNCH_KIT.md` from launch posts and keep public claims aligned with release-candidate status.
+- [ ] Keep at least three beginner-friendly issues open for docs, demo material, or packaging planning.
 
 ## Verification
 
