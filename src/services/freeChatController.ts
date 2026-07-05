@@ -5,6 +5,8 @@ import { createConversation } from "./requestSubmissionState";
 import type { WorkspaceFileAttachment } from "./workspaceFileClient";
 import {
   applyActiveFreeChatConversation,
+  deleteFreeChatConversationState,
+  renameFreeChatConversation,
   shouldReuseEmptyFreeChat,
 } from "./conversationSelectionState";
 import type { ProjectChatScope, ProjectConversationMode } from "./projectSetupState";
@@ -12,6 +14,7 @@ import type { ProjectChatScope, ProjectConversationMode } from "./projectSetupSt
 export type FreeChatControllerOptions = {
   activeFreeChatConversationIds: Record<string, string>;
   chatScope: ProjectChatScope;
+  conversations: Conversation[];
   currentConversation?: Conversation;
   currentMessages: ConversationMessage[];
   freeChatEntryProjectId: string;
@@ -23,6 +26,7 @@ export type FreeChatControllerOptions = {
   setChatScope: Dispatch<SetStateAction<ProjectChatScope>>;
   setConversationMode: Dispatch<SetStateAction<ProjectConversationMode>>;
   setConversations: Dispatch<SetStateAction<Conversation[]>>;
+  setMessages: Dispatch<SetStateAction<ConversationMessage[]>>;
   setMessageText: Dispatch<SetStateAction<string>>;
   setSelectedProjectId: Dispatch<SetStateAction<string>>;
 };
@@ -30,6 +34,7 @@ export type FreeChatControllerOptions = {
 export function useFreeChatController({
   activeFreeChatConversationIds,
   chatScope,
+  conversations,
   currentConversation,
   currentMessages,
   freeChatEntryProjectId,
@@ -41,6 +46,7 @@ export function useFreeChatController({
   setChatScope,
   setConversationMode,
   setConversations,
+  setMessages,
   setMessageText,
   setSelectedProjectId,
 }: FreeChatControllerOptions) {
@@ -103,6 +109,35 @@ export function useFreeChatController({
     setAttachedWorkspaceFiles([]);
   }
 
+  function renameConversation(conversationId: string, title: string) {
+    setConversations((current) =>
+      renameFreeChatConversation({
+        conversationId,
+        conversations: current,
+        title,
+      }),
+    );
+  }
+
+  function deleteConversation(conversationId: string) {
+    if (!selectedAgent) return;
+    const result = deleteFreeChatConversationState({
+      activeConversationIds: activeFreeChatConversationIds,
+      agentId: selectedAgent.id,
+      conversationId,
+      conversations,
+      freeChatProjectId,
+      messages: currentMessages,
+    });
+
+    setConversations(result.conversations);
+    setMessages((current) => current.filter((message) => message.conversationId !== conversationId));
+    setActiveFreeChatConversationIds(result.activeConversationIds);
+    setMessageText("");
+    setAttachedWorkspaceFiles([]);
+    enterFreeChat();
+  }
+
   function activateConversation(agentId: string, conversationId: string) {
     setActiveFreeChatConversationIds((current) =>
       applyActiveFreeChatConversation({
@@ -120,6 +155,8 @@ export function useFreeChatController({
   }
 
   return {
+    deleteConversation,
+    renameConversation,
     selectConversation,
     startNewConversation,
   };

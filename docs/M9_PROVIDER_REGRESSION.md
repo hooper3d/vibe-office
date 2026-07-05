@@ -106,7 +106,7 @@ Optional:
 
 ```bash
 VIBE_OFFICE_URL=http://127.0.0.1:5180
-VIBE_M9_REQUEST_TIMEOUT_MS=45000
+VIBE_M9_REQUEST_TIMEOUT_MS=75000
 VIBE_M9_FORCED_TIMEOUT_MS=1
 ```
 
@@ -116,7 +116,7 @@ Each configured provider must pass:
 
 - connection: one short provider response
 - free-chat: one free chat style turn
-- project-chat: one project-scoped turn with a system/project instruction
+- project-chat: one project-scoped turn with a system/project instruction and a short response probe
 - timeout-failure: client-side forced timeout handling
 - retry-after-timeout: successful request after a forced timeout
 - chinese-context: Chinese context continuity with prior messages included
@@ -128,6 +128,7 @@ Each configured provider must pass:
 - The script calls `/agent-local/command`, not remote providers directly.
 - Do not commit shell scripts, screenshots, logs, or docs containing real keys.
 - A skipped provider means neither an existing agent ID nor required endpoint/model variables were set.
-- On 2026-06-19, Hermes auto-selection passed the full matrix against local trusted agent `agent-1781701191359`.
-- On 2026-06-19, the default matrix correctly failed incomplete targets instead of passing a partial run: DeepSeek reported `MISSING_KEY`, and MiniMax reported `PROVIDER_MISMATCH`.
-- DeepSeek and MiniMax are not considered complete until their local trusted records report `READY` in `npm run regression:providers:list`.
+- On 2026-06-19, the default matrix correctly failed incomplete targets instead of passing a partial run while DeepSeek and MiniMax were still missing local trusted readiness.
+- On 2026-06-19, after credential persistence and MiniMax metadata repair, `npm run regression:providers:list` reported READY for Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible.
+- On 2026-06-19, `npm run regression:providers` passed all six checks for all three configured providers through the local trusted path.
+- The script uses bounded retry/backoff for transient empty model responses, but forced-timeout checks remain single-attempt via `VIBE_M9_FORCED_TIMEOUT_MS`.

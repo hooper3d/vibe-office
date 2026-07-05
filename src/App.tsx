@@ -14,7 +14,6 @@ import { loadConfiguredAgents } from "./services/agentStorage";
 import { useLocalTrustedAgentReadiness } from "./services/agentReadinessController";
 import { useAgentSetupController } from "./services/agentSetupController";
 import { useAgentSetupDialogState } from "./services/agentSetupDialogState";
-import { normalizeChief } from "./services/agentSetupState";
 import { useAppActionController } from "./services/appActionController";
 import { deriveAppAgentViewState } from "./services/appAgentViewState";
 import {
@@ -41,10 +40,6 @@ import {
   type RequestWorkspaceState,
 } from "./services/requestRuntimeStore";
 import { useTaskLifecycleController } from "./services/taskLifecycleController";
-import {
-  getTaskEventDisplayLabel,
-  isTaskTerminal,
-} from "./services/taskLifecycleState";
 import { useTaskRoomController } from "./services/taskRoomController";
 import { loadThemeMode, type ThemeMode } from "./services/themeStorage";
 import { useWorkspaceChromeController, type BrowserPreviewOutput } from "./services/workspaceChromeController";
@@ -121,7 +116,6 @@ export function App() {
     setupDialog: agentSetup,
   });
   const {
-    selectedProject,
     selectedWorkspaceProject,
     scopedTasks,
     scopedRuns,
@@ -184,6 +178,7 @@ export function App() {
   const freeChatController = useFreeChatController({
     activeFreeChatConversationIds,
     chatScope,
+    conversations,
     currentConversation: conversationView.currentConversation,
     currentMessages: conversationView.currentMessages,
     freeChatEntryProjectId: FREE_CHAT_ENTRY_PROJECT_ID,
@@ -195,6 +190,7 @@ export function App() {
     setChatScope,
     setConversationMode,
     setConversations,
+    setMessages,
     setMessageText,
     setSelectedProjectId,
   });
@@ -401,11 +397,13 @@ export function App() {
         onOpenPreview={workspaceChromeController.openPreview}
         onOutputModeChange={setOutputMode}
         onRefreshTask={refreshTaskLifecycle}
+        onRenameFreeChatConversation={freeChatController.renameConversation}
         onRetryDirectMessage={directChatController.retryDirectMessage}
         onRetryTask={retryTaskLifecycle}
         onRetryTaskRoomMessage={taskRoomController.retryTaskRoomMessage}
         onSelectFreeChat={() => setChatScope("free")}
         onSelectFreeChatConversation={freeChatController.selectConversation}
+        onDeleteFreeChatConversation={freeChatController.deleteConversation}
         onSplitterKeyNudge={workspaceChromeController.nudgeSplit}
         onSplitterPointerDown={workspaceChromeController.startSplitDrag}
         onSubmitMessage={composerController.submitMessage}

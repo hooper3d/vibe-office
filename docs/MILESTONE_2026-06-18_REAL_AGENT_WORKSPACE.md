@@ -73,7 +73,7 @@ Agents cannot read files from that directory yet.
 
 Remote agents do not receive local files automatically.
 
-API keys are stored in browser localStorage for prototype/dev only and must not be committed, logged, screenshotted, exported, or copied into docs.
+Historical note: at this milestone, API keys were still stored in browser localStorage for prototype/dev only. Current builds keep provider credentials in the local trusted credential store instead of browser localStorage, and credentials must not be committed, logged, screenshotted, exported, or copied into docs.
 
 Hermes is a provider adapter, not the Vibe Office product boundary.
 

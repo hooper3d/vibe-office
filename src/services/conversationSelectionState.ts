@@ -34,10 +34,16 @@ export function buildFreeChatHistory({
       return {
         conversation,
         messageCount: conversationMessages.length,
-        title: firstUserMessage ? getPartText(firstUserMessage.contentParts) : conversation.title,
+        title: getFreeChatHistoryTitle(conversation, firstUserMessage),
       };
     })
     .sort((left, right) => right.conversation.updatedAt.localeCompare(left.conversation.updatedAt));
+}
+
+export function getFreeChatHistoryTitle(conversation: Conversation, firstUserMessage?: ConversationMessage) {
+  if (conversation.customTitle?.trim()) return conversation.customTitle.trim();
+  if (firstUserMessage) return getPartText(firstUserMessage.contentParts);
+  return conversation.title;
 }
 
 export function resolveCurrentDirectConversation({
@@ -130,6 +136,76 @@ export function shouldReuseEmptyFreeChat({
   freeChatProjectId: string;
 }) {
   return Boolean(conversation && conversation.projectId === freeChatProjectId && messageCount === 0);
+}
+
+export function renameFreeChatConversation({
+  conversationId,
+  conversations,
+  title,
+}: {
+  conversationId: string;
+  conversations: Conversation[];
+  title: string;
+}) {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) return conversations;
+  return conversations.map((conversation) =>
+    conversation.id === conversationId
+      ? {
+          ...conversation,
+          title: trimmedTitle,
+          customTitle: trimmedTitle,
+        }
+      : conversation,
+  );
+}
+
+export function deleteFreeChatConversationState({
+  activeConversationIds,
+  agentId,
+  conversationId,
+  conversations,
+  freeChatProjectId,
+  messages,
+}: {
+  activeConversationIds: Record<string, string>;
+  agentId: string;
+  conversationId: string;
+  conversations: Conversation[];
+  freeChatProjectId: string;
+  messages: ConversationMessage[];
+}) {
+  const nextConversations = conversations.filter((conversation) => conversation.id !== conversationId);
+  const nextMessages = messages.filter((message) => message.conversationId !== conversationId);
+  const activeConversationId = activeConversationIds[agentId];
+  if (activeConversationId !== conversationId) {
+    return {
+      activeConversationIds,
+      conversations: nextConversations,
+      messages: nextMessages,
+    };
+  }
+
+  const fallbackConversation = nextConversations
+    .filter(
+      (conversation) =>
+        conversation.projectId === freeChatProjectId &&
+        conversation.mode === "direct" &&
+        conversation.primaryAgentId === agentId,
+    )
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  const { [agentId]: _removed, ...remainingActiveConversationIds } = activeConversationIds;
+
+  return {
+    activeConversationIds: fallbackConversation
+      ? {
+          ...remainingActiveConversationIds,
+          [agentId]: fallbackConversation.id,
+        }
+      : remainingActiveConversationIds,
+    conversations: nextConversations,
+    messages: nextMessages,
+  };
 }
 
 function getPartText(parts: A2APart[]) {

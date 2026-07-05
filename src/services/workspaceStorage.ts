@@ -132,6 +132,7 @@ function normalizeConversation(value: unknown): Conversation | null {
     projectId: value.projectId,
     mode: value.mode,
     title: typeof value.title === "string" ? value.title : "Conversation",
+    customTitle: typeof value.customTitle === "string" && value.customTitle.trim() ? value.customTitle.trim() : undefined,
     primaryAgentId: typeof value.primaryAgentId === "string" ? value.primaryAgentId : undefined,
     chiefAgentId: typeof value.chiefAgentId === "string" ? value.chiefAgentId : undefined,
     participantAgentIds: normalizeStringArray(value.participantAgentIds),

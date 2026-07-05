@@ -85,7 +85,6 @@ export function AgentProviderSettings({
                 defaultValue=""
                 placeholder="Enter a new key to save locally"
               />
-              <small className="field-note">{credentialDiagnostic.inputHint}</small>
             </label>
           </div>
           <p className="runtime-provider-hint">{providerHint}</p>
@@ -197,13 +196,12 @@ function getRegistryDiagnostic(agent?: AgentInstance, status?: LocalTrustedAgent
 function getCredentialDiagnostic(
   agent?: AgentInstance,
   status?: LocalTrustedAgentSafeStatus,
-): { state: ConnectionTestState; detail: string; inputHint: string; shortLabel: string } {
+): { state: ConnectionTestState; detail: string; shortLabel: string } {
   const runtimeProvider = agent?.runtimeProvider ?? status?.runtimeProvider ?? "hermes";
   if (!agent && !status) {
     return {
       state: "idle",
       detail: "Saved after testing or adding.",
-      inputHint: "Enter a key, then test or add the agent to save it locally.",
       shortLabel: "Not saved",
     };
   }
@@ -211,7 +209,6 @@ function getCredentialDiagnostic(
     return {
       state: "passed",
       detail: "Not required.",
-      inputHint: "Hermes agents can use the local runtime without a provider key.",
       shortLabel: "Optional",
     };
   }
@@ -219,7 +216,6 @@ function getCredentialDiagnostic(
     return {
       state: "idle",
       detail: "Checking local trusted layer.",
-      inputHint: "Saved keys stay local and are not stored in browser history.",
       shortLabel: "Checking",
     };
   }
@@ -227,7 +223,6 @@ function getCredentialDiagnostic(
     return {
       state: "failed",
       detail: "Agent is not saved locally.",
-      inputHint: "Enter a key, then save changes to register this agent locally.",
       shortLabel: "Not saved",
     };
   }
@@ -235,14 +230,12 @@ function getCredentialDiagnostic(
     return {
       state: "passed",
       detail: "Saved locally.",
-      inputHint: "Leave blank to keep the saved local key, or enter a new key and save changes.",
       shortLabel: "Saved locally",
     };
   }
   return {
     state: "failed",
     detail: "Missing in local trusted layer.",
-    inputHint: "Enter a key, then save changes before using this provider.",
     shortLabel: "Missing",
   };
 }

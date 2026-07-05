@@ -90,7 +90,7 @@ Validated on 2026-06-18:
 - Remote agents still cannot read local files directly.
 - File content is sent only when the user previews and attaches it.
 - Browser localStorage remains prototype storage.
-- API keys remain prototype-only localStorage secrets and must not be committed, logged, exported, or copied into docs.
+- Historical note: at this milestone, API keys were still prototype-only browser localStorage secrets. Current builds keep provider credentials in the local trusted credential store instead of browser localStorage, and credentials must not be committed, logged, exported, or copied into docs.
 - Streaming task progress is prepared for later but not implemented in M6.
 - Push notifications are not implemented in M6.
 - Packaged secure credential storage is still future work.

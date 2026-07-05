@@ -37,8 +37,10 @@ export function OutputPanel({
   onOpenPreview,
   onOutputModeChange,
   onRefreshTask,
+  onRenameFreeChatConversation,
   onRetryTask,
   onSelectFreeChatConversation,
+  onDeleteFreeChatConversation,
 }: {
   agents: AgentInstance[];
   artifacts: ProjectArtifact[];
@@ -69,8 +71,10 @@ export function OutputPanel({
   onOpenPreview: (event: FormEvent<HTMLFormElement>) => void;
   onOutputModeChange: (mode: OutputMode) => void;
   onRefreshTask: (taskId: string) => void;
+  onRenameFreeChatConversation: (conversationId: string, title: string) => void;
   onRetryTask: (taskId: string) => void;
   onSelectFreeChatConversation: (conversationId: string) => void;
+  onDeleteFreeChatConversation: (conversationId: string) => void;
 }) {
   return (
     <aside className="output-panel" aria-label="Output Workspace">
@@ -80,7 +84,9 @@ export function OutputPanel({
           activeConversationId={freeChatActiveConversationId}
           histories={freeChatHistories}
           onNewChat={onNewFreeChat}
+          onRenameConversation={onRenameFreeChatConversation}
           onSelectConversation={onSelectFreeChatConversation}
+          onDeleteConversation={onDeleteFreeChatConversation}
         />
       ) : project ? (
         <>

@@ -28,7 +28,7 @@ The product now treats provider availability as runtime status, not as a separat
 
 ## Boundaries
 
-- API keys remain prototype-only browser localStorage secrets.
+- Historical note: at this milestone, API keys were still prototype-only browser localStorage secrets. Current builds keep provider credentials in the local trusted credential store instead of browser localStorage.
 - Agent notes, location, host/IP, and capability tags are local registry metadata and are not injected into chat/task context by default.
 - No fake/demo agents are seeded into the product UI.
 - Agent management stays global, while conversations, runs, tasks, artifacts, and workspace context remain Project-scoped.

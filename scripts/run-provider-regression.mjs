@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 const appUrl = normalizeBaseUrl(process.env.VIBE_OFFICE_URL || "http://127.0.0.1:5180");
-const defaultTimeoutMs = readNumber(process.env.VIBE_M9_REQUEST_TIMEOUT_MS, 45_000);
+const defaultTimeoutMs = readNumber(process.env.VIBE_M9_REQUEST_TIMEOUT_MS, 75_000);
 const forcedTimeoutMs = readNumber(process.env.VIBE_M9_FORCED_TIMEOUT_MS, 1);
 const cliOptions = parseCliOptions(process.argv.slice(2));
 const createdProviderIds = new Set();
@@ -14,7 +14,7 @@ const m9Targets = [
     runtimeProvider: "hermes",
     allowedRuntimeProviders: ["hermes", "openai"],
     requiresKey: false,
-    hints: ["hermes", "8642", "hooper.ink"],
+    hints: ["hermes", "8642", "example-agent.local"],
   },
   {
     key: "deepseek",
@@ -117,11 +117,10 @@ async function runCheck(provider, check, run) {
 }
 
 async function runConnectionCheck(provider) {
-  const text = await sendProviderMessage(provider, {
-    messages: [{ role: "user", content: "Reply with exactly: ok" }],
-    maxTokens: 16,
-  });
-  if (!text.trim()) throw new Error("empty provider response");
+  const text = await sendNonEmptyProviderMessage(provider, {
+    messages: [{ role: "user", content: "Reply with one short sentence confirming the provider connection works." }],
+    maxTokens: 64,
+  }, "provider");
   return truncate(text);
 }
 
@@ -137,8 +136,8 @@ async function runFreeChatCheck(provider) {
 async function runProjectChatCheck(provider) {
   const text = await sendProviderMessage(provider, {
     system: "Vibe Office project namespace: m9-regression. Keep this task scoped to this project.",
-    messages: [{ role: "user", content: "用一句中文说明你正在进行 Vibe Office M9 project regression。" }],
-    maxTokens: 160,
+    messages: [{ role: "user", content: "Reply briefly: Vibe Office M9 project regression ok." }],
+    maxTokens: 80,
   });
   if (!text.trim()) throw new Error("empty project chat response");
   return truncate(text);
@@ -208,7 +207,22 @@ async function sendProviderMessage(provider, { system, messages, maxTokens }, ti
           },
         };
 
-  const payload = await postJson(`${appUrl}/agent-local/command`, command, timeoutMs);
+  const attempts = timeoutMs === forcedTimeoutMs ? 1 : 3;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const payload = await postJson(`${appUrl}/agent-local/command`, command, timeoutMs);
+    const text = getProviderResponseText(provider, payload);
+    if (text.trim() || attempt === attempts) return text;
+    await delay(250 * attempt);
+  }
+
+  return "";
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getProviderResponseText(provider, payload) {
   if (provider.runtimeProvider === "anthropic") {
     return (
       payload.content
@@ -220,6 +234,12 @@ async function sendProviderMessage(provider, { system, messages, maxTokens }, ti
   }
 
   return payload.choices?.[0]?.message?.content?.trim() || "";
+}
+
+async function sendNonEmptyProviderMessage(provider, request, label) {
+  const text = await sendProviderMessage(provider, request);
+  if (!text.trim()) throw new Error(`empty ${label} response`);
+  return text;
 }
 
 async function upsertProvider(provider) {
@@ -524,7 +544,7 @@ function truncate(value) {
 async function printRegisteredAgents(targets = m9Targets) {
   const registry = await readLocalTrustedRegistry();
   const agents = getRegisteredAgentSummaries(registry);
-  console.log(`Local trusted home: ${getLocalTrustedHome()}`);
+  console.log(`Local trusted home: ${getLocalTrustedHomeDisplay()}`);
 
   if (agents.length === 0) {
     console.log("No registered local trusted agents found.");
@@ -535,7 +555,7 @@ async function printRegisteredAgents(targets = m9Targets) {
   for (const agent of agents) {
     const displayName = agent.name || inferAgentDisplayName(agent);
     console.log(
-      `- ${agent.id} | ${displayName} | provider=${agent.runtimeProvider} | model=${agent.model || "unknown"} | hasKey=${agent.hasKey} | endpoint=${sanitizeUrlForDisplay(agent.endpoint) || "unknown"}`,
+      `- ${agent.id} | ${displayName} | provider=${agent.runtimeProvider} | model=${agent.model || "unknown"} | hasKey=${agent.hasKey}`,
     );
   }
   console.log("\nM9 readiness:");
@@ -553,7 +573,6 @@ function getRegisteredAgentSummaries(registry) {
       name: typeof agent.name === "string" ? agent.name : "",
       runtimeProvider: agent.runtimeProvider || "hermes",
       model: typeof agent.model === "string" ? agent.model : "",
-      endpoint: typeof agent.endpoint === "string" ? agent.endpoint : "",
       hasKey: typeof agent.apiKey === "string" && agent.apiKey.length > 0,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -588,6 +607,12 @@ async function readLocalTrustedRegistry() {
 
 function getLocalTrustedHome() {
   return process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME || path.join(os.homedir(), ".vibe-office");
+}
+
+function getLocalTrustedHomeDisplay() {
+  return process.env.VIBE_OFFICE_LOCAL_TRUSTED_HOME
+    ? "<custom via VIBE_OFFICE_LOCAL_TRUSTED_HOME>"
+    : "<default user home .vibe-office>";
 }
 
 async function readJsonFile(fs, filePath) {
@@ -719,20 +744,6 @@ function inferAgentDisplayName(agent) {
   const endpoint = agent.endpoint || "";
   if (/deepseek/i.test(`${model} ${endpoint}`)) return "DeepSeek";
   if (/minimax|minimaxi/i.test(`${model} ${endpoint}`)) return "MiniMax";
-  if (/hermes|8642|hooper\.ink/i.test(`${model} ${endpoint}`)) return "Hermes";
+  if (/hermes|8642|example-agent/i.test(`${model} ${endpoint}`)) return "Hermes";
   return model || "Unnamed";
-}
-
-function sanitizeUrlForDisplay(value) {
-  if (!value) return "";
-  try {
-    const url = new URL(value);
-    url.username = "";
-    url.password = "";
-    url.search = "";
-    url.hash = "";
-    return url.toString().replace(/\/$/, "");
-  } catch {
-    return value.replace(/[?#].*$/, "");
-  }
 }

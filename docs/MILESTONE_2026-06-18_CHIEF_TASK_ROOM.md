@@ -55,7 +55,7 @@ User task
 - There is no autonomous long-running planning loop in v0.1.
 - Remote agents still cannot read local files directly.
 - File excerpts are sent only when the user explicitly previews and attaches them.
-- API keys remain prototype-only browser localStorage secrets and must not be committed, logged, exported, or copied into docs.
+- Historical note: at this milestone, API keys were still prototype-only browser localStorage secrets. Current builds keep provider credentials in the local trusted credential store instead of browser localStorage, and credentials must not be committed, logged, exported, or copied into docs.
 
 ## Verification
 

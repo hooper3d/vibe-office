@@ -71,6 +71,21 @@ export function useAgentSetupController({
     const newAgent = createAgentFromHermesSetup(form, { id: activeSetupAgentId || undefined });
     const setupIssue = getProviderSetupIssue(newAgent);
     if (setupIssue) {
+      if (setupDialog.setupAgentId && newAgent.apiKey) {
+        setupDialog.setIsSavingAgent(true);
+        try {
+          const savedCredential = await persistBlockedProviderCredential({
+            agent: newAgent,
+            persistAgent: persistLocalTrustedAgent,
+            refreshLocalTrustedAgentIssues,
+          });
+          if (!savedCredential) return;
+          setupDialog.markConnectionFailed(`${setupIssue} The API key was saved locally for this agent.`);
+        } finally {
+          setupDialog.setIsSavingAgent(false);
+        }
+        return;
+      }
       setupDialog.markConnectionFailed(setupIssue);
       return;
     }
@@ -126,4 +141,20 @@ export function useAgentSetupController({
     saveAgent,
     updateExistingAgentAvatar,
   };
+}
+
+export async function persistBlockedProviderCredential({
+  agent,
+  persistAgent,
+  refreshLocalTrustedAgentIssues,
+}: {
+  agent: AgentInstance;
+  persistAgent: (agent: AgentInstance) => Promise<boolean>;
+  refreshLocalTrustedAgentIssues: (agentIds: string[]) => Promise<void> | void;
+}) {
+  if (!agent.apiKey) return false;
+  const savedCredential = await persistAgent(agent);
+  if (!savedCredential) return false;
+  await refreshLocalTrustedAgentIssues([agent.id]);
+  return true;
 }

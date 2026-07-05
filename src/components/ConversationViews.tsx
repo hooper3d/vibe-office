@@ -1,5 +1,5 @@
-import { FileText, Folder, MessageSquare, Plus, RefreshCw, UserRoundCog } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Check, FileText, Folder, MessageSquare, Pencil, Plus, RefreshCw, Trash2, UserRoundCog, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { A2APart } from "../domain/a2a";
@@ -51,7 +51,9 @@ export function FreeChatHistoryPanel({
   activeConversationId,
   histories,
   onNewChat,
+  onRenameConversation,
   onSelectConversation,
+  onDeleteConversation,
 }: {
   agent?: AgentInstance;
   activeConversationId?: string;
@@ -61,8 +63,36 @@ export function FreeChatHistoryPanel({
     title: string;
   }>;
   onNewChat: () => void;
+  onRenameConversation: (conversationId: string, title: string) => void;
   onSelectConversation: (conversationId: string) => void;
+  onDeleteConversation: (conversationId: string) => void;
 }) {
+  const [editingConversationId, setEditingConversationId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+
+  function startRename(item: { conversation: Conversation; title: string }) {
+    setEditingConversationId(item.conversation.id);
+    setEditingTitle(item.conversation.customTitle ?? item.title);
+  }
+
+  function cancelRename() {
+    setEditingConversationId(null);
+    setEditingTitle("");
+  }
+
+  function saveRename(conversationId: string) {
+    const title = editingTitle.trim();
+    if (!title) return;
+    onRenameConversation(conversationId, title);
+    cancelRename();
+  }
+
+  function deleteConversation(item: { conversation: Conversation; title: string }) {
+    if (!window.confirm(`Delete "${item.title}"? This removes the chat from local history.`)) return;
+    if (editingConversationId === item.conversation.id) cancelRename();
+    onDeleteConversation(item.conversation.id);
+  }
+
   return (
     <section className="free-chat-panel" aria-label="Chat history">
       <div className="free-chat-header">
@@ -82,17 +112,69 @@ export function FreeChatHistoryPanel({
       </div>
       <div className="free-chat-history-list">
         {histories.length > 0 ? (
-          histories.map((item) => (
-            <button
-              type="button"
-              className={`free-chat-history-item ${item.conversation.id === activeConversationId ? "active" : ""}`}
-              key={item.conversation.id}
-              onClick={() => onSelectConversation(item.conversation.id)}
-            >
-              <strong>{item.title}</strong>
-              <span>{item.messageCount} messages</span>
-            </button>
-          ))
+          histories.map((item) => {
+            const isEditing = editingConversationId === item.conversation.id;
+            return (
+              <div
+                className={`free-chat-history-item ${item.conversation.id === activeConversationId ? "active" : ""} ${isEditing ? "editing" : ""}`}
+                key={item.conversation.id}
+              >
+                {isEditing ? (
+                  <form
+                    className="free-chat-rename-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      saveRename(item.conversation.id);
+                    }}
+                  >
+                    <label className="sr-only" htmlFor={`free-chat-title-${item.conversation.id}`}>
+                      Chat title
+                    </label>
+                    <input
+                      id={`free-chat-title-${item.conversation.id}`}
+                      value={editingTitle}
+                      onChange={(event) => setEditingTitle(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") cancelRename();
+                      }}
+                      autoFocus
+                    />
+                    <button className="history-icon-button" type="submit" aria-label="Save chat title" disabled={!editingTitle.trim()}>
+                      <Check size={14} />
+                    </button>
+                    <button className="history-icon-button" type="button" onClick={cancelRename} aria-label="Cancel rename">
+                      <X size={14} />
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="free-chat-history-select"
+                      onClick={() => onSelectConversation(item.conversation.id)}
+                    >
+                      <strong>{item.title}</strong>
+                      <span>{item.messageCount} messages</span>
+                    </button>
+                    <div className="free-chat-history-actions" aria-label={`${item.title} actions`}>
+                      <button className="history-icon-button" type="button" onClick={() => startRename(item)} aria-label={`Rename ${item.title}`} title="Rename">
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        className="history-icon-button danger"
+                        type="button"
+                        onClick={() => deleteConversation(item)}
+                        aria-label={`Delete ${item.title}`}
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })
         ) : (
           <div className="inline-empty">No free chat history yet.</div>
         )}

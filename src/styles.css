@@ -374,6 +374,7 @@ label > span:not(.field-label):not(.field-help),
   position: absolute;
   top: 50%;
   right: 6px;
+  z-index: 2;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-50%);
@@ -781,6 +782,8 @@ label > span:not(.field-label):not(.field-help),
 }
 
 .conversation-body {
+  --conversation-scroll-rest-space: clamp(64px, 10vh, 120px);
+
   display: grid;
   flex: 1;
   align-content: start;
@@ -788,7 +791,7 @@ label > span:not(.field-label):not(.field-help),
   min-height: 0;
   overflow: auto;
   border-top: 1px solid var(--border);
-  padding-top: 20px;
+  padding: 20px 0 var(--conversation-scroll-rest-space);
 }
 
 .message-row {
@@ -1168,8 +1171,11 @@ label > span:not(.field-label):not(.field-help),
 }
 
 .free-chat-history-item {
+  position: relative;
   display: grid;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   border-left: 2px solid transparent;
   border-top: 0;
@@ -1177,9 +1183,8 @@ label > span:not(.field-label):not(.field-help),
   border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
-  padding: 10px 0 10px 10px;
+  padding: 6px 0 6px 8px;
   text-align: left;
-  cursor: pointer;
 }
 
 .free-chat-history-item.active {
@@ -1195,7 +1200,19 @@ label > span:not(.field-label):not(.field-help),
   background: var(--accent-soft);
 }
 
-.free-chat-history-item strong {
+.free-chat-history-select {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 4px 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.free-chat-history-select strong {
   overflow: hidden;
   color: var(--text-primary);
   font-size: 14px;
@@ -1204,10 +1221,77 @@ label > span:not(.field-label):not(.field-help),
   white-space: nowrap;
 }
 
-.free-chat-history-item span {
+.free-chat-history-select span {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 18px;
+}
+
+.free-chat-history-actions {
+  display: inline-flex;
+  gap: 4px;
+  padding-right: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.free-chat-history-item:hover .free-chat-history-actions,
+.free-chat-history-item:focus-within .free-chat-history-actions,
+.free-chat-history-item.active .free-chat-history-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.history-icon-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.history-icon-button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.history-icon-button.danger:hover:not(:disabled) {
+  border-color: rgba(251, 113, 133, 0.42);
+  background: rgba(251, 113, 133, 0.08);
+  color: var(--danger);
+}
+
+.history-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.free-chat-rename-form {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding-right: 6px;
+}
+
+.free-chat-rename-form input {
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-primary);
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .icon-text-button {
@@ -1596,9 +1680,9 @@ textarea::placeholder {
 .browser-frame {
   overflow: hidden;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-soft);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .browser-frame iframe {

@@ -34,7 +34,20 @@ Evidence:
 - `src/services/requestRetryState.ts`
 - `src/services/directRequestOrchestrator.ts`
 - `src/services/taskRoomOrchestrator.ts`
-- `src/__tests__/stability.test.ts`
+- `src/__tests__/agent.test.ts`
+- `src/__tests__/chat.test.ts`
+- `src/__tests__/chatRecovery.test.ts`
+- `src/__tests__/chatSelection.test.ts`
+- `src/__tests__/chatTaskRoom.test.ts`
+- `src/__tests__/localTrusted.test.ts`
+- `src/__tests__/localTrustedScripts.test.ts`
+- `src/__tests__/localTrustedTransport.test.ts`
+- `src/__tests__/project.test.ts`
+- `src/__tests__/projectLifecycle.test.ts`
+- `src/__tests__/projectOutputs.test.ts`
+- `src/__tests__/provider.test.ts`
+- `src/__tests__/uiStructure.test.ts`
+- `src/__tests__/workspace.test.ts`
 - `scripts/run-browser-smoke.mjs`
 
 ### Data Model Responsibilities
@@ -52,7 +65,20 @@ Evidence:
 - `src/services/requestRuntimeStore.ts`
 - `src/services/workspaceStorage.ts`
 - `src/services/uiStateStorage.ts`
-- `src/__tests__/stability.test.ts`
+- `src/__tests__/agent.test.ts`
+- `src/__tests__/chat.test.ts`
+- `src/__tests__/chatRecovery.test.ts`
+- `src/__tests__/chatSelection.test.ts`
+- `src/__tests__/chatTaskRoom.test.ts`
+- `src/__tests__/localTrusted.test.ts`
+- `src/__tests__/localTrustedScripts.test.ts`
+- `src/__tests__/localTrustedTransport.test.ts`
+- `src/__tests__/project.test.ts`
+- `src/__tests__/projectLifecycle.test.ts`
+- `src/__tests__/projectOutputs.test.ts`
+- `src/__tests__/provider.test.ts`
+- `src/__tests__/uiStructure.test.ts`
+- `src/__tests__/workspace.test.ts`
 
 ### UI State Restoration
 
@@ -64,7 +90,20 @@ Evidence:
 - `src/services/uiStateStorage.ts`
 - `src/services/canonicalHost.ts`
 - `src/main.tsx`
-- `src/__tests__/stability.test.ts`
+- `src/__tests__/agent.test.ts`
+- `src/__tests__/chat.test.ts`
+- `src/__tests__/chatRecovery.test.ts`
+- `src/__tests__/chatSelection.test.ts`
+- `src/__tests__/chatTaskRoom.test.ts`
+- `src/__tests__/localTrusted.test.ts`
+- `src/__tests__/localTrustedScripts.test.ts`
+- `src/__tests__/localTrustedTransport.test.ts`
+- `src/__tests__/project.test.ts`
+- `src/__tests__/projectLifecycle.test.ts`
+- `src/__tests__/projectOutputs.test.ts`
+- `src/__tests__/provider.test.ts`
+- `src/__tests__/uiStructure.test.ts`
+- `src/__tests__/workspace.test.ts`
 - `docs/STABILITY_SMOKE.md`
 
 ### Error And Retry Recovery
@@ -98,7 +137,20 @@ Evidence:
 - `src/services/a2aClient.ts`
 - `src/services/hermesA2AAdapter.ts`
 - `src/services/workspaceContextRecovery.ts`
-- `src/__tests__/stability.test.ts`
+- `src/__tests__/agent.test.ts`
+- `src/__tests__/chat.test.ts`
+- `src/__tests__/chatRecovery.test.ts`
+- `src/__tests__/chatSelection.test.ts`
+- `src/__tests__/chatTaskRoom.test.ts`
+- `src/__tests__/localTrusted.test.ts`
+- `src/__tests__/localTrustedScripts.test.ts`
+- `src/__tests__/localTrustedTransport.test.ts`
+- `src/__tests__/project.test.ts`
+- `src/__tests__/projectLifecycle.test.ts`
+- `src/__tests__/projectOutputs.test.ts`
+- `src/__tests__/provider.test.ts`
+- `src/__tests__/uiStructure.test.ts`
+- `src/__tests__/workspace.test.ts`
 
 ## Verification Commands
 
@@ -115,5 +167,5 @@ npm run smoke:browser
 These are intentionally not part of the Stability Pass completion:
 
 - Replace browser-local transport with a native/local trusted implementation for packaged release.
-- Move API keys out of browser localStorage into secure local storage.
+- Move provider credentials from the local trusted credential file into OS-backed secure storage for packaged releases.
 - Continue M7 IA Reset and reorganize the Output Area by agent and output type.

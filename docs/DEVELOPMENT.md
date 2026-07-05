@@ -413,7 +413,7 @@ Completed:
 Follow-up scope:
 
 - Replace the browser transport implementation with a native/local trusted implementation when packaging and secure credential storage are introduced.
-- Move API keys out of browser localStorage into secure local storage before public or packaged release.
+- Keep provider credentials out of browser localStorage for public release; move the local trusted credential file into OS-backed secure storage before packaged release.
 - Continue IA simplification from `docs/V0_2_IA_RESET.md`, especially the Output Area organization by agent and output type.
 
 ### Milestone 0: Real Agent Onboarding
@@ -794,8 +794,11 @@ Implementation progress:
 - M9 provider regression script now has a service-test guard that verifies the Chinese context-continuity probes remain readable UTF-8 text instead of mojibake.
 - M9 provider regression script now accepts `--target hermes|deepseek|minimax` filters, including npm-forwarded bare target arguments, so a single provider can be verified without unrelated unready providers failing the run.
 - M9 provider regression now fails selected unready targets as setup failures instead of silently skipping them, so the default Hermes + DeepSeek + MiniMax matrix cannot pass unless all three target records are ready.
-- M9 status on 2026-06-19: Hermes passes all six checks; DeepSeek is blocked by `MISSING_KEY`; MiniMax is blocked by `PROVIDER_MISMATCH` because the current local trusted record is OpenAI-compatible instead of Anthropic-compatible.
-- `docs/M7_M9_COMPLETION_AUDIT_2026-06-19.md` records the current M7/M8/M9 evidence audit: M7 is complete for the current prototype structure, M8 is implemented as a development local trusted bridge with secure packaging pending, and M9 remains incomplete until DeepSeek and MiniMax are both READY and the full matrix passes.
+- M9 credential persistence was repaired for existing provider edits: newly entered DeepSeek/MiniMax keys now persist to the local trusted credential file, not browser localStorage, even when the existing provider setup still has validation issues.
+- M9 provider regression now tolerates transient empty model responses with bounded retry/backoff while keeping the forced-timeout check single-attempt.
+- M9 provider regression project probes now keep the project-scoped system instruction but ask for a short response, avoiding overly chatty third-party compatible provider behavior in release checks.
+- M9 status on 2026-06-19: Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible all report READY in `npm run regression:providers:list`; `npm run regression:providers` passes all six checks for all three providers.
+- `docs/M7_M9_COMPLETION_AUDIT_2026-06-19.md` records the current M7/M8/M9 evidence audit: M7 is complete for the current prototype structure, M8 is implemented as a development local trusted bridge with secure packaging pending, and M9 is complete for the current configured real-provider matrix.
 
 Acceptance:
 
@@ -915,7 +918,7 @@ Prototype:
 Next stage:
 
 - Move secrets to OS-backed desktop secure storage.
-- Any public release must move secrets out of browser localStorage.
+- Public releases must keep provider secrets out of browser localStorage; packaged builds should migrate from the local trusted credential file to OS-backed secure storage.
 - UI must show a visible dev/prototype warning when secrets are stored locally.
 - Provider API keys must never be exported with workspace data.
 - Logs must redact credentials, Authorization headers, and provider endpoints containing tokens.

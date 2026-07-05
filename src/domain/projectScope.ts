@@ -26,6 +26,7 @@ export type Conversation = {
   projectId: string;
   mode: ConversationMode;
   title: string;
+  customTitle?: string;
   primaryAgentId?: string;
   chiefAgentId?: string;
   participantAgentIds: string[];

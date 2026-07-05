@@ -92,7 +92,7 @@ Full attached file content is not persisted in localStorage.
 
 - This is a dev-server trusted layer, not a packaged desktop permission model.
 - The file layer is local to Vibe Office and must not become a remote agent filesystem bridge.
-- API keys remain prototype-only browser localStorage secrets.
+- Historical note: at this milestone, API keys were still prototype-only browser localStorage secrets. Current builds keep provider credentials in the local trusted credential store instead of browser localStorage.
 - Provider credentials must never appear in docs, logs, screenshots, commits, or exported workspace data.
 - Workspace access remains scoped to the active Project.
 

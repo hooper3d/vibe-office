@@ -2,7 +2,7 @@
 
 ## Project Root
 
-`C:\Users\hooper\Documents\VibeOffice`
+`<project-root>`
 
 Current dev server:
 

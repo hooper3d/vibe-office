@@ -14,9 +14,9 @@ Audit the current state of the post-reset development plan:
 
 ## Audit Result
 
-Status: partially complete.
+Status: complete for the current prototype release target, with packaging hardening still pending.
 
-M7 is functionally complete for the current prototype structure. M8 is implemented as a development local trusted layer, with packaging and OS-backed credential storage still pending. M9 has the regression harness and Hermes evidence, but the full real-provider matrix is not complete until DeepSeek and MiniMax both report `READY` and pass the matrix.
+M7 is functionally complete for the current prototype structure. M8 is implemented as a development local trusted layer, with packaging and OS-backed credential storage still pending. M9 now has READY local trusted records for Hermes, DeepSeek, and MiniMax, and the full real-provider matrix passes through the local trusted provider path.
 
 ## M7-1 Structure Slimming
 
@@ -37,7 +37,7 @@ Evidence:
 
 Verification:
 
-- `src/__tests__/stability.test.ts` includes structure guards for `MainWorkspace`, `OutputWorkspace`, `ProjectOutputs`, `ProjectTasks`, `ProjectArtifacts`, and extracted artifact/output helpers.
+- Split service tests under `src/__tests__/agent.test.ts`, `src/__tests__/chat.test.ts`, `src/__tests__/chatRecovery.test.ts`, `src/__tests__/chatSelection.test.ts`, `src/__tests__/chatTaskRoom.test.ts`, `src/__tests__/localTrusted.test.ts`, `src/__tests__/localTrustedScripts.test.ts`, `src/__tests__/localTrustedTransport.test.ts`, `src/__tests__/project.test.ts`, `src/__tests__/projectLifecycle.test.ts`, `src/__tests__/projectOutputs.test.ts`, `src/__tests__/provider.test.ts`, `src/__tests__/uiStructure.test.ts`, and `src/__tests__/workspace.test.ts` include structure guards for `MainWorkspace`, `OutputWorkspace`, `ProjectOutputs`, `ProjectTasks`, `ProjectArtifacts`, and extracted artifact/output helpers.
 
 ## M7-2 Provider Adapter Layer
 
@@ -97,45 +97,52 @@ Remaining:
 
 ## M9 Real Provider Matrix
 
-Status: incomplete.
+Status: complete for the current configured real-provider matrix.
 
 Evidence already complete:
 
 - `scripts/run-provider-regression.mjs` covers connection, free chat, project chat, forced timeout, retry after timeout, and Chinese context continuity.
 - `docs/M9_PROVIDER_REGRESSION.md` documents safe setup, readiness states, and repair commands without exposing keys.
 - `npm run regression:providers -- --target hermes` has passed the full Hermes target repeatedly through the local trusted provider path.
+- `npm run regression:providers -- --target deepseek` passes the full DeepSeek OpenAI-compatible target.
+- `npm run regression:providers -- --target minimax` passes the full MiniMax Anthropic-compatible target.
+- `npm run regression:providers` passes all checks for Hermes, DeepSeek, and MiniMax.
 
 Current readiness from `npm run regression:providers:list`:
 
 - Hermes: `READY agent-1781701191359`
-- DeepSeek OpenAI-compatible: `MISSING_KEY agent-1781765240218`
-- MiniMax Anthropic-compatible: `PROVIDER_MISMATCH agent-1781771100927 expected=anthropic actual=openai`
+- DeepSeek OpenAI-compatible: `READY agent-1781765240218`
+- MiniMax Anthropic-compatible: `READY agent-1781771100927`
 
 Completion condition:
 
-- `npm run regression:providers:list` must show `READY` for Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible.
-- `npm run regression:providers` must pass all six checks for all three targets.
+- `npm run regression:providers:list` shows `READY` for Hermes, DeepSeek OpenAI-compatible, and MiniMax Anthropic-compatible.
+- `npm run regression:providers` passes all six checks for all three targets.
 
 ## Verification Commands
 
 Latest verified commands in this stage:
 
 ```bash
+npm run ci
+npm run release:check
 npm test
 npm run build
 npm run smoke:browser
 npm run regression:providers -- --target hermes
+npm run regression:providers -- --target deepseek
+npm run regression:providers -- --target minimax
 npm run regression:providers:list
+npm run regression:providers
 ```
 
-Known warning:
+Known packaging note:
 
-- `npm run build` still reports the existing Vite chunk-size warning. It is not a correctness failure, but future packaging should split bundles.
+- Release packaging still needs OS-backed secure storage and a packaged local trusted runtime outside Vite dev middleware.
+- `release:check` currently passes with a warning for the active dev-server logs: `dev-5180-current.err.log` and `dev-5180-current.out.log`.
 
 ## Next Work
 
-1. Repair DeepSeek readiness by saving its API key into the local trusted layer.
-2. Repair MiniMax readiness by switching it to Anthropic-compatible provider metadata and saving its API key into the local trusted layer.
-3. Run the full `npm run regression:providers` matrix and record the result.
-4. If the matrix passes, create a final M9 milestone record.
-5. Start the next platform-hardening phase: secure credential storage and moving the local trusted layer out of Vite dev middleware.
+1. Keep release hygiene tight: no committed logs, screenshots, secrets, or generated local state.
+2. Continue simplifying large modules and stale docs toward open-source readability.
+3. Start the next platform-hardening phase: secure credential storage and moving the local trusted layer out of Vite dev middleware.

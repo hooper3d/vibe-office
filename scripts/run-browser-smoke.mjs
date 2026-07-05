@@ -4,6 +4,9 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 
 const appUrl = process.env.VIBE_OFFICE_URL ?? "http://127.0.0.1:5180/";
+const smokeProjectDirectory = process.env.VIBE_OFFICE_SMOKE_PROJECT_DIR || process.cwd();
+const missingSmokeProjectDirectory =
+  process.env.VIBE_OFFICE_MISSING_SMOKE_PROJECT_DIR || path.join(os.tmpdir(), "vibe-office-missing-smoke-root");
 const edgePath =
   process.env.VIBE_OFFICE_BROWSER ??
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
@@ -20,6 +23,7 @@ const browser = await chromium.launch({
 
 try {
   await runRefreshRestoreSmoke();
+  await runCredentialPersistenceSmoke();
   await runTimeoutFailureSmoke();
   await runDirectRetrySmoke();
   await runTaskRoomRetrySmoke();
@@ -247,6 +251,31 @@ async function runProjectContextRecoveryFailureSmoke() {
   }
 }
 
+async function runCredentialPersistenceSmoke() {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const agentId = "smoke-agent-credential-save";
+  try {
+    await page.goto(appUrl);
+    await seedStorage(page, createCredentialPersistenceSeed(agentId));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".app-shell");
+
+    await page.locator(".agent-row", { hasText: "Smoke Credential Agent" }).hover();
+    await page.getByLabel("Edit Smoke Credential Agent").click();
+    await page.locator('input[name="apiKey"]').fill("smoke-local-provider-key");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.waitForSelector(".setup-dialog", { state: "detached" });
+
+    const credential = await waitForCredentialRecord(agentId);
+    const registryRaw = await readFile(getLocalTrustedRegistryPath(), "utf8");
+    assertEqual(Boolean(credential?.apiKey), true, "provider key should be saved in the local trusted credential store");
+    assertEqual(registryRaw.includes("smoke-local-provider-key"), false, "provider key must not be written into the local trusted registry");
+  } finally {
+    await context.close();
+  }
+}
+
 async function installSmokeProviderRoute(page, content) {
   await page.route("**/agent-local/command", async (route) => {
     const requestBody = route.request().postDataJSON();
@@ -413,7 +442,7 @@ function createRefreshSeed() {
     name: "Vibe Office",
     namespace: "project-vibe-office",
     description: "Project workspace.",
-    directory: "C:\\Users\\hooper\\Documents\\VibeOffice",
+    directory: smokeProjectDirectory,
   };
 
   return {
@@ -438,12 +467,51 @@ function createRefreshSeed() {
   };
 }
 
+function createCredentialPersistenceSeed(agentId) {
+  const agent = createSmokeAgent(agentId, "Smoke Credential Agent", {
+    role: "credential persistence",
+    endpoint: `${new URL(appUrl).origin}/smoke-openai`,
+    a2aEndpoint: `${new URL(appUrl).origin}/smoke-openai/a2a`,
+    agentCardUrl: `${new URL(appUrl).origin}/smoke-openai/.well-known/agent-card.json`,
+    model: "smoke-model",
+    runtimeProvider: "openai",
+  });
+
+  return {
+    agents: [agent],
+    workspace: {
+      version: 1,
+      projects: [
+        {
+          id: "free-chat-entry",
+          name: "Free Chat",
+          namespace: "free-chat",
+          description: "Personal conversations.",
+        },
+      ],
+      conversations: [],
+      messages: [],
+      runs: [],
+      tasks: [],
+      artifacts: [],
+    },
+    ui: {
+      selectedAgentId: agent.id,
+      selectedProjectId: "free-chat-entry",
+      chatScope: "free",
+      conversationMode: "single",
+      outputMode: "artifacts",
+      activeFreeChatConversationIds: {},
+    },
+  };
+}
+
 function createProjectContextPendingRecoverySeed() {
   return createProjectContextRecoverySeed({
     messageId: "smoke-project-context-pending-message",
     runId: "smoke-project-context-pending-run",
     requestId: "smoke-project-context-pending-request",
-    directory: "C:\\Users\\hooper\\Documents\\VibeOffice",
+    directory: smokeProjectDirectory,
   });
 }
 
@@ -452,7 +520,7 @@ function createProjectContextRecoveryFailureSeed() {
     messageId: "smoke-project-context-failure-message",
     runId: "smoke-project-context-failure-run",
     requestId: "smoke-project-context-failure-request",
-    directory: "C:\\Users\\hooper\\Documents\\VibeOffice\\missing-smoke-root",
+    directory: missingSmokeProjectDirectory,
   });
 }
 
@@ -888,6 +956,27 @@ function isSmokeAgentId(agentId) {
     agentId.startsWith("smoke-participant-") ||
     agentId.startsWith("agent-smoke-")
   );
+}
+
+async function waitForCredentialRecord(agentId) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const credential = await readCredentialRecord(agentId);
+    if (credential?.apiKey) return credential;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return readCredentialRecord(agentId);
+}
+
+async function readCredentialRecord(agentId) {
+  try {
+    const raw = await readFile(getLocalTrustedCredentialPath(), "utf8");
+    const credentials = JSON.parse(raw);
+    if (!credentials || typeof credentials !== "object" || Array.isArray(credentials)) return undefined;
+    return credentials[agentId];
+  } catch {
+    return undefined;
+  }
 }
 
 async function assertLocalTrustedRegistryBoundary() {

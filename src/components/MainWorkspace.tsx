@@ -52,11 +52,13 @@ export function MainWorkspace({
   onOpenPreview,
   onOutputModeChange,
   onRefreshTask,
+  onRenameFreeChatConversation,
   onRetryDirectMessage,
   onRetryTask,
   onRetryTaskRoomMessage,
   onSelectFreeChat,
   onSelectFreeChatConversation,
+  onDeleteFreeChatConversation,
   onSplitterKeyNudge,
   onSplitterPointerDown,
   onSubmitMessage,
@@ -107,11 +109,13 @@ export function MainWorkspace({
   onOpenPreview: (event: FormEvent<HTMLFormElement>) => void;
   onOutputModeChange: (mode: OutputMode) => void;
   onRefreshTask: (taskId: string) => void;
+  onRenameFreeChatConversation: (conversationId: string, title: string) => void;
   onRetryDirectMessage: (messageId: string) => void;
   onRetryTask: (taskId: string) => void;
   onRetryTaskRoomMessage: (messageId: string) => void;
   onSelectFreeChat: () => void;
   onSelectFreeChatConversation: (conversationId: string) => void;
+  onDeleteFreeChatConversation: (conversationId: string) => void;
   onSplitterKeyNudge: (direction: "left" | "right") => void;
   onSplitterPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onSubmitMessage: (event: FormEvent<HTMLFormElement>) => void;
@@ -198,8 +202,10 @@ export function MainWorkspace({
           onOpenPreview={onOpenPreview}
           onOutputModeChange={onOutputModeChange}
           onRefreshTask={onRefreshTask}
+          onRenameFreeChatConversation={onRenameFreeChatConversation}
           onRetryTask={onRetryTask}
           onSelectFreeChatConversation={onSelectFreeChatConversation}
+          onDeleteFreeChatConversation={onDeleteFreeChatConversation}
         />
       </div>
     </main>

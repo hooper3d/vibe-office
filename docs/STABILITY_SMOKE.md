@@ -157,7 +157,7 @@ Latest check:
   - Active agent: `Smoke Agent`
   - Pending project direct-chat message
   - Attached workspace reference: `package.json`
-  - Project directory: `C:\Users\hooper\Documents\VibeOffice`
+  - Project directory: `<project-root>`
 - Seeded failure state:
   - Active project: `Context Smoke Project`
   - Pending project direct-chat message
